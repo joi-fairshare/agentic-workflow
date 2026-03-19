@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mobai": {
+      "command": "npx",
+      "args": ["-y", "mobai-mcp"]
+    }
+  }
+}

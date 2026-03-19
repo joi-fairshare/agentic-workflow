@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run generate:api:*)"
+    ]
+  },
+  "model": "opus",
+  "enabledPlugins": {
+    "github@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "compound-engineering@compound-engineering-plugin": true,
+    "swift-lsp@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "compound-engineering-plugin": {
+      "source": {
+        "source": "github",
+        "repo": "EveryInc/compound-engineering-plugin"
+      }
+    }
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+  "effortLevel": "high"
+}
