@@ -4,32 +4,139 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
+# Canonical list of skills managed by this toolkit
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview)
+
 echo "=== Agentic Workflow Setup ==="
 echo ""
 
-# --- Skills ---
-echo "Installing skills..."
-mkdir -p "$CLAUDE_DIR/skills"
-
-for skill in review postReview addressReview enhancePrompt; do
-  target="$CLAUDE_DIR/skills/$skill"
-  source="$SCRIPT_DIR/skills/$skill"
+# --- Helper: install or refresh a skill symlink ---
+install_skill() {
+  local skill="$1"
+  local target="$2"
+  local source="$3"
 
   if [ -L "$target" ]; then
-    echo "  $skill: symlink exists, skipping"
+    local current_target
+    current_target=$(readlink "$target" 2>/dev/null || echo "")
+
+    if [ "$current_target" = "$source" ]; then
+      echo "  $skill: up to date"
+    elif [[ "$current_target" == *"/agentic-workflow/"* ]] || [[ "$current_target" == *"/agentic-workflow-"* ]]; then
+      # Symlink points to a previous agentic-workflow install — refresh it
+      rm "$target"
+      ln -s "$source" "$target"
+      echo "  $skill: refreshed (was: $current_target)"
+    else
+      # Symlink points to a different source entirely — collision
+      echo ""
+      echo "  ⚠ COLLISION: $skill"
+      echo "    Existing symlink points to: $current_target"
+      echo "    Our source is:              $source"
+      echo "    This may be a different skill with the same name from another toolkit."
+      echo "    Replace with ours? (y/n)"
+      read -r answer
+      if [ "$answer" = "y" ]; then
+        rm "$target"
+        ln -s "$source" "$target"
+        echo "  $skill: replaced (backed up target was a symlink, original still exists at: $current_target)"
+      else
+        echo "  $skill: skipped (keeping existing)"
+      fi
+    fi
   elif [ -d "$target" ]; then
-    echo "  $skill: directory exists (not a symlink). Back it up? (y/n)"
-    read -r answer
+    # Real directory (not a symlink) — potential collision from another source
+    # Check if it has a SKILL.md we can inspect for name match
+    if [ -f "$target/SKILL.md" ]; then
+      local existing_name
+      existing_name=$(grep -m1 '^name:' "$target/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' || echo "")
+      if [ "$existing_name" = "$skill" ]; then
+        echo ""
+        echo "  ⚠ COLLISION: $skill"
+        echo "    A non-symlinked directory exists at: $target"
+        echo "    It contains a skill named '$existing_name' — this appears to match ours."
+        echo "    Back up and replace with symlink? (y/n)"
+      else
+        echo ""
+        echo "  ⚠ COLLISION: $skill"
+        echo "    A non-symlinked directory exists at: $target"
+        echo "    It contains a skill named '$existing_name' — this does NOT match our '$skill' skill."
+        echo "    This is likely a DIFFERENT skill from another toolkit."
+        echo "    Back up and replace with symlink? (y/n)"
+      fi
+      read -r answer
+    else
+      echo ""
+      echo "  ⚠ COLLISION: $skill"
+      echo "    A directory exists at: $target (no SKILL.md found — unknown origin)"
+      echo "    Back up and replace with symlink? (y/n)"
+      read -r answer
+    fi
+
     if [ "$answer" = "y" ]; then
       mv "$target" "$target.bak.$(date +%s)"
       ln -s "$source" "$target"
       echo "  $skill: backed up and linked"
     else
-      echo "  $skill: skipped"
+      echo "  $skill: skipped (keeping existing directory)"
     fi
+  elif [ -f "$target" ]; then
+    echo "  $skill: WARNING — a file (not directory) exists at $target, skipping"
   else
     ln -s "$source" "$target"
     echo "  $skill: linked"
+  fi
+}
+
+# --- Skills ---
+echo "Installing skills..."
+mkdir -p "$CLAUDE_DIR/skills"
+
+for skill in "${MANAGED_SKILLS[@]}"; do
+  install_skill "$skill" "$CLAUDE_DIR/skills/$skill" "$SCRIPT_DIR/skills/$skill"
+done
+
+# --- Bootstrap Skill (separate dir) ---
+echo ""
+echo "Installing bootstrap skill..."
+install_skill "bootstrap" "$CLAUDE_DIR/skills/bootstrap" "$SCRIPT_DIR/bootstrap"
+
+# --- Clean up stale skills from previous versions ---
+echo ""
+echo "Checking for stale skills..."
+
+# Build a lookup of current managed skills (including bootstrap)
+ALL_MANAGED=("${MANAGED_SKILLS[@]}" "bootstrap")
+
+for existing in "$CLAUDE_DIR/skills"/*/; do
+  [ -d "$existing" ] || continue
+  skill_name=$(basename "$existing")
+
+  # Skip if it's in our managed list
+  is_managed=false
+  for managed in "${ALL_MANAGED[@]}"; do
+    if [ "$skill_name" = "$managed" ]; then
+      is_managed=true
+      break
+    fi
+  done
+  $is_managed && continue
+
+  # Only flag symlinks that point into our repo as stale
+  if [ -L "$existing" ]; then
+    link_target=$(readlink "$existing" 2>/dev/null || echo "")
+    if [[ "$link_target" == *"/agentic-workflow/"* ]] || [[ "$link_target" == *"/agentic-workflow-"* ]]; then
+      echo "  ⚠ STALE: $skill_name → $link_target"
+      echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
+      echo "    Remove it? (y/n)"
+      read -r answer
+      if [ "$answer" = "y" ]; then
+        rm "$existing"
+        echo "  $skill_name: removed"
+      else
+        echo "  $skill_name: kept"
+      fi
+    fi
   fi
 done
 
@@ -59,22 +166,6 @@ if [ -f "$MCP_FILE" ]; then
 else
   cp "$SCRIPT_DIR/config/mcp.json" "$MCP_FILE"
   echo "  mcp.json: copied"
-fi
-
-# --- Bootstrap Skill ---
-echo ""
-echo "Installing bootstrap skill..."
-
-BOOTSTRAP_TARGET="$CLAUDE_DIR/skills/bootstrap"
-BOOTSTRAP_SOURCE="$SCRIPT_DIR/bootstrap"
-
-if [ -L "$BOOTSTRAP_TARGET" ]; then
-  echo "  bootstrap: symlink exists, skipping"
-elif [ -d "$BOOTSTRAP_TARGET" ]; then
-  echo "  bootstrap: directory exists, skipping (remove manually to re-link)"
-else
-  ln -s "$BOOTSTRAP_SOURCE" "$BOOTSTRAP_TARGET"
-  echo "  bootstrap: linked"
 fi
 
 # --- MCP Bridge: Install, Build, Register ---
@@ -162,11 +253,26 @@ else
   echo "  claude CLI not found, skipping plugin installation"
 fi
 
+# --- Output Directory ---
+echo ""
+echo "Creating output directory..."
+mkdir -p "$HOME/.agentic-workflow"
+echo "  ~/.agentic-workflow/: created"
+
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed:   review, postReview, addressReview, enhancePrompt, bootstrap"
+echo "Skills installed (14):"
+echo "  Review pipeline:  review, postReview, addressReview"
+echo "  Investigation:    rootCause"
+echo "  QA:               bugHunt, bugReport"
+echo "  Release:          shipRelease, syncDocs"
+echo "  Retrospective:    weeklyRetro"
+echo "  Planning:         officeHours, productReview, archReview"
+echo "  Utilities:        enhancePrompt, bootstrap"
+echo ""
 echo "Config location:    $CLAUDE_DIR/"
+echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
 echo "MCP bridge:         $BRIDGE_DIR/"
 echo "MCP registered:     Claude Code + Codex (agentic-bridge)"
 echo "Plugins:            github, superpowers, compound-engineering, playwright"
