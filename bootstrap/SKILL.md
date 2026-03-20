@@ -2,7 +2,69 @@
 name: bootstrap
 description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md), then generate any missing docs adapted to the target repo's tech stack and domain. Calls /enhancePrompt first for context.
 argument-hint: [--force to regenerate existing docs]
+disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
+---
+
+> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+>
+> | Skill | Purpose |
+> |-------|---------|
+> | `/review` | Multi-agent PR code review |
+> | `/postReview` | Publish review findings to GitHub |
+> | `/addressReview` | Implement review fixes in parallel |
+> | `/enhancePrompt` | Context-aware prompt rewriter |
+> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
+> | `/rootCause` | 4-phase systematic debugging |
+> | `/bugHunt` | Fix-and-verify loop with regression tests |
+> | `/bugReport` | Structured bug report with health scores |
+> | `/shipRelease` | Sync, test, push, open PR |
+> | `/syncDocs` | Post-ship doc updater |
+> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
+> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/productReview` | Founder/product lens plan review |
+> | `/archReview` | Engineering architecture plan review |
+>
+> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+
+## Preamble — Bootstrap Check
+
+Before running this skill, verify the environment is set up:
+
+```bash
+# Derive repo slug
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [ -n "$REMOTE_URL" ]; then
+  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+else
+  REPO_SLUG=$(basename "$(pwd)")
+fi
+echo "repo-slug: $REPO_SLUG"
+
+# Check bootstrap status
+SKILLS_OK=true
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview; do
+  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+done
+
+BRIDGE_OK=false
+[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+
+echo "skills-symlinked: $SKILLS_OK"
+echo "bridge-built: $BRIDGE_OK"
+```
+
+If either check fails, ask the user via AskUserQuestion:
+> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
+
+If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
+If **no**: warn that some features may not work, then continue.
+
+Create the output directory for this repo:
+```bash
+mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
+```
+
 ---
 
 # Bootstrap — Repo Documentation Generator
@@ -229,4 +291,15 @@ Next steps:
   1. Review generated docs for accuracy
   2. Commit: git add planning/ CLAUDE.md && git commit -m "docs: bootstrap planning documents"
   3. Refine any docs that need domain-specific detail
+
+Suggested workflow:
+  • /officeHours — brainstorm a feature or problem before planning
+  • /productReview — get founder-lens feedback on a plan
+  • /archReview — get engineering architecture review of a plan
+  • /review <pr> — run multi-agent code review on a PR
+  • /bugHunt — find and fix bugs with regression tests
+  • /bugReport — audit code health without making changes
+  • /rootCause — systematic 4-phase debugging
+  • /shipRelease — push, open PR, sync docs
+  • /weeklyRetro — generate a weekly retrospective
 ```

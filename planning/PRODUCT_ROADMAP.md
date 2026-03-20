@@ -28,6 +28,66 @@ Delivered. Current state of the repository.
 
 ---
 
+## v1.5 — Full Development Lifecycle Skills
+
+### Scope
+
+Expand from 5 to 14 skills covering the entire development lifecycle, add a centralized output directory for cross-skill artifact sharing, and establish a shared preamble with bootstrap gate.
+
+**1. Nine New Skills (ported from Gstack, rewritten)**
+
+| Skill | Category | Purpose |
+|-------|----------|---------|
+| `/rootCause` | Investigation | 4-phase systematic debugging with module boundary scope freeze |
+| `/bugHunt` | QA | Fix-and-verify loop with 3 tiers, atomic commits, regression tests |
+| `/bugReport` | QA | Read-only health audit with weighted health scores |
+| `/shipRelease` | Release | Sync, test, coverage audit, push, open PR, auto-invoke /syncDocs |
+| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md |
+| `/weeklyRetro` | Retrospective | Per-person breakdowns, shipping streaks, test health, insights |
+| `/officeHours` | Planning | YC-style brainstorming with 6 forcing questions → design doc |
+| `/productReview` | Planning | Founder/product lens review with 4 modes (mvp/growth/scale/pivot) |
+| `/archReview` | Planning | Engineering architecture review with mandatory diagrams |
+
+**2. Centralized Output Directory**
+
+All skill outputs write to `~/.agentic-workflow/<repo-slug>/` with subdirectories: `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. Replaces the project-local `.review-cache/` pattern. Persists across sessions and branches.
+
+**3. Shared Preamble with Bootstrap Gate**
+
+Every skill includes a shared preamble that lists all 14 skills, points to the centralized output directory, and checks bootstrap status. If not bootstrapped, prompts user to run `setup.sh`.
+
+**4. Existing Skill Updates**
+
+- `/review` — migrated to centralized output dir, added SQL safety checks and LLM trust boundary analysis to triage
+- `/postReview` — migrated to centralized output dir
+- `/addressReview` — migrated to centralized output dir
+
+**5. Infrastructure Updates**
+
+- `setup.sh` — symlinks all 14 skills, creates `~/.agentic-workflow/` base directory
+- `/bootstrap` — references full 14-skill inventory, suggests pipeline skills as next steps
+- `CLAUDE.md` — documents all 14 skills, centralized output pattern, skill pipeline flow
+- `ARCHITECTURE.md` — updated directory tree, mermaid diagram, component descriptions, key rules
+
+### Success Criteria
+
+- [x] All 14 skills have consistent shared preamble with bootstrap gate
+- [x] Zero telemetry code in any skill
+- [x] All outputs write to `~/.agentic-workflow/<repo-slug>/` with correct subdirectories
+- [x] Existing `/review` → `/postReview` → `/addressReview` chain works with new paths
+- [x] All skills follow SKILL.md format with proper YAML frontmatter
+- [x] Verbose camelCase naming throughout
+- [x] `setup.sh` updated with all new skill symlinks and output directory creation
+- [x] `/bootstrap` references full 14-skill inventory
+- [x] `CLAUDE.md` reflects complete architecture with all skills and output directory
+- [x] `ARCHITECTURE.md` has updated directory tree, mermaid diagram, and key rules
+
+### Timeline
+
+Delivered.
+
+---
+
 ## v1.1 — Quality and Developer Experience
 
 ### Scope

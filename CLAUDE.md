@@ -1,6 +1,6 @@
 # CLAUDE.md — agentic-workflow
 
-> Portable Claude Code workflow toolkit: custom skills, config archive, repo bootstrapper, and a bidirectional MCP bridge for multi-agent communication.
+> Portable Claude Code workflow toolkit: 14 custom skills, config archive, repo bootstrapper, and a bidirectional MCP bridge for multi-agent communication.
 
 ## Required Context
 
@@ -28,16 +28,77 @@ Read before making changes:
 | Test | Vitest (in-memory SQLite) |
 | Build | tsc (ESM, Node16 module resolution) |
 
+## Skills (14)
+
+All skills are slash commands invoked inside Claude Code sessions. They are installed by symlinking into `~/.claude/skills/`.
+
+| Skill | Purpose | Output Dir |
+|-------|---------|------------|
+| `/review` | Multi-agent PR code review | `reviews/` |
+| `/postReview` | Publish review findings to GitHub | `reviews/` |
+| `/addressReview` | Implement review fixes in parallel | `reviews/` |
+| `/enhancePrompt` | Context-aware prompt rewriter | — |
+| `/bootstrap` | Generate repo planning docs + CLAUDE.md | — |
+| `/rootCause` | 4-phase systematic debugging | `investigations/` |
+| `/bugHunt` | Fix-and-verify loop with regression tests | `qa/` |
+| `/bugReport` | Structured bug report with health scores | `qa/` |
+| `/shipRelease` | Sync, test, push, open PR | `releases/` |
+| `/syncDocs` | Post-ship doc updater | `releases/` |
+| `/weeklyRetro` | Weekly retrospective with shipping streaks | `retros/` |
+| `/officeHours` | YC-style brainstorming → design doc | `plans/` |
+| `/productReview` | Founder/product lens plan review | `plans/` |
+| `/archReview` | Engineering architecture plan review | `plans/` |
+
+### Skill Pipeline
+
+```
+officeHours → productReview / archReview → implement → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
+```
+
+Skills are designed to flow into each other. Each skill writes outputs that downstream skills auto-discover.
+
+### Centralized Output Directory
+
+All skill outputs are written to `~/.agentic-workflow/<repo-slug>/` with subdirectories:
+
+```
+~/.agentic-workflow/<repo-slug>/
+├── reviews/          # /review, /postReview, /addressReview state files
+├── investigations/   # /rootCause investigation reports
+├── qa/               # /bugHunt and /bugReport reports
+├── plans/            # /officeHours, /productReview, /archReview design docs
+├── releases/         # /shipRelease and /syncDocs reports
+└── retros/           # /weeklyRetro retrospectives
+```
+
+The repo slug is derived from `git remote get-url origin` (fallback: directory name).
+
 ## Architecture
 
 ```
 agentic-workflow/
 ├── skills/                    # Claude Code custom skills (symlinked to ~/.claude/skills/)
-│   ├── review/                # Multi-agent PR review orchestrator
-│   ├── postReview/            # GitHub comment publisher
-│   ├── addressReview/         # Review fix implementer
-│   └── enhancePrompt/         # Context-aware prompt rewriter
-├── bootstrap/                 # Repo documentation generator skill
+│   ├── review/                # /review — multi-agent PR review orchestrator
+│   │   ├── SKILL.md           #   skill manifest + 7-step orchestration flow
+│   │   ├── triage-prompt.md   #   subagent prompt: classify files → reviewer agents
+│   │   └── reviewer-prompt.md #   subagent prompt: domain-specific code review
+│   ├── postReview/            # /postReview — publish findings to GitHub
+│   ├── addressReview/         # /addressReview — implement review fixes
+│   │   ├── SKILL.md           #   orchestrator: triage → parallel implementers
+│   │   ├── address-triage-prompt.md
+│   │   └── implementer-prompt.md
+│   ├── enhancePrompt/         # /enhancePrompt — context-aware prompt rewriter
+│   ├── rootCause/             # /rootCause — 4-phase systematic debugging
+│   ├── bugHunt/               # /bugHunt — fix-and-verify loop
+│   ├── bugReport/             # /bugReport — read-only health audit
+│   ├── shipRelease/           # /shipRelease — sync, test, push, PR
+│   ├── syncDocs/              # /syncDocs — post-ship doc updater
+│   ├── weeklyRetro/           # /weeklyRetro — weekly retrospective
+│   ├── officeHours/           # /officeHours — YC-style brainstorming
+│   ├── productReview/         # /productReview — founder/product lens review
+│   ├── archReview/            # /archReview — engineering architecture review
+│   └── _preamble.md           # Shared preamble reference (not a skill)
+├── bootstrap/                 # /bootstrap — repo documentation generator
 ├── config/                    # Settings & MCP config archive
 ├── mcp-bridge/                # MCP bridge application
 │   └── src/
@@ -141,7 +202,7 @@ npm run build          # Production build
 npm start              # Production server
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install deps (bridge + UI)
+./setup.sh             # Symlink skills, copy config, install deps (bridge + UI), create output dir
 ```
 
 ## Merge Gate

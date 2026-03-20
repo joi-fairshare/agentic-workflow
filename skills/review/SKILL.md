@@ -1,9 +1,67 @@
 ---
 name: review
-description: Orchestrate a multi-agent PR code review. Spawns domain-specific reviewer subagents in parallel based on changed files. Findings are saved locally to .review-cache/<pr>.json — run /postReview to publish to GitHub.
+description: Orchestrate a multi-agent PR code review. Spawns domain-specific reviewer subagents in parallel based on changed files. Findings are saved to ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json — run /postReview to publish to GitHub.
 argument-hint: [pr-number-or-url]
 disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write
+---
+
+> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+>
+> | Skill | Purpose |
+> |-------|---------|
+> | `/review` | Multi-agent PR code review |
+> | `/postReview` | Publish review findings to GitHub |
+> | `/addressReview` | Implement review fixes in parallel |
+> | `/enhancePrompt` | Context-aware prompt rewriter |
+> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
+> | `/rootCause` | 4-phase systematic debugging |
+> | `/bugHunt` | Fix-and-verify loop with regression tests |
+> | `/bugReport` | Structured bug report with health scores |
+> | `/shipRelease` | Sync, test, push, open PR |
+> | `/syncDocs` | Post-ship doc updater |
+> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
+> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/productReview` | Founder/product lens plan review |
+> | `/archReview` | Engineering architecture plan review |
+>
+> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+
+## Preamble — Bootstrap Check
+
+Before running this skill, verify the environment is set up:
+
+```bash
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [ -n "$REMOTE_URL" ]; then
+  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+else
+  REPO_SLUG=$(basename "$(pwd)")
+fi
+echo "repo-slug: $REPO_SLUG"
+
+SKILLS_OK=true
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview; do
+  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+done
+
+BRIDGE_OK=false
+[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+
+echo "skills-symlinked: $SKILLS_OK"
+echo "bridge-built: $BRIDGE_OK"
+```
+
+If either check fails, ask the user via AskUserQuestion:
+> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
+
+If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
+If **no**: warn that some features may not work, then continue.
+
+```bash
+mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"
+```
+
 ---
 
 # PR Review Orchestrator
@@ -36,15 +94,10 @@ gh pr view {number} --json files --jq '[.files[].path]'
 gh pr view {number} --json commits --jq '.commits[-1].oid'
 ```
 
-## Step 3: Ensure cache directory exists
+## Step 3: Ensure output directory exists
 
 ```bash
-mkdir -p .review-cache
-```
-
-Add to `.gitignore` if not already present:
-```bash
-grep -q '.review-cache' .gitignore 2>/dev/null || echo '.review-cache/' >> .gitignore
+mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"
 ```
 
 ## Step 4: Triage
@@ -67,7 +120,7 @@ Each reviewer returns a **JSON object** as its final output (not GitHub comments
 
 ## Step 6: Write State File
 
-Combine all reviewer outputs into `.review-cache/{number}.json`:
+Combine all reviewer outputs into `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
 
 ```json
 {
@@ -112,7 +165,7 @@ Use the Write tool to save this file.
 
 ```
 Review complete for PR #{number}: "{title}"
-Findings saved to .review-cache/{number}.json
+Findings saved to ~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json
 
 Reviewers:
   • security-sentinel (focus: auth, input validation) — 2 blocking, 1 issue

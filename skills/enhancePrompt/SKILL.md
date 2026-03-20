@@ -1,6 +1,32 @@
 ---
 name: enhancePrompt
 description: Use when the user invokes /enhancePrompt — discovers available project documentation, reads relevant files, and rewrites the user's request with richer context before execution
+argument-hint: [prompt-to-enhance]
+disable-model-invocation: true
+allowed-tools: Read, Glob, Grep
+---
+
+> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+>
+> | Skill | Purpose |
+> |-------|---------|
+> | `/review` | Multi-agent PR code review |
+> | `/postReview` | Publish review findings to GitHub |
+> | `/addressReview` | Implement review fixes in parallel |
+> | `/enhancePrompt` | Context-aware prompt rewriter |
+> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
+> | `/rootCause` | 4-phase systematic debugging |
+> | `/bugHunt` | Fix-and-verify loop with regression tests |
+> | `/bugReport` | Structured bug report with health scores |
+> | `/shipRelease` | Sync, test, push, open PR |
+> | `/syncDocs` | Post-ship doc updater |
+> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
+> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/productReview` | Founder/product lens plan review |
+> | `/archReview` | Engineering architecture plan review |
+>
+> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+
 ---
 
 # enhancePrompt

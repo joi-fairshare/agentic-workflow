@@ -38,6 +38,26 @@ Prefer these catalog agents when they match:
 | `accessibility-tester` | HTML accessibility, ARIA, keyboard navigation |
 | `mobile-app-developer` | iOS/Android, React Native, Flutter |
 
+## Additional Review Dimensions
+
+Always evaluate the diff for these concerns and include the relevant specialist if findings exist:
+
+### SQL Safety
+If the diff touches SQL queries, database access code, or ORM usage:
+- Look for raw SQL string interpolation or concatenation
+- Check for missing parameterized queries / prepared statements
+- Verify migrations are reversible and safe for zero-downtime deploys
+- Flag any `DROP`, `TRUNCATE`, or destructive DDL in migrations
+- Assign `data-integrity-guardian` if any SQL changes are present
+
+### LLM Trust Boundaries
+If the diff involves LLM/AI integration (prompt construction, tool use, agent orchestration):
+- Check that user input is never directly interpolated into prompts without sanitization
+- Verify tool call results are validated before use (treat LLM output as untrusted)
+- Look for prompt injection vectors in user-facing inputs
+- Check that system prompts are not exposed or leakable
+- Assign `security-sentinel` with focus on LLM trust boundaries if AI code is present
+
 Fall back to built-in agent types (e.g. `backend-developer`, `frontend-developer`, `code-reviewer`) if no catalog agent fits the changed files.
 
 ## Rules
@@ -54,6 +74,6 @@ Output only valid JSON — no explanation, no markdown fence:
 
 [
   {"agent": "kieran-typescript-reviewer", "focus": "type safety, async/await patterns, React hook dependencies"},
-  {"agent": "security-sentinel", "focus": "JWT validation, SQL query construction, user input sanitization"},
+  {"agent": "security-sentinel", "focus": "JWT validation, SQL query construction, user input sanitization, LLM trust boundaries"},
   {"agent": "performance-oracle", "focus": "database query efficiency, response caching, unnecessary re-renders"}
 ]

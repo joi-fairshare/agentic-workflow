@@ -2,14 +2,35 @@
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with four independent components: a set of custom skills for multi-agent PR review, a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication, and a Next.js 15 conversation dashboard UI. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. The UI connects to the bridge REST API and receives real-time updates via SSE.
+Agentic Workflow is a portable Claude Code toolkit with four independent components: 14 custom skills spanning the full development lifecycle (planning, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication, a Next.js 15 conversation dashboard UI, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. The UI connects to the bridge REST API and receives real-time updates via SSE.
 
 ```mermaid
 graph TD
-    subgraph "Claude Code Session"
+    subgraph "Claude Code Session — Planning"
+        User --> |"/officeHours"| OfficeHours[officeHours skill]
+        User --> |"/productReview"| ProductReview[productReview skill]
+        User --> |"/archReview"| ArchReview[archReview skill]
+    end
+
+    subgraph "Claude Code Session — Review"
         User --> |"/review 42"| Review[review skill]
         User --> |"/postReview"| PostReview[postReview skill]
         User --> |"/addressReview"| AddressReview[addressReview skill]
+    end
+
+    subgraph "Claude Code Session — QA & Debug"
+        User --> |"/rootCause"| RootCause[rootCause skill]
+        User --> |"/bugHunt"| BugHunt[bugHunt skill]
+        User --> |"/bugReport"| BugReport[bugReport skill]
+    end
+
+    subgraph "Claude Code Session — Ship & Retro"
+        User --> |"/shipRelease"| ShipRelease[shipRelease skill]
+        User --> |"/syncDocs"| SyncDocs[syncDocs skill]
+        User --> |"/weeklyRetro"| WeeklyRetro[weeklyRetro skill]
+    end
+
+    subgraph "Claude Code Session — Utilities"
         User --> |"/enhancePrompt"| EnhancePrompt[enhancePrompt skill]
         User --> |"/bootstrap"| Bootstrap[bootstrap skill]
     end
@@ -17,15 +38,24 @@ graph TD
     Review --> |"gh pr diff"| GitHub
     Review --> |"Agent tool"| Triage[Triage Subagent]
     Triage --> Reviewers[Parallel Reviewer Subagents]
-    Reviewers --> StateFile[".review-cache/{pr}.json"]
 
-    PostReview --> StateFile
+    OfficeHours --> OutputDir
+    ProductReview --> OutputDir
+    ArchReview --> OutputDir
+    Reviewers --> OutputDir
+    RootCause --> OutputDir
+    BugHunt --> OutputDir
+    BugReport --> OutputDir
+    ShipRelease --> OutputDir
+    SyncDocs --> OutputDir
+    WeeklyRetro --> OutputDir
+
+    OutputDir["~/.agentic-workflow/repo-slug/"]
+
     PostReview --> |"gh api"| GitHub
-
-    AddressReview --> StateFile
-    AddressReview --> |"Agent tool"| ImplTriage[Address Triage Subagent]
-    ImplTriage --> Implementers[Parallel Implementer Subagents]
+    AddressReview --> |"Agent tool"| Implementers[Parallel Implementer Subagents]
     Implementers --> |"git push"| GitHub
+    ShipRelease --> |"gh pr create"| GitHub
 
     subgraph "MCP Bridge"
         MCP[mcp.ts — stdio] --> Services[Application Services]
@@ -44,23 +74,52 @@ graph TD
     Review -.-> |"send_context / assign_task"| MCP
 ```
 
+### Skill Pipeline
+
+Skills are designed to flow into each other in a natural development lifecycle:
+
+```
+officeHours → productReview / archReview → implement → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
+```
+
+Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream skills auto-discover.
+
 ## Directory Tree
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills
+├── skills/                              # Claude Code custom slash-command skills (14)
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
 │   │   └── reviewer-prompt.md           #   subagent prompt: domain-specific code review
 │   ├── postReview/                      # /postReview — publish findings to GitHub
-│   │   └── SKILL.md                     #   reads .review-cache, posts batched PR reviews
+│   │   └── SKILL.md                     #   reads review state, posts batched PR reviews
 │   ├── addressReview/                   # /addressReview — implement review fixes
 │   │   ├── SKILL.md                     #   orchestrator: triage → parallel implementers
 │   │   ├── address-triage-prompt.md     #   subagent prompt: group issues → impl agents
 │   │   └── implementer-prompt.md        #   subagent prompt: fix code, commit, reply
-│   └── enhancePrompt/                   # /enhancePrompt — context-aware prompt rewriter
-│       └── SKILL.md                     #   discovers docs, enriches user prompt
+│   ├── enhancePrompt/                   # /enhancePrompt — context-aware prompt rewriter
+│   │   └── SKILL.md                     #   discovers docs, enriches user prompt
+│   ├── rootCause/                       # /rootCause — 4-phase systematic debugging
+│   │   └── SKILL.md                     #   investigate → analyze → hypothesize → implement
+│   ├── bugHunt/                         # /bugHunt — fix-and-verify loop
+│   │   └── SKILL.md                     #   3 tiers, atomic commits, regression tests
+│   ├── bugReport/                       # /bugReport — read-only health audit
+│   │   └── SKILL.md                     #   health scores, bug classification, no fixes
+│   ├── shipRelease/                     # /shipRelease — sync, test, push, PR
+│   │   └── SKILL.md                     #   pre-flight → sync → test → push → PR → syncDocs
+│   ├── syncDocs/                        # /syncDocs — post-ship doc updater
+│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md
+│   ├── weeklyRetro/                     # /weeklyRetro — weekly retrospective
+│   │   └── SKILL.md                     #   per-person breakdown, shipping streaks, insights
+│   ├── officeHours/                     # /officeHours — YC-style brainstorming
+│   │   └── SKILL.md                     #   6 forcing questions → design doc
+│   ├── productReview/                   # /productReview — founder/product lens review
+│   │   └── SKILL.md                     #   4 modes: mvp, growth, scale, pivot
+│   ├── archReview/                      # /archReview — engineering architecture review
+│   │   └── SKILL.md                     #   mandatory diagrams, edge case analysis
+│   └── _preamble.md                     # Shared preamble reference (not a skill)
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
 ├── config/                              # Claude Code configuration archive
@@ -118,26 +177,64 @@ agentic-workflow/
 │           ├── api.ts                 #   Fetch wrappers: fetchConversations, fetchMessages, fetchTasks
 │           ├── diagrams.ts            #   Mermaid builders: buildDirectedGraph, buildSequenceDiagram
 │           └── types.ts               #   TypeScript types mirroring bridge schemas
-├── setup.sh                            # One-command installer: symlinks skills, copies config, npm install
+├── setup.sh                            # One-command installer: symlinks 14 skills, copies config, creates output dir
 ├── .gitignore                          # Ignores node_modules, dist, *.db, .env, .review-cache
 └── README.md                           # Project overview, setup instructions, env vars
 ```
+
+### Centralized Output Directory
+
+```
+~/.agentic-workflow/<repo-slug>/
+├── reviews/          # /review, /postReview, /addressReview state files
+├── investigations/   # /rootCause investigation reports
+├── qa/               # /bugHunt and /bugReport reports
+├── plans/            # /officeHours, /productReview, /archReview design docs
+├── releases/         # /shipRelease and /syncDocs reports
+└── retros/           # /weeklyRetro retrospectives
+```
+
+The repo slug is derived from `git remote get-url origin` (e.g., `org-name-repo-name`), falling back to the directory name. This directory persists across sessions and branches, enabling cross-skill artifact discovery.
 
 ## Component 1: Skills (skills/, bootstrap/)
 
 ### Overview
 
-Five Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access.
+Fourteen Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 14 skills, points to the centralized output directory, and checks bootstrap status.
 
-### Review Pipeline (skills/review/)
+### Review Pipeline (skills/review/, postReview/, addressReview/)
 
-A three-phase PR review workflow with a shared state file (`.review-cache/{number}.json`) as the coordination mechanism:
+A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/<repo-slug>/reviews/{number}.json`) as the coordination mechanism:
 
-**Phase 1 — `/review`:** Fetches PR diff and metadata via `gh`, spawns a triage subagent to classify changed files into domain-specific reviewer assignments (from a catalog of 12+ specialist agents like `security-sentinel`, `kieran-typescript-reviewer`, `performance-oracle`). All reviewers run in parallel via the `Agent` tool. Each returns structured JSON with severity-tagged issues (`blocking`, `issue`, `suggestion`, `nit`) including `diff_position` for inline placement. Results are written to `.review-cache/{number}.json`.
+**Phase 1 — `/review`:** Fetches PR diff and metadata via `gh`, spawns a triage subagent to classify changed files into domain-specific reviewer assignments (from a catalog of 12+ specialist agents like `security-sentinel`, `kieran-typescript-reviewer`, `performance-oracle`). Triage includes SQL safety checks and LLM trust boundary analysis. All reviewers run in parallel via the `Agent` tool. Each returns structured JSON with severity-tagged issues (`blocking`, `issue`, `suggestion`, `nit`) including `diff_position` for inline placement. Results are written to the reviews directory.
 
 **Phase 2 — `/postReview`:** Reads the state file and publishes findings to GitHub as batched PR reviews (one `gh api` call per reviewer agent). Captures posted comment IDs back into the state file. Marks `posted: true`.
 
 **Phase 3 — `/addressReview`:** Reads the state file, fetches any new human comments from GitHub since `reviewed_at`, runs an address-triage subagent to group all unresolved issues by implementation concern, then spawns parallel implementer subagents. Implementers fix code, commit, push, and reply to every comment. The state file is updated with `addressed: true` and commit SHAs. Can be re-run iteratively.
+
+### Investigation & QA (skills/rootCause/, bugHunt/, bugReport/)
+
+**`/rootCause`** — 4-phase systematic debugging: investigate (reproduce), analyze (read source, map call chain), hypothesize (rank 2-3 causes), implement (fix and verify). Auto-freezes scope to the module boundary after analysis to prevent scope creep. Writes investigation report to `investigations/`.
+
+**`/bugHunt`** — Fix-and-verify loop with 3 tiers (quick: lint+typecheck, standard: unit+integration, exhaustive: full suite). Makes atomic commits for fixes and regression tests. Retries up to 3 times on verification failure. Writes QA report to `qa/`.
+
+**`/bugReport`** — Read-only health audit. Runs linters, typecheckers, and test suites, classifying findings as bug/tech-debt/test-gap/false-positive. Computes health scores (test 40%, type 30%, lint 30%). Never modifies source code. Writes audit report to `qa/`.
+
+### Release & Retro (skills/shipRelease/, syncDocs/, weeklyRetro/)
+
+**`/shipRelease`** — Pre-flight checks (clean tree, branch exists), fetch and rebase on base, run tests, audit coverage, push, open PR via `gh`, then auto-invoke `/syncDocs`. Writes release report to `releases/`.
+
+**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, and CLAUDE.md with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
+
+**`/weeklyRetro`** — Analyzes git history for per-person breakdowns (commits, lines, areas of activity), shipping streaks, test health trends, and generates actionable insights. Compares to previous retros if available. Writes retrospective to `retros/`.
+
+### Planning (skills/officeHours/, productReview/, archReview/)
+
+**`/officeHours`** — YC-style brainstorming with 6 forcing questions (problem, user, current state, unfair advantage, smallest version, success metrics). Outputs a structured design doc to `plans/`.
+
+**`/productReview`** — Founder/product lens review with 4 scope modes: MVP (cut scope), Growth (growth levers, retention), Scale (operational bottlenecks, unit economics), Pivot (what to kill, adjacent opportunities). Delivers SHIP/ITERATE/RETHINK verdict. Writes to `plans/`.
+
+**`/archReview`** — Engineering architecture review with mandatory mermaid diagrams (component, data flow, sequence). Edge case analysis at every component boundary. Scores complexity, scalability, maintainability (1-10). Delivers SOUND/NEEDS WORK/REDESIGN verdict. Writes to `plans/`.
 
 ### Prompt Enhancer (skills/enhancePrompt/)
 
@@ -145,7 +242,7 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a CLAUDE.md for any repository. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a CLAUDE.md for any repository. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 14-skill pipeline as next steps.
 
 ## Component 2: MCP Bridge (mcp-bridge/)
 
@@ -236,24 +333,28 @@ Archived Claude Code configuration for replication across machines:
 
 1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt — Claude Code executes it step-by-step. No runtime code, no build step.
 
-2. **The review state file is the coordination contract.** `.review-cache/{number}.json` is the single source of truth shared across `/review`, `/postReview`, and `/addressReview`. All three skills read and write this file. It tracks per-issue metadata: severity, diff position, addressed status, posted comment IDs.
+2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
+3. **Every skill includes the shared preamble.** The preamble lists all 14 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built). If not bootstrapped, it prompts the user to run `setup.sh`.
 
-4. **Type safety flows from Zod schemas through to handlers.** The `defineRoute<TSchema>()` generic captures the schema type, so `handler(req: ApiRequest<TSchema>)` gets fully inferred `params`, `query`, and `body` types. Schemas are defined once and shared between validation and type inference.
+4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 
-5. **Multi-step writes are transactional.** `assignTask` (task + message insert) and `reportStatus` (message + task update) wrap their operations in `db.transaction()`. `getUnreadMessages` atomically fetches and marks messages read.
+5. **Type safety flows from Zod schemas through to handlers.** The `defineRoute<TSchema>()` generic captures the schema type, so `handler(req: ApiRequest<TSchema>)` gets fully inferred `params`, `query`, and `body` types. Schemas are defined once and shared between validation and type inference.
 
-6. **The bridge has no authentication.** The REST API binds to loopback only (`127.0.0.1`) by default and exits with an error if a non-loopback host is configured without `ALLOW_REMOTE=1`. This is a deliberate design choice for local-only multi-agent coordination.
+6. **Multi-step writes are transactional.** `assignTask` (task + message insert) and `reportStatus` (message + task update) wrap their operations in `db.transaction()`. `getUnreadMessages` atomically fetches and marks messages read.
 
-7. **Subagents run in parallel via the Agent tool.** Both `/review` (reviewer subagents) and `/addressReview` (implementer subagents) spawn all agents simultaneously in a single message. Triage always runs sequentially first to determine the agent assignments.
+7. **The bridge has no authentication.** The REST API binds to loopback only (`127.0.0.1`) by default and exits with an error if a non-loopback host is configured without `ALLOW_REMOTE=1`. This is a deliberate design choice for local-only multi-agent coordination.
 
-8. **Setup is symlink-based.** `setup.sh` creates symlinks from `~/.claude/skills/` into this repo rather than copying files. Changes to skill definitions take effect immediately without re-running setup.
+8. **Subagents run in parallel via the Agent tool.** Both `/review` (reviewer subagents) and `/addressReview` (implementer subagents) spawn all agents simultaneously in a single message. Triage always runs sequentially first to determine the agent assignments.
 
-9. **The MCP server and REST API share identical business logic.** `mcp.ts` calls the same four service functions as the Fastify controllers. The only difference is transport: stdio with `resultToContent()` formatting vs. HTTP with `ApiResponse<T>` envelopes.
+9. **Setup is symlink-based.** `setup.sh` creates symlinks from `~/.claude/skills/` into this repo rather than copying files. Changes to skill definitions take effect immediately without re-running setup. Setup also creates the `~/.agentic-workflow/` base directory.
 
-10. **SQLite is configured for concurrent access.** WAL journal mode is enabled on database creation, allowing multiple readers alongside a single writer — suitable for the bridge's pattern of multiple agents polling for unread messages.
+10. **The MCP server and REST API share identical business logic.** `mcp.ts` calls the same four service functions as the Fastify controllers. The only difference is transport: stdio with `resultToContent()` formatting vs. HTTP with `ApiResponse<T>` envelopes.
 
-11. **SSE uses an in-process EventBus, not polling.** The `GET /events` route registers a client handler with the EventBus. Controllers emit events after successful writes. No database polling occurs — events are synchronously emitted in the same process. Heartbeat comments (`:heartbeat`) are sent every 30 seconds to keep connections alive through proxies.
+11. **SQLite is configured for concurrent access.** WAL journal mode is enabled on database creation, allowing multiple readers alongside a single writer — suitable for the bridge's pattern of multiple agents polling for unread messages.
 
-12. **The UI is a read-only observer.** The Next.js dashboard only makes GET requests to the bridge (plus the SSE stream). All writes go through MCP tools or direct REST calls from agents. The UI has no write path.
+12. **SSE uses an in-process EventBus, not polling.** The `GET /events` route registers a client handler with the EventBus. Controllers emit events after successful writes. No database polling occurs — events are synchronously emitted in the same process. Heartbeat comments (`:heartbeat`) are sent every 30 seconds to keep connections alive through proxies.
+
+13. **The UI is a read-only observer.** The Next.js dashboard only makes GET requests to the bridge (plus the SSE stream). All writes go through MCP tools or direct REST calls from agents. The UI has no write path.
+
+14. **Zero telemetry.** No session tracking, no analytics logging, no external service calls. Skills do not phone home. All data stays local.

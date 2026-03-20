@@ -1,9 +1,67 @@
 ---
 name: postReview
-description: Publish a completed /review to GitHub as batched PR comments. Reads from .review-cache/<pr>.json and posts one review per agent (minimizing API calls). Use after /review has written a local state file and you are ready to publish.
+description: Publish a completed /review to GitHub as batched PR comments. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json and posts one review per agent (minimizing API calls). Use after /review has written a local state file and you are ready to publish.
 argument-hint: [pr-number]
 disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Read, Edit
+---
+
+> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+>
+> | Skill | Purpose |
+> |-------|---------|
+> | `/review` | Multi-agent PR code review |
+> | `/postReview` | Publish review findings to GitHub |
+> | `/addressReview` | Implement review fixes in parallel |
+> | `/enhancePrompt` | Context-aware prompt rewriter |
+> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
+> | `/rootCause` | 4-phase systematic debugging |
+> | `/bugHunt` | Fix-and-verify loop with regression tests |
+> | `/bugReport` | Structured bug report with health scores |
+> | `/shipRelease` | Sync, test, push, open PR |
+> | `/syncDocs` | Post-ship doc updater |
+> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
+> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/productReview` | Founder/product lens plan review |
+> | `/archReview` | Engineering architecture plan review |
+>
+> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+
+## Preamble — Bootstrap Check
+
+Before running this skill, verify the environment is set up:
+
+```bash
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [ -n "$REMOTE_URL" ]; then
+  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
+else
+  REPO_SLUG=$(basename "$(pwd)")
+fi
+echo "repo-slug: $REPO_SLUG"
+
+SKILLS_OK=true
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview; do
+  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+done
+
+BRIDGE_OK=false
+[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+
+echo "skills-symlinked: $SKILLS_OK"
+echo "bridge-built: $BRIDGE_OK"
+```
+
+If either check fails, ask the user via AskUserQuestion:
+> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
+
+If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
+If **no**: warn that some features may not work, then continue.
+
+```bash
+mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"
+```
+
 ---
 
 # Post Review to GitHub
@@ -23,7 +81,7 @@ If multiple PRs found, list and ask the user to pick.
 
 ## Step 2: Load State File
 
-Read `.review-cache/{number}.json`.
+Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
 
 If the file does not exist:
 > "No local review found for PR #{number}. Run `/review` first."
@@ -102,7 +160,7 @@ Store each returned comment ID back against the issue in the state file (`posted
 
 ## Step 4: Update State File
 
-After all reviews are posted, update `.review-cache/{number}.json`:
+After all reviews are posted, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
 - Set `"posted": true`
 - Set `"posted_at"` to current ISO timestamp
 - Fill in `posted_comment_id` for each issue
