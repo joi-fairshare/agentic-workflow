@@ -3,17 +3,10 @@
 import { useEffect, useRef, useState, useId } from "react";
 
 interface DiagramRendererProps {
-  /** Mermaid diagram definition string */
   definition: string;
-  /** Optional CSS class for the container */
   className?: string;
 }
 
-/**
- * Renders a Mermaid diagram from a definition string.
- * Abstracts the rendering library — swap Mermaid for another
- * renderer by changing only this component.
- */
 export function DiagramRenderer({ definition, className }: DiagramRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +19,73 @@ export function DiagramRenderer({ definition, className }: DiagramRendererProps)
 
     async function render() {
       try {
-        // Dynamic import to avoid SSR issues
         const mermaid = (await import("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
-          theme: "dark",
+          theme: "base",
           securityLevel: "strict",
+          themeVariables: {
+            // Core
+            primaryColor: "rgba(124, 106, 245, 0.12)",
+            primaryBorderColor: "rgba(124, 106, 245, 0.30)",
+            primaryTextColor: "#FFFFFF",
+            secondaryColor: "rgba(232, 160, 32, 0.12)",
+            secondaryBorderColor: "rgba(232, 160, 32, 0.30)",
+            secondaryTextColor: "#FFFFFF",
+            tertiaryColor: "#222226",
+            tertiaryBorderColor: "rgba(255, 255, 255, 0.08)",
+            tertiaryTextColor: "#FFFFFF",
+            lineColor: "#7C6AF5",
+            textColor: "#FFFFFF",
+            mainBkg: "#1A1A1C",
+            nodeBorder: "rgba(124, 106, 245, 0.30)",
+            clusterBkg: "#222226",
+            clusterBorder: "rgba(255, 255, 255, 0.08)",
+            titleColor: "#FFFFFF",
+            edgeLabelBackground: "#1A1A1C",
+            nodeTextColor: "#FFFFFF",
+            // Sequence diagram
+            actorBkg: "rgba(124, 106, 245, 0.12)",
+            actorBorder: "rgba(124, 106, 245, 0.30)",
+            actorTextColor: "#FFFFFF",
+            actorLineColor: "rgba(255, 255, 255, 0.08)",
+            signalColor: "#71717A",
+            signalTextColor: "#FFFFFF",
+            labelBoxBkgColor: "#1A1A1C",
+            labelBoxBorderColor: "rgba(255, 255, 255, 0.08)",
+            labelTextColor: "#FFFFFF",
+            loopTextColor: "#71717A",
+            activationBorderColor: "#7C6AF5",
+            activationBkgColor: "rgba(124, 106, 245, 0.12)",
+            sequenceNumberColor: "#0D0D0F",
+            noteBkgColor: "rgba(232, 160, 32, 0.12)",
+            noteBorderColor: "rgba(232, 160, 32, 0.30)",
+            noteTextColor: "#FFFFFF",
+            // Flowchart
+            background: "#0D0D0F",
+            fontFamily: "Space Grotesk, system-ui, sans-serif",
+            fontSize: "15px",
+          },
+          flowchart: {
+            htmlLabels: true,
+            curve: "basis",
+            padding: 16,
+            nodeSpacing: 40,
+            rankSpacing: 50,
+          },
+          sequence: {
+            diagramMarginX: 16,
+            diagramMarginY: 16,
+            actorMargin: 60,
+            width: 140,
+            height: 44,
+            boxMargin: 8,
+            boxTextMargin: 8,
+            noteMargin: 12,
+            messageMargin: 40,
+            mirrorActors: false,
+            useMaxWidth: true,
+          },
         });
 
         const { svg } = await mermaid.render(`diagram${uniqueId}`, definition);
@@ -47,14 +101,12 @@ export function DiagramRenderer({ definition, className }: DiagramRendererProps)
     }
 
     render();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [definition, uniqueId]);
 
   if (error) {
     return (
-      <div className={`text-red-400 bg-red-950/20 p-4 rounded text-sm ${className ?? ""}`}>
+      <div className={`text-error bg-error-dim p-4 rounded-xs text-sm ${className ?? ""}`}>
         Diagram error: {error}
       </div>
     );
