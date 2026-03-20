@@ -50,7 +50,8 @@ agentic-workflow/
 │       │   └── client.ts      # DbClient interface (prepared statements, no SQL injection)
 │       ├── transport/         # Typed router, Zod schemas, controllers
 │       │   ├── types.ts       # RouteSchema, defineRoute<TSchema>()
-│       │   └── schemas/       # Zod schemas for messages, tasks, and conversations
+│       │   ├── schemas/       # Zod schemas for messages, tasks, and conversations
+│       │   └── controllers/   # Controller factories (message, task, conversation)
 │       ├── routes/            # Route factories (wire schemas → handlers)
 │       │   ├── messages.ts    # POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
 │       │   ├── tasks.ts       # POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report

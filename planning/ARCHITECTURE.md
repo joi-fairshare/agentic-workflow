@@ -78,9 +78,11 @@ agentic-workflow/
 │       │   └── client.ts               #   DbClient interface — prepared statements, transactions
 │       ├── application/
 │       │   ├── result.ts               #   AppResult<T> discriminated union (ok/err, never throws)
+│       │   ├── events.ts               #   EventBus factory — pub/sub (message:created, task:created, task:updated)
 │       │   └── services/
 │       │       ├── send-context.ts     #   Insert a "context" message into a conversation
 │       │       ├── get-messages.ts     #   Fetch by conversation; fetch unread + mark-read (atomic)
+│       │       ├── get-conversations.ts #   Get paginated conversation summaries
 │       │       ├── assign-task.ts      #   Insert task + notification message (transactional)
 │       │       └── report-status.ts    #   Insert status message + update task (transactional)
 │       ├── transport/
@@ -88,10 +90,12 @@ agentic-workflow/
 │       │   ├── schemas/
 │       │   │   ├── common.ts          #   Shared Zod schemas: IdParams, ConversationParams, RecipientQuery
 │       │   │   ├── message-schemas.ts #   SendContext, GetMessages, GetUnread request/response schemas
-│       │   │   └── task-schemas.ts    #   AssignTask, GetTask, GetTasksByConversation, ReportStatus schemas
+│       │   │   ├── task-schemas.ts    #   AssignTask, GetTask, GetTasksByConversation, ReportStatus schemas
+│       │   │   └── conversation-schemas.ts  #   Zod schemas for conversation list request/response
 │       │   └── controllers/
-│       │       ├── message-controller.ts  #   Delegates to message services, maps AppResult → ApiResponse
-│       │       └── task-controller.ts     #   Delegates to task services, maps AppResult → ApiResponse
+│       │       ├── message-controller.ts      #   Delegates to message services, maps AppResult → ApiResponse
+│       │       ├── task-controller.ts         #   Delegates to task services, maps AppResult → ApiResponse
+│       │       └── conversation-controller.ts #   Delegates to conversation service, maps AppResult → ApiResponse
 │       └── routes/
 │           ├── messages.ts            #   POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
 │           ├── tasks.ts               #   POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
