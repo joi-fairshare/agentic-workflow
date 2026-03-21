@@ -306,12 +306,12 @@ if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
     [ -d "$skill_dir" ] || continue
     skill_name=$(basename "$skill_dir")
     target="$CLAUDE_DIR/skills/$skill_name"
-    if [ -d "$target" ] || [ -L "$target" ]; then
-      echo "  impeccable/$skill_name: already exists, skipping"
-    else
-      cp -r "$skill_dir" "$target"
-      echo "  impeccable/$skill_name: installed"
-    fi
+    # Always copy from cache (overwrite existing) — content is deterministic because
+    # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
+    [ -L "$target" ] && rm "$target"
+    [ -d "$target" ] && rm -rf "$target"
+    cp -r "$skill_dir" "$target"
+    echo "  impeccable/$skill_name: installed"
   done
 else
   echo "  impeccable: skipped (source not available)"

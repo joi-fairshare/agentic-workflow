@@ -136,20 +136,26 @@ When an HTML source exists for a mockup, always use it as the primary reference.
 
 ## Step 3: Generate Token Files
 
-Use the Design Token Bridge MCP to convert `design-tokens.json` into platform-specific files.
+Convert `design-tokens.json` into platform-specific files using the Design Token Bridge.
+
+**Invocation strategy — try MCP tools first, fall back to npx CLI:**
+
+1. **MCP tools (preferred):** If the Design Token Bridge MCP server is available (i.e., it appears in the active MCP server list as `design-token-bridge`), call its tools directly using the `mcp__design-token-bridge__<tool>` form. Direct MCP invocation is faster, avoids spawning a subprocess, and is the architecturally correct path when the server is already registered.
+
+2. **npx CLI (fallback):** If the MCP server is not available, shell out via `Bash(npx design-token-bridge-mcp <command>)`. This works without any prior server registration and is the safe fallback for environments where the MCP server has not been configured.
 
 ### For `web` target:
 
-Call these MCP tools:
-1. `generate_css_variables` — produces `tokens.css` (CSS custom properties with dark mode variants)
-2. `generate_tailwind_config` — produces `tailwind.preset.js` (Tailwind preset using token values)
+Call (or shell out to) these tools in order:
+1. `mcp__design-token-bridge__generate_css_variables` / `npx design-token-bridge-mcp generate-css-variables` — produces `tokens.css` (CSS custom properties with dark mode variants)
+2. `mcp__design-token-bridge__generate_tailwind_config` / `npx design-token-bridge-mcp generate-tailwind-config` — produces `tailwind.preset.js` (Tailwind preset using token values)
 
 Both files are written to the project root.
 
 ### For `swiftui` target:
 
-Call this MCP tool:
-1. `generate_swiftui_theme` — produces `Theme.swift` (Color, Font, Spacing extensions)
+Call (or shell out to) this tool:
+1. `mcp__design-token-bridge__generate_swiftui_theme` / `npx design-token-bridge-mcp generate-swiftui-theme` — produces `Theme.swift` (Color, Font, Spacing extensions)
 
 Written to the project root.
 
