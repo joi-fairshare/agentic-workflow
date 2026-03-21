@@ -3,7 +3,7 @@ name: design-refine
 description: Dispatch Impeccable refinement commands (colorize, animate, polish, typeset, arrange, etc.) with design language context pre-loaded. Suggests which refinements would help most if no command specified.
 argument-hint: "[impeccable-command]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Skill, Glob
+allowed-tools: Read, Write, Edit, Skill, Glob, AskUserQuestion
 ---
 
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
