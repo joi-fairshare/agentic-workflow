@@ -171,8 +171,11 @@ function scanAndLinkReferences(
               auto: true,
             });
             refsCreated++;
-          } catch {
-            // Edge already exists (unique constraint) — skip
+          } catch (error) {
+            // UNIQUE constraint violations are expected for duplicate edges — skip silently
+            if (!(error instanceof Error) || !error.message.includes("UNIQUE constraint")) {
+              console.error("Unexpected error inserting reference edge:", (error as Error).message ?? error);
+            }
           }
         }
       }
@@ -197,8 +200,11 @@ function scanAndLinkReferences(
             auto: true,
           });
           refsCreated++;
-        } catch {
-          // Edge already exists — skip
+        } catch (error) {
+          // UNIQUE constraint violations are expected for duplicate edges — skip silently
+          if (!(error instanceof Error) || !error.message.includes("UNIQUE constraint")) {
+            console.error("Unexpected error inserting PR reference edge:", (error as Error).message ?? error);
+          }
         }
       }
     }
@@ -227,9 +233,10 @@ export async function ingestGitMetadata(
     try {
       commits = runGitLog(repoPath, since);
     } catch (e) {
+      console.error("git log failed:", e instanceof Error ? e.message : String(e));
       return err({
         code: "GIT_ERROR",
-        message: `Failed to run git log: ${e instanceof Error ? e.message : String(e)}`,
+        message: "Failed to run git log for the specified repository",
         statusHint: 500,
       });
     }
@@ -311,9 +318,10 @@ export async function ingestGitMetadata(
 
     return ok({ commits_ingested: commitsIngested, prs_ingested: prsIngested, references_created: refsCreated });
   } catch (e) {
+    console.error("Git ingestion failed:", e instanceof Error ? e.message : String(e));
     return err({
       code: "INGEST_ERROR",
-      message: `Git ingestion failed: ${e instanceof Error ? e.message : String(e)}`,
+      message: "Git ingestion failed due to an internal error",
       statusHint: 500,
     });
   }

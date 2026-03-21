@@ -21,6 +21,11 @@ export interface TranscriptRecord {
   parentUuid: string | null;
   content: string;
   timestamp: string | null;
+  /**
+   * Full parsed JSON for debugging. WARNING: This field may contain secrets
+   * from the original transcript and MUST NOT be persisted to the database.
+   * Always pass through SecretFilter.redact() before any storage or logging.
+   */
   raw: Record<string, unknown>;
 }
 

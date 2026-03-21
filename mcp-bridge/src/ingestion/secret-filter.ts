@@ -10,6 +10,10 @@ interface SecretPattern {
 const SECRET_PATTERNS: SecretPattern[] = [
   // AWS access keys
   { name: "aws-key", pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  // AWS secret access keys
+  { name: "aws-secret", pattern: /(?:aws)?_?secret_?access_?key.*?['"]?\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}/gi },
+  // Slack tokens
+  { name: "slack-token", pattern: /\bxox[bpas]-[0-9a-zA-Z-]+/g },
   // GitHub tokens
   { name: "github-token", pattern: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b/g },
   // Anthropic API keys
@@ -18,8 +22,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
   { name: "sk-key", pattern: /\bsk-[A-Za-z0-9]{20,}\b/g },
   // Bearer tokens
   { name: "bearer", pattern: /Bearer\s+[A-Za-z0-9\-._~+\/]+=*/g },
-  // PEM private keys
-  { name: "pem-key", pattern: /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----/g },
+  // PEM private keys (RSA, EC, OPENSSH, DSA, generic)
+  { name: "pem-key", pattern: /-----BEGIN\s+(?:RSA\s+|EC\s+|OPENSSH\s+|DSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+|EC\s+|OPENSSH\s+|DSA\s+)?PRIVATE\s+KEY-----/g },
   // Connection strings with credentials
   { name: "connection-string", pattern: /\b(?:postgres|mysql|mongodb|redis|amqp)(?:ql)?:\/\/[^\s'"]+/g },
   // Password fields (key=value or key: value)

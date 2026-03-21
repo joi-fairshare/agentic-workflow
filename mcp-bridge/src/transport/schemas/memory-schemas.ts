@@ -55,7 +55,7 @@ export const SearchMemoryQuerySchema = z.object({
   repo: z.string(),
   mode: z.enum(["semantic", "keyword", "hybrid"]).default("hybrid"),
   kinds: z.string().optional(),
-  limit: z.coerce.number().default(20),
+  limit: z.coerce.number().min(1).max(100).default(20),
 });
 export type SearchMemoryQuery = z.infer<typeof SearchMemoryQuerySchema>;
 
@@ -96,8 +96,8 @@ export type TraverseParams = z.infer<typeof TraverseParamsSchema>;
 export const TraverseQuerySchema = z.object({
   direction: z.enum(["outgoing", "incoming", "both"]).default("both"),
   edge_kinds: z.string().optional(),
-  max_depth: z.coerce.number().default(3),
-  max_nodes: z.coerce.number().default(50),
+  max_depth: z.coerce.number().min(1).max(10).default(3),
+  max_nodes: z.coerce.number().min(1).max(200).default(50),
 });
 export type TraverseQuery = z.infer<typeof TraverseQuerySchema>;
 
@@ -121,7 +121,7 @@ export const ContextQuerySchema = z.object({
   query: z.string().optional(),
   node_id: z.string().optional(),
   repo: z.string(),
-  max_tokens: z.coerce.number().default(8000),
+  max_tokens: z.coerce.number().min(1).max(32000).default(8000),
 });
 export type ContextQuery = z.infer<typeof ContextQuerySchema>;
 
