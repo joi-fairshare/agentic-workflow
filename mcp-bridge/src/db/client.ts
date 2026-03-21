@@ -39,6 +39,7 @@ export interface ConversationSummary {
 
 export interface DbClient {
   insertMessage(msg: Omit<MessageRow, "id" | "created_at" | "read_at">): MessageRow;
+  getMessage(id: string): MessageRow | undefined;
   getMessagesByConversation(conversation: string): MessageRow[];
   getUnreadMessages(recipient: string): MessageRow[];
   markRead(id: string): void;
@@ -58,6 +59,10 @@ export function createDbClient(db: Database.Database): DbClient {
     insertMessage: db.prepare(`
       INSERT INTO messages (id, conversation, sender, recipient, kind, payload, meta_prompt)
       VALUES (@id, @conversation, @sender, @recipient, @kind, @payload, @meta_prompt)
+    `),
+
+    getMessage: db.prepare(`
+      SELECT * FROM messages WHERE id = @id
     `),
 
     getByConversation: db.prepare(`
@@ -127,6 +132,10 @@ export function createDbClient(db: Database.Database): DbClient {
       };
       stmts.insertMessage.run(row);
       return row;
+    },
+
+    getMessage(id) {
+      return stmts.getMessage.get({ id }) as MessageRow | undefined;
     },
 
     getMessagesByConversation(conversation) {

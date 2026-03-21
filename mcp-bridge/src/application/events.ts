@@ -3,7 +3,8 @@
 export type BridgeEvent =
   | { type: "message:created"; data: { id: string; conversation: string } }
   | { type: "task:created"; data: { id: string; conversation: string } }
-  | { type: "task:updated"; data: { id: string; conversation: string; status: string } };
+  | { type: "task:updated"; data: { id: string; conversation: string; status: string } }
+  | { type: "memory:ingestion_dropped"; data: { reason: string } };
 
 export type EventHandler = (event: BridgeEvent) => void;
 

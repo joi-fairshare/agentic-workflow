@@ -1,6 +1,6 @@
 # CLAUDE.md — agentic-workflow
 
-> Portable Claude Code workflow toolkit: 21 custom skills, config archive, repo bootstrapper, and a bidirectional MCP bridge for multi-agent communication.
+> Portable Claude Code workflow toolkit: 21 custom skills, config archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, and a conversation memory system with graph-based retrieval.
 
 ## Required Context
 
@@ -23,6 +23,8 @@ Read before making changes:
 | HTTP (bridge) | Fastify 5 |
 | HTTP (UI) | Next.js 15 App Router |
 | Database | SQLite via better-sqlite3, WAL mode |
+| Vector search | sqlite-vec (KNN over node embeddings) |
+| Embeddings | @xenova/transformers (768-dim, lazy-loaded) |
 | MCP | @modelcontextprotocol/sdk (stdio transport) |
 | Validation | Zod 3 |
 | Test | Vitest (in-memory SQLite) |
@@ -61,6 +63,8 @@ All skills are slash commands invoked inside Claude Code sessions. They are inst
 ```
 officeHours → productReview / archReview
     → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
+                                       ^
+                              design-evolve (anytime)
     → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
 ```
 
@@ -123,28 +127,44 @@ agentic-workflow/
 │       ├── application/       # AppResult<T> pattern, service functions (never throw)
 │       │   ├── result.ts      # ok<T>(), err<T>(), AppError, AppResult<T>
 │       │   ├── events.ts      # EventBus factory — pub/sub (message:created, task:created, task:updated)
-│       │   └── services/      # Business logic — pure functions taking DbClient
+│       │   └── services/      # Business logic — pure functions taking DbClient or MemoryDbClient
+│       │       ├── search-memory.ts    # Hybrid search (FTS5 + KNN + RRF fusion)
+│       │       ├── traverse-memory.ts  # BFS graph traversal with direction/depth/kind filters
+│       │       ├── assemble-context.ts # Token-budgeted context assembly
+│       │       ├── ingest-bridge.ts    # Bridge message → memory node pipeline
+│       │       ├── ingest-git.ts       # Git metadata (commits, PRs) ingestion
+│       │       ├── ingest-transcript.ts # JSONL transcript ingestion
+│       │       ├── extract-decisions.ts # Decision extraction via regex heuristics
+│       │       └── infer-topics.ts     # Topic inference via embedding clustering (k-means++)
+│       ├── ingestion/         # Shared ingestion infrastructure
+│       │   ├── embedding.ts   # EmbeddingService — lazy-loaded @xenova/transformers (768-dim)
+│       │   ├── queue.ts       # BoundedQueue<T> — bounded async queue with backpressure
+│       │   ├── secret-filter.ts # Regex-based secret detection and redaction
+│       │   └── transcript-parser.ts # JSONL transcript parser
 │       ├── db/                # SQLite schema, client interface, transactions
 │       │   ├── schema.ts      # MIGRATIONS constant, createDatabase()
-│       │   └── client.ts      # DbClient interface (prepared statements, no SQL injection)
+│       │   ├── client.ts      # DbClient interface (prepared statements, no SQL injection)
+│       │   ├── memory-schema.ts # Memory graph DDL: nodes, edges, FTS5, sqlite-vec
+│       │   └── memory-client.ts # MemoryDbClient interface for graph operations
 │       ├── transport/         # Typed router, Zod schemas, controllers
 │       │   ├── types.ts       # RouteSchema, defineRoute<TSchema>()
-│       │   ├── schemas/       # Zod schemas for messages, tasks, and conversations
-│       │   └── controllers/   # Controller factories (message, task, conversation)
+│       │   ├── schemas/       # Zod schemas for messages, tasks, conversations, and memory
+│       │   └── controllers/   # Controller factories (message, task, conversation, memory)
 │       ├── routes/            # Route factories (wire schemas → handlers)
 │       │   ├── messages.ts    # POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
 │       │   ├── tasks.ts       # POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
 │       │   ├── conversations.ts # GET /conversations
-│       │   └── events.ts      # GET /events (SSE, heartbeat every 30s)
+│       │   ├── events.ts      # GET /events (SSE, heartbeat every 30s)
+│       │   └── memory.ts      # 10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, create
 │       ├── server.ts          # Fastify server factory
-│       ├── mcp.ts             # MCP stdio server (5 tools)
-│       └── index.ts           # REST API entry point (creates EventBus, registers CORS + SSE)
+│       ├── mcp.ts             # MCP stdio server (10 tools: 5 bridge + 5 memory)
+│       └── index.ts           # REST API entry point (creates EventBus, memory system, ingestion queue)
 ├── ui/                        # Next.js 15 App Router conversation dashboard
 │   └── src/
-│       ├── app/               # Pages: / (conversation list), /conversation/[id] (detail)
-│       ├── components/        # Timeline, DiagramRenderer (Mermaid), CopyButton
-│       ├── hooks/             # use-sse — EventSource hook for live updates
-│       └── lib/               # api.ts, diagrams.ts (Mermaid builders), types.ts
+│       ├── app/               # Pages: / (conversations), /conversation/[id], /memory (explorer)
+│       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
+│       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
+│       └── lib/               # api.ts, memory-api.ts, diagrams.ts, types.ts
 ├── planning/                  # Generated project documentation
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
@@ -194,6 +214,30 @@ bus.emit({ type: "message:created", data: message });
 
 Event types: `message:created`, `task:created`, `task:updated`. The EventBus is created once in `index.ts` and passed into controller factories. SSE clients subscribe via `GET /events`.
 
+### BoundedQueue\<T\> — Backpressure-aware async ingestion
+
+```typescript
+import { createBoundedQueue } from "./ingestion/queue.js";
+
+const queue = createBoundedQueue<Event>({
+  maxSize: 500,
+  handler: async (event) => { /* process */ },
+  onDrop: (event) => { /* log dropped item */ },
+  onError: (err) => { /* log error */ },
+});
+queue.enqueue(event); // drops oldest if full
+```
+
+The ingestion queue decouples the EventBus from the memory pipeline. Bridge messages are enqueued on `message:created` and processed asynchronously through secret filtering, embedding, and node creation.
+
+### Hybrid Search — FTS5 + KNN + RRF fusion
+
+Memory search supports three modes: `keyword` (FTS5 full-text), `semantic` (sqlite-vec KNN), and `hybrid` (Reciprocal Rank Fusion of both). The `searchMemory` service takes a `MemoryDbClient` + `EmbeddingService` and returns scored results.
+
+### Memory Graph — Dual-database architecture
+
+The memory system uses a separate SQLite database (`memory.db`) from the bridge database. `MemoryDbClient` mirrors the `DbClient` pattern with prepared statements for graph operations (nodes, edges, FTS5 index, vector embeddings). Both databases use WAL mode.
+
 ## Design Language
 
 | File | Purpose |
@@ -212,6 +256,7 @@ Run `/design-language` to define brand context.
                                    ^
                           /design-evolve (anytime)
 ```
+
 
 ## Code Style
 
@@ -240,7 +285,7 @@ npm run build          # Production build
 npm start              # Production server
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install deps (bridge + UI), create output dir
+./setup.sh             # Symlink skills, copy config, install deps, build bridge, create output dir
 ./start.sh             # Start bridge (:3100) + UI (:3000) together
 ```
 

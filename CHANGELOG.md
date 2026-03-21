@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-21
+
+### Added
+
+- Conversation memory system with node/edge graph stored in SQLite
+- Memory schema DDL with nodes, edges, FTS5 full-text index, and cursors
+- MemoryDbClient with node/edge CRUD, FTS5 search, and cursor-based pagination
+- Embedding service with sqlite-vec KNN table, batch support, and graceful degradation
+- Secret filter with regex-based redaction for API keys, tokens, and passwords
+- Bounded async queue with overflow drop and setImmediate drain
+- JSONL transcript parser with Zod validation and skip-on-error resilience
+- Bridge ingestion service with backfill, idempotency, and repo slug normalization
+- Transcript ingestion service with reply_to/contains edges
+- Hybrid search combining FTS5 full-text, sqlite-vec KNN, and RRF fusion ranking
+- BFS graph traversal with direction, depth, and kind filters
+- Token-budgeted context assembly combining search and graph traversal
+- Zod schemas for all memory REST endpoints
+- Memory controller with 10 REST routes
+- 5 MCP memory tools: search, traverse, context, link, and node
+- Memory system integrated into bridge server with lazy initialization and queue
+- Git metadata ingestion for commits and pull requests
+- Topic inference via embedding clustering with k-means++ initialization
+- Decision extraction via regex heuristics
+- Memory Explorer UI page with search, graph visualization, and context views
+
+### Fixed
+
+- Schema integrity: FK constraints, UNIQUE source index, FTS5 sanitization, removed raw handle
+- MCP tool hardening: persistent DB path, input validation, secret filtering
+- UI route alignment, ContextSection schema, kind validation, link validation
+- Cursor-based git ingestion, SHA lookup index, repo-scoped KNN queries
+- Input bounds, secret patterns, and error handling hardened across services
+- Type safety improvements in embedding service and route typing
+- K-means++ initialization optimization and bounded conversation loading in topic inference
+- Edge uniqueness test updated for UNIQUE source index
+- Service-layer performance, idempotency, and pagination improvements
+- Memory client, schema docs, and controller transaction hardening
+
+### Changed
+
+- Extracted custom hooks from Memory Explorer page component for reusability
+
 ## [1.0.0] - 2026-03-19
 
 ### Added

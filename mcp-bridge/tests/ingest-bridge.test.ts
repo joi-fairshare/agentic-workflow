@@ -1,0 +1,141 @@
+// mcp-bridge/tests/ingest-bridge.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
+import * as sqliteVec from "sqlite-vec";
+import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
+import { createDbClient, type DbClient } from "../src/db/client.js";
+import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { MIGRATIONS } from "../src/db/schema.js";
+import { createSecretFilter } from "../src/ingestion/secret-filter.js";
+import { ingestBridgeMessage, ingestBridgeTask, backfillBridge, normalizeRepoSlug } from "../src/application/services/ingest-bridge.js";
+import { sendContext } from "../src/application/services/send-context.js";
+import { assignTask } from "../src/application/services/assign-task.js";
+import { randomUUID } from "node:crypto";
+
+let mdb: MemoryDbClient;
+let bridgeDb: DbClient;
+const filter = createSecretFilter();
+const repo = "test-repo";
+
+beforeEach(() => {
+  const rawMem = new Database(":memory:");
+  sqliteVec.load(rawMem);
+  rawMem.pragma("journal_mode = WAL");
+  rawMem.exec(MEMORY_MIGRATIONS);
+  mdb = createMemoryDbClient(rawMem);
+
+  const rawBridge = new Database(":memory:");
+  rawBridge.pragma("journal_mode = WAL");
+  rawBridge.exec(MIGRATIONS);
+  bridgeDb = createDbClient(rawBridge);
+});
+
+describe("ingestBridgeMessage", () => {
+  it("creates a message node and conversation node with contains edge", () => {
+    const conv = randomUUID();
+    const msgResult = sendContext(bridgeDb, {
+      conversation: conv,
+      sender: "claude",
+      recipient: "codex",
+      payload: "Hello from bridge",
+    });
+    if (!msgResult.ok) return;
+
+    const result = ingestBridgeMessage(mdb, filter, repo, msgResult.data);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.kind).toBe("message");
+
+    const convNode = mdb.getNodeBySource("bridge-conversation", conv);
+    expect(convNode).toBeDefined();
+
+    const edges = mdb.getEdgesFrom(convNode!.id);
+    expect(edges.some((e) => e.kind === "contains" && e.to_node === result.data.id)).toBe(true);
+  });
+
+  it("is idempotent — ingesting same message twice creates only one node", () => {
+    const conv = randomUUID();
+    const msgResult = sendContext(bridgeDb, { conversation: conv, sender: "a", recipient: "b", payload: "test" });
+    if (!msgResult.ok) return;
+
+    ingestBridgeMessage(mdb, filter, repo, msgResult.data);
+    ingestBridgeMessage(mdb, filter, repo, msgResult.data);
+
+    const node = mdb.getNodeBySource("bridge", msgResult.data.id);
+    expect(node).toBeDefined();
+    const allMessages = mdb.getNodesByRepoAndKind(repo, "message");
+    expect(allMessages.filter((n) => n.source_id === msgResult.data.id)).toHaveLength(1);
+  });
+
+  it("redacts secrets from message body", () => {
+    const conv = randomUUID();
+    const msgResult = sendContext(bridgeDb, {
+      conversation: conv,
+      sender: "a",
+      recipient: "b",
+      payload: "Use key AKIAIOSFODNN7EXAMPLE",
+    });
+    if (!msgResult.ok) return;
+
+    const result = ingestBridgeMessage(mdb, filter, repo, msgResult.data);
+    if (!result.ok) return;
+    expect(result.data.body).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(result.data.body).toContain("[REDACTED]");
+  });
+});
+
+describe("ingestBridgeTask", () => {
+  it("creates a task node with spawned edge from conversation", () => {
+    const conv = randomUUID();
+    const taskResult = assignTask(bridgeDb, {
+      conversation: conv,
+      domain: "backend",
+      summary: "Fix auth",
+      details: "JWT missing",
+      assigned_to: "codex",
+    });
+    if (!taskResult.ok) return;
+
+    const result = ingestBridgeTask(mdb, filter, repo, taskResult.data);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.kind).toBe("task");
+
+    const convNode = mdb.getNodeBySource("bridge-conversation", conv);
+    expect(convNode).toBeDefined();
+
+    const edges = mdb.getEdgesFrom(convNode!.id);
+    expect(edges.some((e) => e.kind === "spawned")).toBe(true);
+  });
+});
+
+describe("backfillBridge", () => {
+  it("ingests all existing bridge messages", async () => {
+    const conv = randomUUID();
+    sendContext(bridgeDb, { conversation: conv, sender: "a", recipient: "b", payload: "msg1" });
+    sendContext(bridgeDb, { conversation: conv, sender: "b", recipient: "a", payload: "msg2" });
+
+    const result = await backfillBridge(mdb, bridgeDb, filter, repo);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.messages_ingested).toBe(2);
+
+    const cursor = mdb.getCursor("bridge-backfill", repo);
+    expect(cursor).toBeDefined();
+  });
+});
+
+describe("normalizeRepoSlug", () => {
+  it("normalizes SSH git URLs", () => {
+    expect(normalizeRepoSlug("git@github.com:org/repo.git")).toBe("org-repo");
+  });
+
+  it("normalizes HTTPS git URLs", () => {
+    expect(normalizeRepoSlug("https://github.com/org/repo.git")).toBe("org-repo");
+    expect(normalizeRepoSlug("https://github.com/org/repo")).toBe("org-repo");
+  });
+
+  it("falls back to directory name", () => {
+    expect(normalizeRepoSlug("/Users/dev/my-project")).toBe("my-project");
+  });
+});
