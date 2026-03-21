@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { MemoryDbClient } from "../../db/memory-client.js";
 import type { EmbeddingService } from "../../ingestion/embedding.js";
 import type { SecretFilter } from "../../ingestion/secret-filter.js";
@@ -207,7 +208,7 @@ export function createMemoryController(
           title: filteredTitle,
           body: filteredBody,
           meta: "{}",
-          source_id: "",
+          source_id: randomUUID(),
           source_type: "manual",
         });
 

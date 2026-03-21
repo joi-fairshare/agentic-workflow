@@ -260,6 +260,10 @@ export async function startMcpServer(dbPath?: string) {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  embedService.warmUp().catch((err) => {
+    console.warn("Embedding model pre-warm failed (will retry on first request):", err);
+  });
 }
 
 // Run as standalone MCP server

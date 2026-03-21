@@ -106,6 +106,7 @@ export function createMemoryDatabase(dbPath: string): Database.Database {
   sqliteVec.load(db);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000");
   db.exec(MEMORY_MIGRATIONS);
   return db;
 }
