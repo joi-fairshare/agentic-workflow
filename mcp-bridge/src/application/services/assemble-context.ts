@@ -66,6 +66,11 @@ export async function assembleContext(
     });
     if (searchResult.ok) {
       for (const sr of searchResult.data) {
+        // Re-fetch the full NodeRow here even though searchMemory already returned
+        // node_id/kind/title/body, because SearchResult.body is capped at 500 chars
+        // and formatNode uses the full body. The full NodeRow fields (meta, source_id,
+        // source_type) are also needed for downstream traversal. The 10-node limit
+        // keeps this to at most 10 extra queries per assembleContext call.
         const node = mdb.getNode(sr.node_id);
         if (node) entryNodes.push({ node, score: sr.score });
       }

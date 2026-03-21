@@ -51,6 +51,20 @@ export function extractDecisions(
   // 1. Fetch all message-kind nodes for the repo
   const messages = mdb.getNodesByRepoAndKind(repo, "message");
 
+  // Pre-build a message → conversation mapping to avoid N+1 getEdgesTo queries.
+  // Iterate conversation nodes once and collect their outgoing `contains` edges,
+  // building a Map<messageId, conversationId> before the main loop.
+  const messageToConversation = new Map<string, string>();
+  const conversations = mdb.getNodesByRepoAndKind(repo, "conversation");
+  for (const conv of conversations) {
+    const outEdges = mdb.getEdgesFrom(conv.id);
+    for (const edge of outEdges) {
+      if (edge.kind === "contains") {
+        messageToConversation.set(edge.to_node, conv.id);
+      }
+    }
+  }
+
   let decisions_created = 0;
   let edges_created = 0;
 
@@ -63,10 +77,8 @@ export function extractDecisions(
       const body = messageNode.body;
       if (!body) continue;
 
-      // 4. Find the containing conversation via incoming `contains` edges
-      const incomingEdges = mdb.getEdgesTo(messageNode.id);
-      const containsEdge = incomingEdges.find((e) => e.kind === "contains");
-      const conversationId = containsEdge?.from_node ?? null;
+      // 4. Look up the containing conversation from the pre-built map (no extra query).
+      const conversationId = messageToConversation.get(messageNode.id) ?? null;
 
       // 2. Test against all DECISION_PATTERNS
       for (const pattern of DECISION_PATTERNS) {
@@ -87,8 +99,17 @@ export function extractDecisions(
           if (seen.has(key)) continue;
           seen.add(key);
 
-          // 3. Create a decision node
+          // 3. Create a decision node — idempotent via a deterministic source_id.
+          // The source_id is derived from the message node id + match offset so
+          // re-running extractDecisions on the same corpus yields the same source_id
+          // and the unique index on (source_type, source_id) prevents duplicates.
           const context = extractContext(body, match.index);
+          const deterministicSourceId = `decision-${messageNode.id}-${match.index}`;
+          const existing = mdb.getNodeBySource("extract-decisions", deterministicSourceId);
+          if (existing) {
+            decisions_created++;
+            continue;
+          }
           const decisionNode = mdb.insertNode({
             repo,
             kind: "decision",
@@ -99,7 +120,7 @@ export function extractDecisions(
               source_message_id: messageNode.id,
               pattern: pattern.source,
             }),
-            source_id: `decision-${messageNode.source_id}-${decisions_created}`,
+            source_id: deterministicSourceId,
             source_type: "extract-decisions",
           });
           decisions_created++;

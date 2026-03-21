@@ -41,7 +41,9 @@ export function traverseMemory(
   const collectedNodes: NodeRow[] = [root];
   const collectedEdges: EdgeRow[] = [];
 
-  // BFS queue: [nodeId, depth]
+  // BFS queue: [nodeId, depth].
+  // Array.shift() is O(n) per dequeue; at the current max_nodes=50 bound the
+  // queue never exceeds 50 entries so this is negligible in practice.
   const queue: Array<[string, number]> = [[node_id, 0]];
 
   while (queue.length > 0 && collectedNodes.length < max_nodes) {

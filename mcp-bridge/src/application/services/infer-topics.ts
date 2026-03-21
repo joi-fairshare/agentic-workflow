@@ -215,14 +215,24 @@ export async function inferTopics(
     return ok({ topics_created: 0, edges_created: 0 });
   }
 
-  // 3. Run k-means clustering
+  // 3. Run k-means clustering.
+  // K-means uses Math.random for centroid initialization (k-means++ selection),
+  // making topic results non-deterministic across runs. This is intentional:
+  // topics are ephemeral and replaced on each run, so stable ordering is not required.
   const clusters = runKMeans(entries, k, threshold);
 
-  // 4. Create topic nodes and edges (only for clusters with 2+ members)
+  // 4. Create topic nodes and edges (only for clusters with 2+ members).
+  //    Idempotent-by-replacement: delete all previously auto-inferred topics for
+  //    this repo before inserting new ones so re-running never creates duplicates.
   let topics_created = 0;
   let edges_created = 0;
 
   mdb.transaction(() => {
+    // Purge existing auto-inferred topics so this operation is idempotent.
+    // Edge CASCADE on the nodes table means associated `discussed_in` edges are
+    // also removed automatically.
+    mdb.deleteNodesBySourceType("infer-topics", repo);
+
     for (const [, members] of clusters) {
       if (members.length < 2) continue;
 

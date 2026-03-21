@@ -78,13 +78,19 @@ export async function searchMemory(
     .sort((a, b) => b[1] - a[1])
     .map(([id]) => id);
 
+  // Cache getNode results for vector-only IDs fetched during kind filtering so the
+  // result-building phase can reuse them without a second DB round-trip.
+  const vecNodeCache = new Map<string, ReturnType<typeof mdb.getNode>>();
+
   // Kind filter
   if (input.kinds && input.kinds.length > 0) {
     const kindSet = new Set<string>(input.kinds);
     nodeIds = nodeIds.filter((id) => {
       const ftsEntry = ftsResults.get(id);
       if (ftsEntry) return kindSet.has(ftsEntry.node.kind);
+      // Vector-only result: fetch node and cache for result-building phase.
       const node = mdb.getNode(id);
+      vecNodeCache.set(id, node);
       return node ? kindSet.has(node.kind) : false;
     });
   }
@@ -93,7 +99,9 @@ export async function searchMemory(
   const results: SearchResult[] = [];
   for (const id of nodeIds.slice(0, limit)) {
     const ftsEntry = ftsResults.get(id);
-    const node = ftsEntry?.node ?? mdb.getNode(id);
+    // Reuse cached node if available (populated during kind filter above) to
+    // avoid a duplicate getNode query for vector-only results.
+    const node = ftsEntry?.node ?? vecNodeCache.get(id) ?? mdb.getNode(id);
     if (!node) continue;
 
     const matchType = ftsResults.has(id) && vecResults.has(id) ? "hybrid"
@@ -101,7 +109,7 @@ export async function searchMemory(
 
     results.push({
       node_id: node.id,
-      kind: node.kind as NodeKind,
+      kind: node.kind,
       title: node.title,
       body: node.body.slice(0, 500),
       score: scores.get(id) ?? 0,

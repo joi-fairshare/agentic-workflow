@@ -63,6 +63,8 @@ export interface MemoryDbClient {
   getNodeBySource(source_type: string, source_id: string): NodeRow | undefined;
   getNodesByRepo(repo: string, limit: number, offset: number): NodeRow[];
   getNodesByRepoAndKind(repo: string, kind: NodeKind): NodeRow[];
+  /** Delete all nodes with the given source_type and repo. Cascades to edges and embeddings via ON DELETE CASCADE. */
+  deleteNodesBySourceType(source_type: string, repo: string): void;
 
   // Edges
   insertEdge(input: InsertEdgeInput): EdgeRow;
@@ -115,6 +117,10 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
 
     getNodesByRepoAndKind: db.prepare(
       "SELECT * FROM nodes WHERE repo = @repo AND kind = @kind ORDER BY created_at DESC"
+    ),
+
+    deleteNodesBySourceType: db.prepare(
+      "DELETE FROM nodes WHERE source_type = @source_type AND repo = @repo"
     ),
 
     insertEdge: db.prepare(`
@@ -207,6 +213,10 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
 
     getNodesByRepoAndKind(repo, kind) {
       return stmts.getNodesByRepoAndKind.all({ repo, kind }) as NodeRow[];
+    },
+
+    deleteNodesBySourceType(source_type, repo) {
+      stmts.deleteNodesBySourceType.run({ source_type, repo });
     },
 
     insertEdge(input) {

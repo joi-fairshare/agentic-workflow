@@ -137,7 +137,9 @@ export interface BackfillResult {
   tasks_ingested: number;
 }
 
-const BACKFILL_BATCH_SIZE = 100;
+// Page size for backfill: fetch this many conversations per page to avoid
+// loading the entire conversation table into memory at once.
+const BACKFILL_PAGE_SIZE = 500;
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -149,32 +151,44 @@ export async function backfillBridge(
   filter: SecretFilter,
   repo: string,
 ): Promise<AppResult<BackfillResult>> {
-  const conversations = bridgeDb.getConversations(10000, 0);
   let messagesIngested = 0;
   let tasksIngested = 0;
+  let offset = 0;
 
-  for (let i = 0; i < conversations.length; i++) {
-    const conv = conversations[i];
+  // Process conversations in fixed-size pages so we never load more than
+  // BACKFILL_PAGE_SIZE rows at a time. After each page we yield to the event
+  // loop and persist a cursor so partial progress survives a crash.
+  while (true) {
+    const page = bridgeDb.getConversations(BACKFILL_PAGE_SIZE, offset);
+    if (page.length === 0) break;
 
-    const messages = bridgeDb.getMessagesByConversation(conv.conversation);
-    for (const msg of messages) {
-      const result = ingestBridgeMessage(mdb, filter, repo, msg);
-      if (result.ok) messagesIngested++;
+    for (const conv of page) {
+      const messages = bridgeDb.getMessagesByConversation(conv.conversation);
+      for (const msg of messages) {
+        const result = ingestBridgeMessage(mdb, filter, repo, msg);
+        if (result.ok) messagesIngested++;
+      }
+
+      const tasks = bridgeDb.getTasksByConversation(conv.conversation);
+      for (const task of tasks) {
+        const result = ingestBridgeTask(mdb, filter, repo, task);
+        if (result.ok) tasksIngested++;
+      }
     }
 
-    const tasks = bridgeDb.getTasksByConversation(conv.conversation);
-    for (const task of tasks) {
-      const result = ingestBridgeTask(mdb, filter, repo, task);
-      if (result.ok) tasksIngested++;
-    }
+    offset += page.length;
 
-    // Yield to event loop every BACKFILL_BATCH_SIZE conversations
-    if ((i + 1) % BACKFILL_BATCH_SIZE === 0) {
-      await yieldToEventLoop();
-    }
+    // Persist cursor after each page so a restart can skip already-ingested
+    // conversations. Current ingestBridgeMessage/Task are idempotent (they
+    // check getNodeBySource first) so a partial retry is safe regardless.
+    mdb.upsertCursor("bridge-backfill", repo, new Date().toISOString());
+
+    // Yield to the event loop between pages to avoid blocking I/O.
+    await yieldToEventLoop();
+
+    // Fewer rows than requested means we've reached the last page.
+    if (page.length < BACKFILL_PAGE_SIZE) break;
   }
-
-  mdb.upsertCursor("bridge-backfill", repo, new Date().toISOString());
 
   return ok({ messages_ingested: messagesIngested, tasks_ingested: tasksIngested });
 }
