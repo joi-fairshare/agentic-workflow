@@ -37,14 +37,21 @@ Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
 
 A TypeScript MCP server for bidirectional multi-agent communication.
 
-**MCP Tools:**
+**MCP Tools (messaging):**
 - `send_context` — Send task context + meta-prompt between agents
 - `get_messages` — Retrieve conversation history by UUID
 - `get_unread` — Check for unread messages (marks as read on retrieval)
 - `assign_task` — Assign tasks with domain and implementation details
 - `report_status` — Report back with feedback or completion
 
-**API Endpoints:**
+**MCP Tools (memory):**
+- `search_memory` — Hybrid FTS5 + vector search across the knowledge graph
+- `traverse_memory` — BFS graph traversal with direction/depth/kind filters
+- `get_context` — Token-budgeted context assembly from memory for an agent
+- `create_memory_link` — Create an edge between two memory nodes
+- `create_memory_node` — Create a topic or decision node in memory
+
+**API Endpoints (messaging):**
 - `POST /messages/send` — Send context between agents
 - `GET /messages/conversation/:id` — Retrieve conversation history
 - `GET /messages/unread?recipient=` — Fetch and mark-read unread messages
@@ -55,6 +62,18 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - `GET /conversations` — Paginated conversation summaries
 - `GET /events` — SSE stream (`message:created`, `task:created`, `task:updated`, heartbeat every 30s)
 
+**API Endpoints (memory):**
+- `GET /memory/search` — Search nodes by keyword, semantic, or hybrid query
+- `GET /memory/node/:id` — Get a memory node by ID
+- `GET /memory/node/:id/edges` — Get all edges for a node
+- `GET /memory/traverse/:id` — BFS graph traversal from a node
+- `GET /memory/context` — Assemble token-budgeted context for a query or node
+- `GET /memory/topics` — List topic nodes for a repo
+- `GET /memory/stats` — Memory graph statistics for a repo
+- `POST /memory/ingest` — Ingest data from a source (bridge, git, transcript)
+- `POST /memory/link` — Create an edge between two nodes
+- `POST /memory/node` — Create a new memory node
+
 **Features:**
 - SQLite store-and-forward (messages queue when recipient is offline)
 - Conversation continuity via UUID
@@ -63,6 +82,11 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - Atomic transactions for multi-step operations
 - EventBus for real-time SSE push to connected clients
 - CORS enabled for local UI integration
+- Knowledge graph with nodes, edges, FTS5 full-text search, and sqlite-vec embeddings
+- Ingestion pipeline: bridge messages, git metadata (commits/PRs), JSONL transcripts
+- Automatic topic inference via embedding clustering and decision extraction via regex heuristics
+- Secret filtering with regex-based redaction for API keys, tokens, and passwords
+- Bounded async queue for background ingestion with overflow drop
 
 ### 4. Conversation Dashboard (UI)
 
@@ -72,6 +96,7 @@ A Next.js 15 App Router web UI for visualising bridge activity in real time.
 - Paginated conversation list with UUID filter and SSE live updates
 - Per-conversation detail view: chronological timeline, directed graph, sequence diagram
 - Mermaid-powered diagrams built from live message + task data
+- Memory Explorer page (`/memory`) with search, graph traversal, and context assembly views
 - Reverse-proxies `/api/*` to the bridge REST API (`:3100`)
 
 **Run the dashboard:**
@@ -133,16 +158,18 @@ agentic-workflow/
 │   └── src/
 │       ├── application/       # AppResult<T>, EventBus, services (never throw)
 │       ├── db/                # SQLite schema, client interface, transactions
+│       │                      #   + memory-schema.ts, memory-client.ts (knowledge graph)
+│       ├── ingestion/         # Embedding service, async queue, secret filter, transcript parser
 │       ├── transport/         # Typed router, Zod schemas, controllers
-│       ├── routes/            # Route factories (messages, tasks, conversations, events)
+│       ├── routes/            # Route factories (messages, tasks, conversations, memory, events)
 │       ├── server.ts          # Fastify server factory
-│       ├── mcp.ts             # MCP stdio server (5 tools)
+│       ├── mcp.ts             # MCP stdio server (10 tools: 5 messaging + 5 memory)
 │       └── index.ts           # REST API entry point
 ├── ui/                        # Next.js 15 conversation dashboard
 │   └── src/
-│       ├── app/               # App Router pages (conversation list + detail)
+│       ├── app/               # App Router pages (conversations, detail, memory explorer)
 │       ├── components/        # Timeline, DiagramRenderer, CopyButton
-│       ├── hooks/             # use-sse (EventSource hook)
+│       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │       └── lib/               # API client, Mermaid builders, shared types
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
