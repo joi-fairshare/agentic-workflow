@@ -79,7 +79,9 @@ graph TD
 Skills are designed to flow into each other in a natural development lifecycle:
 
 ```
-officeHours → productReview / archReview → implement → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
+officeHours → productReview / archReview
+    → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
+    → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
 ```
 
 Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream skills auto-discover.
@@ -119,7 +121,15 @@ agentic-workflow/
 │   │   └── SKILL.md                     #   4 modes: mvp, growth, scale, pivot
 │   ├── archReview/                      # /archReview — engineering architecture review
 │   │   └── SKILL.md                     #   mandatory diagrams, edge case analysis
-│   └── _preamble.md                     # Shared preamble reference (not a skill)
+│   ├── design-analyze/                  # /design-analyze — extract design tokens from reference sites
+│   ├── design-language/                 # /design-language — define brand personality and aesthetic direction
+│   ├── design-evolve/                   # /design-evolve — merge new reference into existing design language
+│   ├── design-mockup/                   # /design-mockup — generate HTML mockup using design language
+│   ├── design-implement/                # /design-implement — generate production code from mockup
+│   ├── design-refine/                   # /design-refine — dispatch Impeccable refinement commands
+│   ├── design-verify/                   # /design-verify — screenshot diff implementation vs mockup
+│   ├── _preamble.md                     # Shared preamble reference (not a skill)
+│   └── _design-preamble.md              # Shared design context preamble (not a skill)
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
 ├── config/                              # Claude Code configuration archive
@@ -187,6 +197,7 @@ agentic-workflow/
 
 ```
 ~/.agentic-workflow/<repo-slug>/
+├── design/           # /design-mockup, /design-verify baselines and diffs
 ├── reviews/          # /review, /postReview, /addressReview state files
 ├── investigations/   # /rootCause investigation reports
 ├── qa/               # /bugHunt and /bugReport reports
@@ -236,6 +247,28 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 **`/productReview`** — Founder/product lens review with 4 scope modes: MVP (cut scope), Growth (growth levers, retention), Scale (operational bottlenecks, unit economics), Pivot (what to kill, adjacent opportunities). Delivers SHIP/ITERATE/RETHINK verdict. Writes to `plans/`.
 
 **`/archReview`** — Engineering architecture review with mandatory mermaid diagrams (component, data flow, sequence). Edge case analysis at every component boundary. Scores complexity, scalability, maintainability (1-10). Delivers SOUND/NEEDS WORK/REDESIGN verdict. Writes to `plans/`.
+
+### Design Pipeline (skills/design-*)
+
+A seven-skill pipeline for extracting brand identity from reference sites and generating pixel-accurate UI implementations. Design artifacts are written to `~/.agentic-workflow/<repo-slug>/design/`.
+
+**`/design-analyze`** — Runs the Dembrandt CLI against one or more reference URLs to extract a structured set of design tokens (colors, typography, spacing, motion) and writes them to `design-tokens.json` in W3C DTCG format. The extracted tokens serve as the raw material for the design language step.
+
+**`/design-language`** — Interactive session that synthesizes token analysis into a brand personality document. Asks forcing questions about tone, target audience, and aesthetic direction, then writes `.impeccable.md` with the brand context and updates `planning/DESIGN_SYSTEM.md` with the full component catalog and strategic decisions.
+
+**`/design-evolve`** — Merges a new reference site into an existing design language. Runs Dembrandt on the new URL, diffs against the current `design-tokens.json`, and updates `.impeccable.md` and `DESIGN_SYSTEM.md` to incorporate the new influences without discarding prior decisions.
+
+**`/design-mockup`** — Generates a self-contained HTML mockup file using the design language from `.impeccable.md` and `design-tokens.json`. The mockup is written to `~/.agentic-workflow/<repo-slug>/design/` and serves as the pixel-accurate baseline for downstream implementation and verification.
+
+**`/design-implement`** — Reads the mockup and design language, then generates production-quality component code targeting either web (React/Next.js with Tailwind) or SwiftUI. Aligns component structure, spacing, and color usage to the design tokens.
+
+**`/design-refine`** — Dispatches Impeccable refinement commands with the full design context injected. Used to iteratively tighten spacing, typography, and visual hierarchy in the implementation against the mockup baseline.
+
+**`/design-verify`** — Takes screenshots of both the mockup and the live implementation, performs a pixel diff, and writes a verification report to `design/`. Reports deviation percentage and highlights mismatched regions. Used as the acceptance gate before shipping UI changes.
+
+Pipeline: `design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify` (`design-evolve` can run anytime to incorporate new references)
+
+Design artifacts: `.impeccable.md` (brand context for AI tools), `design-tokens.json` (W3C DTCG token set), `planning/DESIGN_SYSTEM.md` (component catalog and strategic decisions).
 
 ### Prompt Enhancer (skills/enhancePrompt/)
 
@@ -334,7 +367,7 @@ Archived Claude Code configuration for replication across machines:
 
 1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt — Claude Code executes it step-by-step. No runtime code, no build step.
 
-2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
+2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
 3. **Every skill includes the shared preamble.** The preamble lists all 21 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built). If not bootstrapped, it prompts the user to run `setup.sh`.
 
