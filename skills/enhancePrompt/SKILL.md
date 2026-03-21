@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Read, Glob, Grep
 ---
 
-> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -24,6 +24,13 @@ allowed-tools: Read, Glob, Grep
 > | `/officeHours` | YC-style brainstorming → design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
+> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-language` | Define brand personality and aesthetic direction |
+> | `/design-evolve` | Merge new reference into design language |
+> | `/design-mockup` | Generate HTML mockup from design language |
+> | `/design-implement` | Generate production code from mockup |
+> | `/design-refine` | Dispatch Impeccable refinement commands |
+> | `/design-verify` | Screenshot diff implementation vs mockup |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 

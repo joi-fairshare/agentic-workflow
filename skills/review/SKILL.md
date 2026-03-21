@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write
 ---
 
-> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -24,6 +24,13 @@ allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write
 > | `/officeHours` | YC-style brainstorming → design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
+> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-language` | Define brand personality and aesthetic direction |
+> | `/design-evolve` | Merge new reference into design language |
+> | `/design-mockup` | Generate HTML mockup from design language |
+> | `/design-implement` | Generate production code from mockup |
+> | `/design-refine` | Dispatch Impeccable refinement commands |
+> | `/design-verify` | Screenshot diff implementation vs mockup |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 
@@ -41,7 +48,7 @@ fi
 echo "repo-slug: $REPO_SLUG"
 
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 

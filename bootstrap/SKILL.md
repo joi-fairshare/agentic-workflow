@@ -1,12 +1,12 @@
 ---
 name: bootstrap
-description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md), then generate any missing docs adapted to the target repo's tech stack and domain. Calls /enhancePrompt first for context.
+description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the target repo's tech stack and domain. Calls /enhancePrompt first for context.
 argument-hint: [--force to regenerate existing docs]
 disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
-> **Agentic Workflow** — 14 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -24,6 +24,13 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 > | `/officeHours` | YC-style brainstorming → design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
+> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-language` | Define brand personality and aesthetic direction |
+> | `/design-evolve` | Merge new reference into design language |
+> | `/design-mockup` | Generate HTML mockup from design language |
+> | `/design-implement` | Generate production code from mockup |
+> | `/design-refine` | Dispatch Impeccable refinement commands |
+> | `/design-verify` | Screenshot diff implementation vs mockup |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 
@@ -43,7 +50,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
@@ -183,7 +190,7 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
    - `ERD` — Relationship diagram, collection/table schemas with field tables
    - `DEPENDENCY_GRAPH` — Framework requirements, version constraints, layer dependency map
    - `API_CONTRACT` — Per-endpoint: trigger, path, request/response schemas, error cases, side effects
-   - `DESIGN_SYSTEM` — Design principles, color tokens, typography scale, spacing, components
+   - `DESIGN_SYSTEM` — Design principles, color tokens, typography scale, spacing, components. Points to `.impeccable.md` (brand personality) and `design-tokens.json` (W3C DTCG tokens) as operational artifacts. Run `/design-analyze` and `/design-language` to generate these.
    - `CODE_STYLE` — Linter config, naming conventions, import ordering, patterns
    - `COMMIT_STRATEGY` — Message format template, examples, branch naming table
    - `PR_GUIDE` — Categorized checkbox checklists (architecture, security, testing, etc.)
@@ -259,6 +266,17 @@ These documents are required context before making changes.
 
 {format template, branch naming table}
 
+## Design Language
+
+| File | Purpose |
+|------|---------|
+| `planning/DESIGN_SYSTEM.md` | Design principles, component catalog, strategic decisions |
+| `.impeccable.md` | Brand personality + aesthetic direction (AI context) |
+| `design-tokens.json` | W3C DTCG tokens (colors, typography, spacing) |
+
+Run `/design-analyze <url>` to extract tokens from reference sites.
+Run `/design-language` to define brand context.
+
 ## What to Output
 
 1. **What changed** — files touched and why
@@ -285,7 +303,7 @@ Existing (unchanged):
   planning/API_CONTRACT.md
   planning/ERD.md
 
-Total: 17/17 docs + CLAUDE.md
+Total: 17/17 docs + CLAUDE.md + design language
 
 Next steps:
   1. Review generated docs for accuracy
@@ -296,6 +314,12 @@ Suggested workflow:
   • /officeHours — brainstorm a feature or problem before planning
   • /productReview — get founder-lens feedback on a plan
   • /archReview — get engineering architecture review of a plan
+  • /design-analyze <url> — extract design tokens from reference sites
+  • /design-language — define brand personality and aesthetic direction
+  • /design-mockup <screen> — generate HTML mockup from design language
+  • /design-implement web|swiftui — generate production code from mockup
+  • /design-refine — apply Impeccable design refinements
+  • /design-verify — screenshot diff implementation vs mockup
   • /review <pr> — run multi-agent code review on a PR
   • /bugHunt — find and fix bugs with regression tests
   • /bugReport — audit code health without making changes

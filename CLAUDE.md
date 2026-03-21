@@ -28,7 +28,7 @@ Read before making changes:
 | Test | Vitest (in-memory SQLite) |
 | Build | tsc (ESM, Node16 module resolution) |
 
-## Skills (14)
+## Skills (21)
 
 All skills are slash commands invoked inside Claude Code sessions. They are installed by symlinking into `~/.claude/skills/`.
 
@@ -48,11 +48,20 @@ All skills are slash commands invoked inside Claude Code sessions. They are inst
 | `/officeHours` | YC-style brainstorming → design doc | `plans/` |
 | `/productReview` | Founder/product lens plan review | `plans/` |
 | `/archReview` | Engineering architecture plan review | `plans/` |
+| `/design-analyze` | Extract design tokens from reference sites | `design/` |
+| `/design-language` | Define brand personality and aesthetic direction | — |
+| `/design-evolve` | Merge new reference into design language | — |
+| `/design-mockup` | Generate HTML mockup from design language | `design/` |
+| `/design-implement` | Generate production code from mockup | — |
+| `/design-refine` | Dispatch Impeccable refinement commands | — |
+| `/design-verify` | Screenshot diff implementation vs mockup | `design/` |
 
 ### Skill Pipeline
 
 ```
-officeHours → productReview / archReview → implement → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
+officeHours → productReview / archReview
+    → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
+    → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
 ```
 
 Skills are designed to flow into each other. Each skill writes outputs that downstream skills auto-discover.
@@ -63,6 +72,7 @@ All skill outputs are written to `~/.agentic-workflow/<repo-slug>/` with subdire
 
 ```
 ~/.agentic-workflow/<repo-slug>/
+├── design/           # /design-mockup, /design-verify baselines and diffs
 ├── reviews/          # /review, /postReview, /addressReview state files
 ├── investigations/   # /rootCause investigation reports
 ├── qa/               # /bugHunt and /bugReport reports
@@ -97,7 +107,15 @@ agentic-workflow/
 │   ├── officeHours/           # /officeHours — YC-style brainstorming
 │   ├── productReview/         # /productReview — founder/product lens review
 │   ├── archReview/            # /archReview — engineering architecture review
-│   └── _preamble.md           # Shared preamble reference (not a skill)
+│   ├── design-analyze/        # /design-analyze — extract design tokens
+│   ├── design-language/       # /design-language — define brand personality
+│   ├── design-evolve/         # /design-evolve — merge new reference
+│   ├── design-mockup/         # /design-mockup — generate HTML mockup
+│   ├── design-implement/      # /design-implement — generate production code
+│   ├── design-refine/         # /design-refine — dispatch Impeccable commands
+│   ├── design-verify/         # /design-verify — screenshot diff verification
+│   ├── _preamble.md           # Shared preamble reference (not a skill)
+│   └── _design-preamble.md    # Shared design context preamble (not a skill)
 ├── bootstrap/                 # /bootstrap — repo documentation generator
 ├── config/                    # Settings & MCP config archive
 ├── mcp-bridge/                # MCP bridge application
@@ -175,6 +193,25 @@ bus.emit({ type: "message:created", data: message });
 ```
 
 Event types: `message:created`, `task:created`, `task:updated`. The EventBus is created once in `index.ts` and passed into controller factories. SSE clients subscribe via `GET /events`.
+
+## Design Language
+
+| File | Purpose |
+|------|---------|
+| `planning/DESIGN_SYSTEM.md` | Design principles, component catalog, strategic decisions |
+| `.impeccable.md` | Brand personality + aesthetic direction (AI context) |
+| `design-tokens.json` | W3C DTCG tokens (colors, typography, spacing) |
+
+Run `/design-analyze <url>` to extract tokens from reference sites.
+Run `/design-language` to define brand context.
+
+### Design Pipeline
+
+```
+/design-analyze → /design-language → /design-mockup → /design-implement → /design-refine → /design-verify
+                                   ^
+                          /design-evolve (anytime)
+```
 
 ## Code Style
 

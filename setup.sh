@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
 # Canonical list of skills managed by this toolkit
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify)
 
 echo "=== Agentic Workflow Setup ==="
 echo ""
@@ -266,6 +266,52 @@ else
   echo "  claude CLI not found, skipping plugin installation"
 fi
 
+# --- Dembrandt CLI ---
+echo ""
+echo "Installing Dembrandt CLI..."
+
+if command -v dembrandt &>/dev/null; then
+  echo "  dembrandt: already installed ($(dembrandt --version 2>/dev/null || echo 'unknown version'))"
+else
+  npm install -g dembrandt 2>&1 && \
+    echo "  dembrandt: installed globally" || \
+    echo "  dembrandt: failed to install (non-fatal, install manually: npm install -g dembrandt)"
+fi
+
+# --- Impeccable Skills ---
+echo ""
+echo "Installing Impeccable skills..."
+
+IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
+IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/dist/claude-code"
+
+if [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
+  echo "  impeccable: cache exists, checking for updates..."
+  (cd "$IMPECCABLE_DIR" && git pull --ff-only 2>/dev/null) || true
+else
+  echo "  impeccable: cloning pbakaus/impeccable..."
+  git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 || {
+    echo "  impeccable: failed to clone (non-fatal)"
+    IMPECCABLE_SKILLS_SRC=""
+  }
+fi
+
+if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
+  for skill_dir in "$IMPECCABLE_SKILLS_SRC"/*/; do
+    [ -d "$skill_dir" ] || continue
+    skill_name=$(basename "$skill_dir")
+    target="$CLAUDE_DIR/skills/$skill_name"
+    if [ -d "$target" ] || [ -L "$target" ]; then
+      echo "  impeccable/$skill_name: already exists, skipping"
+    else
+      cp -r "$skill_dir" "$target"
+      echo "  impeccable/$skill_name: installed"
+    fi
+  done
+else
+  echo "  impeccable: skipped (source not available)"
+fi
+
 # --- Output Directory ---
 echo ""
 echo "Creating output directory..."
@@ -275,13 +321,15 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (14):"
+echo "Skills installed (21):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
 echo "  Release:          shipRelease, syncDocs"
 echo "  Retrospective:    weeklyRetro"
 echo "  Planning:         officeHours, productReview, archReview"
+echo "  Design:           design-analyze, design-language, design-evolve,"
+echo "                    design-mockup, design-implement, design-refine, design-verify"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"
