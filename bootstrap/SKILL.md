@@ -6,6 +6,8 @@ disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -67,11 +69,14 @@ echo "rules-directory: $RULES_OK"
 
 Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
 
-If any check fails, ask the user via AskUserQuestion:
+If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
 If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
 If **no**: warn that some features may not work, then continue.
+
+If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
+> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
 
 Create the output directory for this repo:
 ```bash
@@ -79,6 +84,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 # Bootstrap — Repo Documentation Generator
 
@@ -137,7 +144,7 @@ Check for each of the 17 Pivot-pattern documents. Search flexibly — docs may e
 | `COMPETITIVE_ANALYSIS` | `*competitive*`, `*competitor*`, `*market*analysis*` |
 | `GO_TO_MARKET` | `*go*to*market*`, `*gtm*`, `*launch*`, `*marketing*` |
 
-Also check if a `CLAUDE.md` exists.
+Also check if a `CLAUDE.md` exists and whether a `.claude/rules/` directory already exists (and if so, how many files it contains).
 
 Report findings:
 ```
@@ -165,7 +172,8 @@ Missing (M/17):
   GO_TO_MARKET
   DEPENDENCY_GRAPH
 
-CLAUDE.md: [exists / missing]
+CLAUDE.md:       [exists / missing]
+.claude/rules/:  [exists (N files) / missing]
 ```
 
 If `--force` was passed, treat all docs as missing and regenerate.
