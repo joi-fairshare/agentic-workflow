@@ -99,6 +99,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS node_embeddings USING vec0(
   node_id TEXT PRIMARY KEY,
   embedding float[768]
 );
+
+CREATE TABLE IF NOT EXISTS traversal_logs (
+  id TEXT PRIMARY KEY,
+  repo TEXT NOT NULL,
+  agent TEXT NOT NULL DEFAULT 'anonymous',
+  operation TEXT NOT NULL CHECK(operation IN ('traverse', 'context')),
+  start_node TEXT,
+  params TEXT NOT NULL,
+  steps TEXT NOT NULL,
+  scores TEXT,
+  token_allocation TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (start_node) REFERENCES nodes(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_traversal_logs_repo_created ON traversal_logs(repo, created_at DESC);
 `;
 
 // ── Factory ──────────────────────────────────────────────────────────

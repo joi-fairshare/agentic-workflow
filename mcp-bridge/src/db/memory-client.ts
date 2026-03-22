@@ -64,6 +64,30 @@ export interface InsertEdgeInput {
   auto: boolean;
 }
 
+export interface TraversalLogRow {
+  id: string;
+  repo: string;
+  agent: string;
+  operation: "traverse" | "context";
+  start_node: string | null;
+  params: Record<string, unknown>;
+  steps: Array<{ node_id: string; parent_id: string | null; edge_id: string | null; edge_kind: string | null }>;
+  scores?: Record<string, number>;
+  token_allocation?: Record<string, number>;
+  created_at: string;
+}
+
+export interface InsertTraversalLogInput {
+  repo: string;
+  agent: string;
+  operation: "traverse" | "context";
+  start_node: string | null;
+  params: Record<string, unknown>;
+  steps: Array<{ node_id: string; parent_id: string | null; edge_id: string | null; edge_kind: string | null }>;
+  scores?: Record<string, number>;
+  token_allocation?: Record<string, number>;
+}
+
 // ── MemoryDbClient interface ───────────────────────────────
 
 export interface MemoryDbClient {
@@ -96,6 +120,12 @@ export interface MemoryDbClient {
 
   // Stats
   getStats(repo: string): MemoryStats;
+
+  // Traversal logs
+  insertTraversalLog(input: InsertTraversalLogInput): TraversalLogRow;
+  getTraversalLog(id: string): TraversalLogRow | null;
+  getTraversalLogs(repo: string, limit: number): TraversalLogRow[];
+  pruneTraversalLogs(days: number): number;
 
   // Transaction
   transaction<T>(fn: () => T): T;
@@ -193,6 +223,23 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       ORDER BY distance
       LIMIT ?
     `),
+
+    insertTraversalLog: db.prepare(`
+      INSERT INTO traversal_logs (id, repo, agent, operation, start_node, params, steps, scores, token_allocation, created_at)
+      VALUES (@id, @repo, @agent, @operation, @start_node, @params, @steps, @scores, @token_allocation, @created_at)
+    `),
+
+    getTraversalLog: db.prepare(
+      "SELECT * FROM traversal_logs WHERE id = @id"
+    ),
+
+    getTraversalLogs: db.prepare(
+      "SELECT * FROM traversal_logs WHERE repo = @repo ORDER BY created_at DESC, rowid DESC LIMIT @limit"
+    ),
+
+    pruneTraversalLogs: db.prepare(
+      "DELETE FROM traversal_logs WHERE created_at < datetime('now', '-' || @days || ' days')"
+    ),
   };
 
   // Hoist encoder/decoder to closure scope so they're created once, not per call.
@@ -342,6 +389,82 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
         filtered.push(candidate);
       }
       return filtered;
+    },
+
+    insertTraversalLog(input) {
+      const now = new Date().toISOString();
+      const id = randomUUID();
+      const row = {
+        id,
+        repo: input.repo,
+        agent: input.agent,
+        operation: input.operation,
+        start_node: input.start_node ?? null,
+        params: JSON.stringify(input.params),
+        steps: JSON.stringify(input.steps),
+        scores: input.scores !== undefined ? JSON.stringify(input.scores) : null,
+        token_allocation: input.token_allocation !== undefined ? JSON.stringify(input.token_allocation) : null,
+        created_at: now,
+      };
+      stmts.insertTraversalLog.run(row);
+      return {
+        id,
+        repo: input.repo,
+        agent: input.agent,
+        operation: input.operation,
+        start_node: input.start_node ?? null,
+        params: input.params,
+        steps: input.steps,
+        scores: input.scores,
+        token_allocation: input.token_allocation,
+        created_at: now,
+      };
+    },
+
+    getTraversalLog(id) {
+      const raw = stmts.getTraversalLog.get({ id }) as {
+        id: string; repo: string; agent: string; operation: "traverse" | "context";
+        start_node: string | null; params: string; steps: string;
+        scores: string | null; token_allocation: string | null; created_at: string;
+      } | undefined;
+      if (!raw) return null;
+      return {
+        id: raw.id,
+        repo: raw.repo,
+        agent: raw.agent,
+        operation: raw.operation,
+        start_node: raw.start_node,
+        params: JSON.parse(raw.params) as Record<string, unknown>,
+        steps: JSON.parse(raw.steps) as TraversalLogRow["steps"],
+        scores: raw.scores !== null ? JSON.parse(raw.scores) as Record<string, number> : undefined,
+        token_allocation: raw.token_allocation !== null ? JSON.parse(raw.token_allocation) as Record<string, number> : undefined,
+        created_at: raw.created_at,
+      };
+    },
+
+    getTraversalLogs(repo, limit) {
+      const rows = stmts.getTraversalLogs.all({ repo, limit }) as Array<{
+        id: string; repo: string; agent: string; operation: "traverse" | "context";
+        start_node: string | null; params: string; steps: string;
+        scores: string | null; token_allocation: string | null; created_at: string;
+      }>;
+      return rows.map((raw) => ({
+        id: raw.id,
+        repo: raw.repo,
+        agent: raw.agent,
+        operation: raw.operation,
+        start_node: raw.start_node,
+        params: JSON.parse(raw.params) as Record<string, unknown>,
+        steps: JSON.parse(raw.steps) as TraversalLogRow["steps"],
+        scores: raw.scores !== null ? JSON.parse(raw.scores) as Record<string, number> : undefined,
+        token_allocation: raw.token_allocation !== null ? JSON.parse(raw.token_allocation) as Record<string, number> : undefined,
+        created_at: raw.created_at,
+      }));
+    },
+
+    pruneTraversalLogs(days) {
+      const result = stmts.pruneTraversalLogs.run({ days });
+      return result.changes;
     },
 
     transaction<T>(fn: () => T): T {
