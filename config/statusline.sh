@@ -8,8 +8,8 @@ INPUT=$(cat)
 
 # Fallback for empty or invalid input
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
-  printf '%b\n' '\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m'
-  printf '%b\n' '--      │ --              │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --'
+  printf '%b\n' '\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines    │ Rate\033[0m'
+  printf '%b\n' '--      │ --              │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --       │ --'
   exit 0
 fi
 
@@ -21,7 +21,7 @@ eval "$(echo "$INPUT" | jq -r '
   "DIR=\(.workspace.current_dir // "" | @sh)",
   "CTX_PCT=\(.context_window.used_percentage // "")",
   "BAR_FILL=\(if (.context_window.used_percentage // 0) > 0 then
-      ((.context_window.used_percentage / 10) | floor |
+      ((.context_window.used_percentage / 10) | round |
        if . > 10 then 10 elif . < 0 then 0 else . end)
      else 0 end)",
   "COST=\(.cost.total_cost_usd // 0)",
@@ -62,7 +62,7 @@ BAR="${BARS:0:$BAR_FILL}${SPACES:0:$((10 - BAR_FILL))}"
 CTX_INT=$(printf '%.0f' "${CTX_PCT:-0}" 2>/dev/null || echo "0")
 if [ "$CTX_INT" -gt 75 ] 2>/dev/null; then
   BAR="\033[31m${BAR}\033[0m"
-elif [ "$CTX_INT" -gt 50 ] 2>/dev/null; then
+elif [ "$CTX_INT" -ge 50 ] 2>/dev/null; then
   BAR="\033[33m${BAR}\033[0m"
 else
   BAR="\033[32m${BAR}\033[0m"
@@ -102,7 +102,7 @@ if [ -n "$RATE_PCT" ] && [ "$RATE_PCT" != "null" ] && [ "$RATE_PCT" != "" ]; the
   RATE_INT=$(printf '%.0f' "$RATE_PCT" 2>/dev/null || echo "0")
   if [ "$RATE_INT" -gt 75 ] 2>/dev/null; then
     RATE_FMT="\033[31m5h: ${RATE_INT}%\033[0m"
-  elif [ "$RATE_INT" -gt 50 ] 2>/dev/null; then
+  elif [ "$RATE_INT" -ge 50 ] 2>/dev/null; then
     RATE_FMT="\033[33m5h: ${RATE_INT}%\033[0m"
   else
     RATE_FMT="\033[32m5h: ${RATE_INT}%\033[0m"
