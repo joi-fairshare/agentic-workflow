@@ -1,0 +1,106 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
+import { createDbClient, type DbClient } from "../src/db/client.js";
+import { MIGRATIONS } from "../src/db/schema.js";
+import { createEventBus, type EventBus, type BridgeEvent } from "../src/application/events.js";
+import { createMessageController } from "../src/transport/controllers/message-controller.js";
+import { randomUUID } from "node:crypto";
+
+let db: DbClient;
+let eventBus: EventBus;
+let events: BridgeEvent[];
+let controller: ReturnType<typeof createMessageController>;
+
+beforeEach(() => {
+  const raw = new Database(":memory:");
+  raw.pragma("journal_mode = WAL");
+  raw.exec(MIGRATIONS);
+  db = createDbClient(raw);
+  eventBus = createEventBus();
+  events = [];
+  eventBus.subscribe((e) => events.push(e));
+  controller = createMessageController(db, eventBus);
+});
+
+describe("send", () => {
+  it("creates a message and emits message:created event", async () => {
+    const conv = randomUUID();
+    const result = await controller.send({
+      body: { conversation: conv, sender: "claude", recipient: "codex", payload: "hello", meta_prompt: "analyze" },
+      params: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.conversation).toBe(conv);
+    expect(result.data.sender).toBe("claude");
+    expect(result.data.kind).toBe("context");
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("message:created");
+    expect(events[0].data.conversation).toBe(conv);
+  });
+});
+
+describe("getByConversation", () => {
+  it("returns messages for a conversation", async () => {
+    const conv = randomUUID();
+    db.insertMessage({ conversation: conv, sender: "a", recipient: "b", kind: "context", payload: "msg", meta_prompt: null });
+
+    const result = await controller.getByConversation({
+      params: { conversation: conv },
+      body: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(1);
+  });
+
+  it("returns empty array for unknown conversation", async () => {
+    const result = await controller.getByConversation({
+      params: { conversation: randomUUID() },
+      body: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(0);
+  });
+});
+
+describe("getUnread", () => {
+  it("returns unread messages and marks them read", async () => {
+    const conv = randomUUID();
+    db.insertMessage({ conversation: conv, sender: "a", recipient: "bob", kind: "context", payload: "msg", meta_prompt: null });
+
+    const first = await controller.getUnread({
+      query: { recipient: "bob" },
+      body: undefined as never,
+      params: undefined as never,
+      requestId: "test",
+    });
+
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.data).toHaveLength(1);
+
+    // Second call should return empty (marked as read)
+    const second = await controller.getUnread({
+      query: { recipient: "bob" },
+      body: undefined as never,
+      params: undefined as never,
+      requestId: "test",
+    });
+
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.data).toHaveLength(0);
+  });
+});
