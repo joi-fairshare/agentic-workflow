@@ -17,6 +17,7 @@ export interface SearchInput {
   mode?: "semantic" | "keyword" | "hybrid";
   kinds?: NodeKind[];
   limit?: number;
+  sender?: string;
 }
 
 export interface SearchResult {
@@ -35,7 +36,7 @@ export async function searchMemory(
   embedService: EmbeddingService,
   input: SearchInput,
 ): Promise<AppResult<SearchResult[]>> {
-  const { query, repo, limit = 20 } = input;
+  const { query, repo, limit = 20, sender } = input;
   let mode = input.mode ?? "hybrid";
 
   // P1: Degrade to keyword if embedding service is known-degraded
@@ -48,7 +49,7 @@ export async function searchMemory(
 
   // FTS5 search
   if (mode === "keyword" || mode === "hybrid") {
-    const fts = mdb.searchFTS(query, repo, limit * 2);
+    const fts = mdb.searchFTS(query, repo, limit * 2, sender);
     fts.forEach((r, i) => ftsResults.set(r.id, { node: r, rank: i + 1 }));
   }
 
@@ -56,7 +57,7 @@ export async function searchMemory(
   if (mode === "semantic" || mode === "hybrid") {
     const embedResult = await embedService.embed(`search_query: ${query}`);
     if (embedResult.ok) {
-      const knn = mdb.searchKNN(embedResult.data, limit * 2, repo);
+      const knn = mdb.searchKNN(embedResult.data, limit * 2, repo, sender);
       knn.forEach((r, i) => vecResults.set(r.node_id, { node_id: r.node_id, rank: i + 1 }));
     } else if (mode === "semantic") {
       return err({ code: "EMBEDDING_FAILED", message: "Semantic search requires working embeddings", statusHint: 503 });

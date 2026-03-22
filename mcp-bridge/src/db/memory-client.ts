@@ -15,6 +15,7 @@ export interface NodeRow {
   meta: string;
   source_id: string;
   source_type: string;
+  sender: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,7 +43,16 @@ export interface MemoryStats {
 
 // ── Input types ────────────────────────────────────────────
 
-export type InsertNodeInput = Omit<NodeRow, "id" | "created_at" | "updated_at">;
+export interface InsertNodeInput {
+  repo: string;
+  kind: NodeKind;
+  title: string;
+  body: string;
+  meta: string;
+  source_id: string;
+  source_type: string;
+  sender?: string | null;
+}
 
 export interface InsertEdgeInput {
   repo: string;
@@ -76,12 +86,13 @@ export interface MemoryDbClient {
   getCursor(id: string, repo: string): string | undefined;
 
   // Search
-  searchFTS(query: string, repo: string, limit: number): FTSResult[];
+  searchFTS(query: string, repo: string, limit: number, sender?: string): FTSResult[];
+  getDistinctSenders(repo: string): string[];
 
   // Embeddings
   insertEmbedding(nodeId: string, embedding: Float32Array): void;
   getEmbedding(nodeId: string): Float32Array | undefined;
-  searchKNN(query: Float32Array, limit: number, repo?: string): Array<{ node_id: string; distance: number }>;
+  searchKNN(query: Float32Array, limit: number, repo?: string, sender?: string): Array<{ node_id: string; distance: number }>;
 
   // Stats
   getStats(repo: string): MemoryStats;
@@ -101,8 +112,8 @@ export interface MemoryDbClient {
 export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
   const stmts = {
     insertNode: db.prepare(`
-      INSERT INTO nodes (id, repo, kind, title, body, meta, source_id, source_type, created_at, updated_at)
-      VALUES (@id, @repo, @kind, @title, @body, @meta, @source_id, @source_type, @created_at, @updated_at)
+      INSERT INTO nodes (id, repo, kind, title, body, meta, source_id, source_type, sender, created_at, updated_at)
+      VALUES (@id, @repo, @kind, @title, @body, @meta, @source_id, @source_type, @sender, @created_at, @updated_at)
     `),
 
     getNode: db.prepare("SELECT * FROM nodes WHERE id = @id"),
@@ -151,6 +162,21 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       LIMIT @limit
     `),
 
+    searchFTSBySender: db.prepare(`
+      SELECT nodes.*, rank
+      FROM nodes_fts
+      JOIN nodes ON nodes.rowid = nodes_fts.rowid
+      WHERE nodes_fts MATCH @query AND nodes.repo = @repo AND nodes.sender = @sender
+      ORDER BY rank
+      LIMIT @limit
+    `),
+
+    getDistinctSenders: db.prepare(`
+      SELECT DISTINCT sender FROM nodes
+      WHERE repo = @repo AND sender IS NOT NULL
+      ORDER BY sender ASC
+    `),
+
     nodeCount: db.prepare("SELECT COUNT(*) as count FROM nodes WHERE repo = @repo"),
     edgeCount: db.prepare("SELECT COUNT(*) as count FROM edges WHERE repo = @repo"),
 
@@ -190,6 +216,7 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       const now = new Date().toISOString();
       const row: NodeRow = {
         ...input,
+        sender: input.sender ?? null,
         body: truncateBody(input.body),
         id: randomUUID(),
         created_at: now,
@@ -252,7 +279,7 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       return row?.cursor;
     },
 
-    searchFTS(query, repo, limit) {
+    searchFTS(query, repo, limit, sender?) {
       // Sanitize FTS5 query: quote each word to prevent parse errors from special chars
       const sanitized = query
         .split(/\s+/)
@@ -261,12 +288,20 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
         .join(" ");
       if (!sanitized) return [];
       try {
+        if (sender !== undefined) {
+          return stmts.searchFTSBySender.all({ query: sanitized, repo, limit, sender }) as FTSResult[];
+        }
         return stmts.searchFTS.all({ query: sanitized, repo, limit }) as FTSResult[];
       /* v8 ignore next 4 */
       } catch {
         // FTS5 parse errors (e.g. malformed MATCH syntax) → empty result
         return [];
       }
+    },
+
+    getDistinctSenders(repo) {
+      const rows = stmts.getDistinctSenders.all({ repo }) as Array<{ sender: string }>;
+      return rows.map((r) => r.sender);
     },
 
     getStats(repo) {
@@ -286,13 +321,13 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       return new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
     },
 
-    searchKNN(query, limit, repo?) {
+    searchKNN(query, limit, repo?, sender?) {
       // Use byteOffset + byteLength to handle Float32Array views into a larger SharedArrayBuffer.
       const queryBuf = Buffer.from(query.buffer, query.byteOffset, query.byteLength);
-      if (!repo) {
+      if (!repo && !sender) {
         return stmts.searchKNN.all(queryBuf, limit) as Array<{ node_id: string; distance: number }>;
       }
-      // Fetch extra candidates (limit * 3) then post-filter by repo via nodes table join.
+      // Fetch extra candidates (limit * 3) then post-filter by repo/sender via nodes table lookup.
       // sqlite-vec KNN queries don't support JOIN, so we over-fetch and filter in JS.
       const overFetchLimit = limit * 3;
       const candidates = stmts.searchKNN.all(queryBuf, overFetchLimit) as Array<{ node_id: string; distance: number }>;
@@ -301,9 +336,10 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
         /* v8 ignore next */
         if (filtered.length >= limit) break;
         const node = stmts.getNode.get({ id: candidate.node_id }) as NodeRow | undefined;
-        if (node && node.repo === repo) {
-          filtered.push(candidate);
-        }
+        if (!node) continue;
+        if (repo && node.repo !== repo) continue;
+        if (sender && node.sender !== sender) continue;
+        filtered.push(candidate);
       }
       return filtered;
     },

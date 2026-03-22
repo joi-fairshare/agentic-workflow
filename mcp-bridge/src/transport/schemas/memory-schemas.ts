@@ -20,6 +20,7 @@ export const NodeResponseSchema = z.object({
   meta: z.string(),
   source_id: z.string(),
   source_type: z.string(),
+  sender: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -56,6 +57,7 @@ export const SearchMemoryQuerySchema = z.object({
   mode: z.enum(["semantic", "keyword", "hybrid"]).default("hybrid"),
   kinds: z.string().optional(),
   limit: z.coerce.number().min(1).max(100).default(20),
+  sender: z.string().optional(),
 });
 export type SearchMemoryQuery = z.infer<typeof SearchMemoryQuerySchema>;
 

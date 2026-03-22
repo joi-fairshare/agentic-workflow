@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS nodes (
   meta         TEXT NOT NULL DEFAULT '{}',
   source_id    TEXT NOT NULL,
   source_type  TEXT NOT NULL,
+  sender       TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_repo      ON nodes(repo);
-CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo, kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo        ON nodes(repo);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind   ON nodes(repo, kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo_sender ON nodes(repo, sender);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_source ON nodes(source_type, source_id);
 
 CREATE TABLE IF NOT EXISTS edges (
