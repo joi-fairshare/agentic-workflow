@@ -77,4 +77,66 @@ describe("createEmbeddingService", () => {
     await capturingService.embed(longText);
     expect(captured[0].length).toBeLessThanOrEqual(100);
   });
+
+  it("warmUp triggers ensureReady and sets ready state", async () => {
+    const svc = createEmbeddingService({
+      embedFn: async (texts) => texts.map(() => new Float32Array(768).fill(0.1)),
+    });
+    expect(svc.isReady()).toBe(false);
+    await svc.warmUp();
+    expect(svc.isReady()).toBe(true);
+  });
+
+  it("isDegraded returns false initially", () => {
+    expect(service.isDegraded()).toBe(false);
+  });
+
+  it("embedBatch handles errors gracefully", async () => {
+    const failService = createEmbeddingService({
+      embedFn: async () => { throw new Error("batch fail"); },
+    });
+    const result = await failService.embedBatch(["a", "b"]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("EMBEDDING_FAILED");
+    expect(result.error.message).toContain("batch fail");
+  });
+
+  it("embedBatch processes in batches when exceeding BATCH_SIZE", async () => {
+    let callCount = 0;
+    const batchService = createEmbeddingService({
+      embedFn: async (texts) => {
+        callCount++;
+        return texts.map(() => new Float32Array(768).fill(0.1));
+      },
+    });
+
+    // Create 40 texts to exceed BATCH_SIZE of 32
+    const texts = Array.from({ length: 40 }, (_, i) => `text-${i}`);
+    const result = await batchService.embedBatch(texts);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(40);
+    expect(callCount).toBe(2); // 32 + 8
+  });
+
+  it("embedBatch error with non-Error object", async () => {
+    const failService = createEmbeddingService({
+      embedFn: async () => { throw "string error"; },
+    });
+    const result = await failService.embedBatch(["a"]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("Batch embedding failed");
+  });
+
+  it("embed error with non-Error object", async () => {
+    const failService = createEmbeddingService({
+      embedFn: async () => { throw 42; },
+    });
+    const result = await failService.embed("test");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("Embedding failed");
+  });
 });
