@@ -132,6 +132,7 @@ export const ContextSectionSchema = z.object({
   content: z.string(),
   token_estimate: z.number(),
   relevance: z.number(),
+  node_ids: z.array(z.string()).default([]),
 });
 export type ContextSection = z.infer<typeof ContextSectionSchema>;
 

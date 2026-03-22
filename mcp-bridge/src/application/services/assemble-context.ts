@@ -23,6 +23,7 @@ export interface ContextSection {
   heading: string;
   content: string;
   relevance: number;
+  node_ids: string[];
 }
 
 export interface AssembleContextResult {
@@ -128,6 +129,7 @@ export async function assembleContext(
       heading: `${node.kind}: ${node.title}`,
       content: node.body,
       relevance: score,
+      node_ids: [node.id],
     });
     totalTokens += sectionTokens;
   }

@@ -98,4 +98,18 @@ describe("assembleContext", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("includes node_ids in each context section", async () => {
+    const node = mdb.insertNode({ repo: "r", kind: "message", title: "test content", body: "relevant body", meta: "{}", source_id: "1", source_type: "t" });
+
+    const result = await assembleContext(mdb, embedService, { node_id: node.id, repo: "r", max_tokens: 8000 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    for (const section of result.data.sections) {
+      expect(section.node_ids).toBeDefined();
+      expect(Array.isArray(section.node_ids)).toBe(true);
+      expect(section.node_ids.length).toBeGreaterThan(0);
+    }
+  });
 });
