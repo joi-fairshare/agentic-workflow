@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import cors from "@fastify/cors";
 import { createDatabase } from "./db/schema.js";
 import { createDbClient } from "./db/client.js";
@@ -8,7 +10,10 @@ import { createEventBus } from "./application/events.js";
 import { createEmbeddingService } from "./ingestion/embedding.js";
 import { createSecretFilter } from "./ingestion/secret-filter.js";
 import { createBoundedQueue } from "./ingestion/queue.js";
+import { createSessionQueue } from "./ingestion/session-queue.js";
+import { createClaudeCodeWatcher } from "./ingestion/claude-code-watcher.js";
 import { ingestBridgeMessage, backfillBridge } from "./application/services/ingest-bridge.js";
+import { ingestClaudeCodeSummary, expandClaudeCodeTurn } from "./application/services/ingest-claude-code.js";
 import { createMessageRoutes } from "./routes/messages.js";
 import { createTaskRoutes } from "./routes/tasks.js";
 import { createConversationRoutes } from "./routes/conversations.js";
@@ -101,6 +106,54 @@ async function main() {
         ingestionQueue.enqueue(event.data);
       }
     });
+  });
+
+  // Claude Code session auto-ingestion
+  const sessionQueue = createSessionQueue({
+    maxSize: 100,
+    rateMs: 5000,
+    handler: async (job) => {
+      const lines = readFileSync(job.filePath, "utf-8").split("\n");
+      const summaryResult = ingestClaudeCodeSummary(memoryDb, secretFilter, {
+        repo: job.repo,
+        sessionId: job.sessionId,
+        filePath: job.filePath,
+        lines,
+      });
+      if (!summaryResult.ok) {
+        console.warn(`[session-queue] Summary failed for ${job.sessionId}:`, summaryResult.error.message);
+        return;
+      }
+      if (job.pass === "both" || job.pass === "detail") {
+        const convNode = memoryDb.getNodeBySource("claude-code-session", job.sessionId);
+        if (convNode) {
+          const turnEdges = memoryDb.getEdgesFrom(convNode.id).filter(e => e.kind === "contains");
+          for (const edge of turnEdges) {
+            const turn = memoryDb.getNode(edge.to_node);
+            if (turn && turn.sender === "assistant") {
+              expandClaudeCodeTurn(memoryDb, secretFilter, turn.id, lines);
+            }
+          }
+        }
+      }
+    },
+    onError: (err, job) => console.warn(`[session-queue] Error processing ${job.sessionId}:`, err.message),
+    onDrop: (job) => console.warn(`[session-queue] Dropped ${job.sessionId} — queue full`),
+  });
+
+  const claudeDir = join(homedir(), ".claude", "projects");
+  const watcher = createClaudeCodeWatcher({
+    watchDir: claudeDir,
+    mdb: memoryDb,
+    queue: sessionQueue,
+    filter: secretFilter,
+  });
+
+  // Startup: prune old traversal logs, scan for unprocessed sessions, then start watching
+  setImmediate(async () => {
+    memoryDb.pruneTraversalLogs(30);
+    await watcher.scanOnce();
+    watcher.start();
   });
 }
 
