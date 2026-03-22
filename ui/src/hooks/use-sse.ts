@@ -38,7 +38,7 @@ export function useSse({ onEvent }: UseSseOptions) {
     }
 
     eventSource.onerror = () => {
-      // EventSource auto-reconnects; no action needed
+      void 0; // EventSource auto-reconnects
     };
 
     return () => {

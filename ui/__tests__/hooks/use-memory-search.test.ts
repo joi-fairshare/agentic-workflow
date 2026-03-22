@@ -70,6 +70,17 @@ describe("useMemorySearch", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("searches with no kinds passes undefined", async () => {
+    const mockResults = [{ node_id: "n1", kind: "topic", title: "T", body: "B", score: 1.0, match_type: "keyword" as const }];
+    mockSearchMemory.mockResolvedValueOnce(mockResults);
+
+    const { result } = renderHook(() => useMemorySearch("repo"));
+    act(() => result.current.setQuery("hello"));
+    await act(async () => result.current.search());
+
+    expect(mockSearchMemory).toHaveBeenCalledWith("hello", "repo", "hybrid", undefined);
+  });
+
   it("searches with selected kinds", async () => {
     const mockResults = [{ node_id: "n2", kind: "decision", title: "D", body: "B", score: 0.9, match_type: "semantic" as const }];
     mockSearchMemory.mockResolvedValueOnce(mockResults);

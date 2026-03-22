@@ -53,6 +53,22 @@ describe("searchMemory", () => {
     await expect(searchMemory("q", "repo")).rejects.toThrow("Unknown error");
   });
 
+  it("throws Unknown error when error object has no message property", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200, statusText: "OK",
+      json: async () => ({ ok: false, error: {} }),
+    });
+    await expect(searchMemory("q", "repo")).rejects.toThrow("Unknown error");
+  });
+
+  it("throws Unknown error when error is undefined", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200, statusText: "OK",
+      json: async () => ({ ok: false }),
+    });
+    await expect(searchMemory("q", "repo")).rejects.toThrow("Unknown error");
+  });
+
   it("handles response without ok envelope", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true, status: 200, statusText: "OK",
