@@ -4,9 +4,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
-# Check for jq (required by statusline)
+# Check for jq (required by statusline install and runtime)
 if ! command -v jq &>/dev/null; then
-  echo "  ⚠ jq not found — statusline will not work. Install: brew install jq"
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║                  MISSING REQUIRED DEPENDENCY                ║"
+  echo "║                                                              ║"
+  echo "║  jq is required to install and run the Claude Code          ║"
+  echo "║  statusline. Without it, setup cannot wire the statusline   ║"
+  echo "║  into your Claude settings and the script will not work.    ║"
+  echo "║                                                              ║"
+  echo "║  Install jq, then re-run setup:                             ║"
+  echo "║    brew install jq        (macOS)                           ║"
+  echo "║    apt-get install jq     (Debian/Ubuntu)                   ║"
+  echo "║    dnf install jq         (Fedora/RHEL)                     ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
+  echo ""
+  exit 1
 fi
 
 # Canonical list of skills managed by this toolkit
