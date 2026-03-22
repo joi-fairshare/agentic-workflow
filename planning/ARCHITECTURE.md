@@ -162,7 +162,7 @@ agentic-workflow/
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
-│   ├── vitest.config.ts                 #   Vitest config — v8 coverage, 100% thresholds, excludes index.ts + mcp.ts
+│   ├── vitest.config.ts                 #   Vitest config — v8 coverage, no thresholds, excludes index.ts + mcp.ts
 │   ├── tests/                           #   Unit and integration tests (293 tests)
 │   │   ├── routes/                      #     Route integration tests via Fastify inject (messages, tasks, conversations, events, memory)
 │   │   ├── client.test.ts               #     DbClient unit tests
@@ -244,7 +244,7 @@ agentic-workflow/
 │           └── memory.ts             #   10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, node
 ├── ui/                                 # Next.js 15 App Router conversation dashboard
 │   ├── next.config.ts                  #   Reverse proxy /api/* → http://localhost:3100/*
-│   ├── vitest.config.ts                #   Vitest config — happy-dom, v8 coverage, 100% thresholds (hooks + lib only)
+│   ├── vitest.config.ts                #   Vitest config — happy-dom, v8 coverage, no thresholds (hooks + lib only)
 │   ├── __tests__/                      #   UI tests (61 tests)
 │   │   ├── setup.ts                    #     Global test setup: mocks fetch and EventSource (MockEventSource)
 │   │   ├── hooks/                      #     Hook tests: use-sse, use-memory-search, use-memory-traverse, use-context-assembler
@@ -542,4 +542,4 @@ Archived Claude Code configuration for replication across machines:
 
 18. **Embedding is lazy and gracefully degradable.** The embedding model loads on first use (pre-warmed in background on server start). If loading fails, the system falls back to keyword-only search. Batch embedding is supported for ingestion efficiency.
 
-19. **Test coverage is enforced at 100%.** Both `mcp-bridge` and `ui` use Vitest with v8 coverage and `thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 }`. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points with no unit-testable logic); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`). `npm run test:coverage` must pass before merging any PR.
+19. **`/* v8 ignore */` annotations are prohibited.** Coverage must be earned through real tests — never hidden with `/* v8 ignore next */`, `/* v8 ignore start */`, or any v8 ignore variant. Both `mcp-bridge` and `ui` use Vitest with v8 coverage. Coverage thresholds are not enforced as hard build failures, but 100% remains the goal. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`).

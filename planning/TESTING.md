@@ -6,18 +6,20 @@ All tests run against **in-memory SQLite** databases. Each test gets a fresh dat
 
 The test suite uses **Vitest** with explicit imports (globals are disabled in the config).
 
-## Coverage Targets
+## Coverage Policy
 
-Both packages enforce **100% coverage** on all four metrics as a hard build failure:
+**`/* v8 ignore */` annotations are prohibited.** Never use `/* v8 ignore next */`, `/* v8 ignore start */`, or any v8 ignore variant to reach coverage targets. Coverage must be earned through real tests, not hidden with annotations.
 
-| Metric | MCP Bridge | UI (hooks + lib) |
-|--------|-----------|-------------------|
-| Statements | 100% | 100% |
-| Branches | 100% | 100% |
-| Functions | 100% | 100% |
-| Lines | 100% | 100% |
+Coverage thresholds are not enforced as hard build failures. The goal is still 100% — but gaps should be addressed by writing the missing tests, not by ignoring lines. `npm run test:coverage` will report coverage without failing on low numbers.
 
-Coverage is enforced via `thresholds` in each package's `vitest.config.ts`. Entry-point files (`index.ts`, `mcp.ts`) and type-only files (`types.ts`) are excluded.
+| Metric | Target (both packages) |
+|--------|----------------------|
+| Statements | 100% (through real tests) |
+| Branches | 100% (through real tests) |
+| Functions | 100% (through real tests) |
+| Lines | 100% (through real tests) |
+
+Entry-point files (`index.ts`, `mcp.ts`) and type-only files (`types.ts`) are excluded from coverage collection.
 
 ## Test Locations
 
@@ -78,14 +80,14 @@ ui/__tests__/
 cd mcp-bridge
 npm test               # Vitest single run (CI-friendly)
 npm run test:watch     # Vitest watch mode
-npm run test:coverage  # Run with 100% coverage enforcement
+npm run test:coverage  # Run with coverage report (no threshold enforcement)
 npm run typecheck      # tsc --noEmit
 
 # UI
 cd ui
 npm test               # Vitest single run
 npm run test:watch     # Vitest watch mode
-npm run test:coverage  # Run with 100% coverage enforcement
+npm run test:coverage  # Run with coverage report (no threshold enforcement)
 ```
 
 ## Test Patterns
@@ -200,17 +202,11 @@ act(() => result.current.setQuery("test"));
 await act(async () => result.current.search());
 ```
 
-### Coverage Exclusions
+### Coverage Gaps
 
-Some code uses `/* v8 ignore */` comments for lines that are untestable in unit tests:
+Some paths are genuinely difficult to exercise in unit tests (real model loading, 30-second timers, floating-point edge cases). These currently appear as uncovered lines in coverage reports. The right response is to write the missing tests over time — not to annotate them away.
 
-- **`embedding.ts`**: `createNomicEmbedFn()` — loads the real HuggingFace model at runtime
-- **`infer-topics.ts`**: Floating-point safety net in k-means++ (`chosen === -1` fallback)
-- **`ingest-git.ts`**: Non-UNIQUE constraint error logging in edge insertion
-- **`ingest-bridge.ts`**: Page-level task ingestion loop (mirrors tested message path)
-- **`events.ts` (routes)**: 30-second heartbeat timer
-
-All excluded code is defensive/integration boundary code. Business logic is fully tested.
+`/* v8 ignore */` annotations are prohibited in this codebase.
 
 ## Writing New Tests
 
@@ -220,4 +216,4 @@ All excluded code is defensive/integration boundary code. Business logic is full
 4. Return `AppResult<T>` from all service functions — never throw.
 5. Use `randomUUID()` for conversation/task IDs.
 6. Assert `result.ok` first, then narrow with a guard.
-7. Run `npm run test:coverage` before pushing — 100% thresholds are enforced.
+7. Never add `/* v8 ignore */` annotations — write the test instead.

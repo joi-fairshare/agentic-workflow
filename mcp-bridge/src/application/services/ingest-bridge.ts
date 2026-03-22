@@ -160,7 +160,6 @@ export async function backfillBridge(
   // loop and persist a cursor so partial progress survives a crash.
   while (true) {
     const page = bridgeDb.getConversations(BACKFILL_PAGE_SIZE, offset);
-    /* v8 ignore next */
     if (page.length === 0) break;
 
     for (const conv of page) {

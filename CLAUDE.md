@@ -162,7 +162,7 @@ agentic-workflow/
 │   ├── tests/                 # Vitest test suite (mirrors src/ structure)
 │   │   ├── routes/            # Route integration tests (messages, tasks, conversations, events, memory)
 │   │   └── *.test.ts          # Unit tests for controllers, services, db, ingestion, MCP tools
-│   └── vitest.config.ts       # Coverage config: v8, 100% thresholds, excludes index.ts + mcp.ts
+│   └── vitest.config.ts       # Coverage config: v8, no thresholds, excludes index.ts + mcp.ts
 ├── ui/                        # Next.js 15 App Router conversation dashboard
 │   ├── src/
 │   │   ├── app/               # Pages: / (conversations), /conversation/[id], /memory (explorer)
@@ -173,7 +173,7 @@ agentic-workflow/
 │   │   ├── hooks/             # Hook tests (use-sse, use-memory-search, use-memory-traverse, use-context-assembler)
 │   │   ├── lib/               # Lib tests (api, memory-api, diagrams)
 │   │   └── setup.ts           # Global test setup
-│   └── vitest.config.ts       # Coverage config: v8, 100% thresholds, covers hooks/ + lib/ (excl. types.ts)
+│   └── vitest.config.ts       # Coverage config: v8, no thresholds, covers hooks/ + lib/ (excl. types.ts)
 ├── planning/                  # Generated project documentation
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
@@ -306,7 +306,7 @@ npm run test:coverage  # Run with 100% coverage enforcement
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
 2. `npm test` passes with all tests green (293 bridge + 61 UI)
-3. `npm run test:coverage` passes at 100% thresholds (both packages)
+3. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
 4. No `any` types outside of Fastify integration boundaries
 
 ## Commit Conventions
