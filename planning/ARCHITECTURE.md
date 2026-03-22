@@ -136,7 +136,7 @@ agentic-workflow/
 │   ├── shipRelease/                     # /shipRelease — sync, test, push, PR
 │   │   └── SKILL.md                     #   pre-flight → sync → test → push → PR → syncDocs
 │   ├── syncDocs/                        # /syncDocs — post-ship doc updater
-│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md
+│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/
 │   ├── weeklyRetro/                     # /weeklyRetro — weekly retrospective
 │   │   └── SKILL.md                     #   per-person breakdown, shipping streaks, insights
 │   ├── officeHours/                     # /officeHours — YC-style brainstorming
@@ -320,7 +320,7 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 **`/shipRelease`** — Pre-flight checks (clean tree, branch exists), fetch and rebase on base, run tests, audit coverage, push, open PR via `gh`, then auto-invoke `/syncDocs`. Writes release report to `releases/`.
 
-**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, and CLAUDE.md with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
+**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and `.claude/rules/` with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
 
 **`/weeklyRetro`** — Analyzes git history for per-person breakdowns (commits, lines, areas of activity), shipping streaks, test health trends, and generates actionable insights. Compares to previous retros if available. Writes retrospective to `retros/`.
 
@@ -360,7 +360,7 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a CLAUDE.md for any repository. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md + `.claude/rules/` glob-scoped rule files for any repository. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
 
 ## Component 2: MCP Bridge (mcp-bridge/)
 

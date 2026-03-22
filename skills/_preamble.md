@@ -58,11 +58,17 @@ done
 BRIDGE_OK=false
 [ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
 
+RULES_OK=false
+[ -d ".claude/rules" ] && RULES_OK=true
+
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-built: $BRIDGE_OK"
+echo "rules-directory: $RULES_OK"
 ```
 
-If either check fails, ask the user via AskUserQuestion:
+Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+
+If any check fails, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
 If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).

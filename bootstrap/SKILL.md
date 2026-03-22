@@ -57,11 +57,17 @@ done
 BRIDGE_OK=false
 [ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
 
+RULES_OK=false
+[ -d ".claude/rules" ] && RULES_OK=true
+
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-built: $BRIDGE_OK"
+echo "rules-directory: $RULES_OK"
 ```
 
-If either check fails, ask the user via AskUserQuestion:
+Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+
+If any check fails, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
 If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
@@ -208,18 +214,30 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
 
 5. **Place docs in `planning/`.** Create the directory if it doesn't exist. Use UPPER_SNAKE_CASE filenames with `.md` extension.
 
-## Step 6: Generate CLAUDE.md (if missing)
+## Step 6: Generate CLAUDE.md + .claude/rules/ (if missing)
 
-Create a CLAUDE.md following this structure (adapted from Pivot and FairShareEstate patterns):
+### Step 6a: Generate CLAUDE.md
+
+Create a trimmed CLAUDE.md (under 80 lines) that serves as a navigation document — not a reference manual. Include only:
 
 ```markdown
-# CLAUDE.md — {Project Name} Developer Prompt
+# CLAUDE.md — {Project Name}
 
-Read `/README.md` for project overview.
-Read `/planning/ARCHITECTURE.md` for system architecture and dependencies.
-Read `/planning/ERD.md` for data model and relationships.
-Read `/planning/API_CONTRACT.md` for endpoint specifications.
-These documents are required context before making changes.
+> {one-line tagline describing the project}
+
+Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
+
+## Required Context
+
+Read before making changes:
+
+| Document | Purpose |
+|----------|---------|
+| `planning/ARCHITECTURE.md` | System components and data flow |
+| `planning/API_CONTRACT.md` | Endpoint specifications |
+| `planning/CODE_STYLE.md` | Language conventions and patterns |
+| `planning/TESTING.md` | Test strategy and coverage targets |
+| `planning/ERD.md` | Data model and relationships |
 
 ## Tech Stack
 
@@ -227,63 +245,75 @@ These documents are required context before making changes.
 |-------|-----------|
 | {layer} | {technologies} |
 
-## Code Style
+## Directory Structure
 
-{key rules from CODE_STYLE or inferred from linter configs}
+```
+{project-root}/
+├── {dir}/   # {purpose}
+├── {dir}/   # {purpose}
+└── ...
+```
 
-## Architecture
+## Commands
 
-{ASCII directory tree showing key directories with inline comments}
-
-### Key Rules
-
-1. {architectural constraint with rationale}
-2. ...
-
-## Implementation Guidelines
-
-1. {step-by-step workflow for adding features}
-2. ...
-
-## Testing
-
-| Command | What it runs |
-|---------|-------------|
-| `{cmd}` | {description} |
-
-### File Locations
-
-| Pattern | Location |
-|---------|----------|
-| Unit tests | `{path}` |
+```bash
+{key commands for build, test, dev, setup}
+```
 
 ## Merge Gate
 
-- {requirement 1}
-- {requirement 2}
+Before merging any PR:
+1. {requirement 1}
+2. {requirement 2}
 
-## Commits
+## Commit Conventions
 
-{format template, branch naming table}
-
-## Design Language
-
-| File | Purpose |
-|------|---------|
-| `planning/DESIGN_SYSTEM.md` | Design principles, component catalog, strategic decisions |
-| `.impeccable.md` | Brand personality + aesthetic direction (AI context) |
-| `design-tokens.json` | W3C DTCG tokens (colors, typography, spacing) |
-
-Run `/design-analyze <url>` to extract tokens from reference sites.
-Run `/design-language` to define brand context.
-
-## What to Output
-
-1. **What changed** — files touched and why
-2. **What to run** — commands to verify
-3. **What to review** — areas needing human judgment
-4. **What is left** — remaining work if task is incomplete
+Format: `type: short description`
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 ```
+
+Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in `.claude/rules/` files.
+
+### Step 6b: Generate .claude/rules/
+
+After generating CLAUDE.md, inspect the target repo's directory structure and tech stack to generate a `.claude/rules/` directory with glob-scoped rule files. Each rule file loads automatically when Claude Code works on matching files.
+
+**Infer rule file groupings from what directories actually exist.** Examples by tech stack:
+
+| Tech Stack | Rule Files to Generate |
+|------------|----------------------|
+| Rails | `models.md` (app/models/**), `controllers.md` (app/controllers/**), `spec.md` (spec/**) |
+| Next.js | `components.md` (components/**), `hooks.md` (hooks/**), `pages.md` (app/**) |
+| Python | `services.md` (src/services/**), `tests.md` (tests/**) |
+| Node.js + TypeScript | `services.md` (src/**), `tests.md` (**/*.test.ts) |
+| Django | `models.md` (*/models.py), `views.md` (*/views.py), `tests.md` (*/tests.py) |
+| Go | `handlers.md` (internal/handlers/**), `domain.md` (internal/domain/**) |
+
+**Each generated rule file must:**
+1. Start with YAML frontmatter: `globs: [list of glob patterns]`
+2. Contain domain-specific guidance drawn from the repo's actual code patterns (read the code — don't template-fill)
+3. Focus on patterns, conventions, and pitfalls specific to that domain
+
+**Rule file template:**
+
+```markdown
+---
+globs: ["{pattern1}", "{pattern2}"]
+---
+
+# {Domain} Rules
+
+## {Key Pattern}
+
+{Specific, actionable guidance drawn from the actual codebase — naming conventions,
+required patterns, things to avoid, code examples from the real code.}
+
+## {Another Pattern}
+
+...
+```
+
+Spawn an Explore agent to read representative files in each domain before writing the rules. Rules should reflect what the code actually does, not generic best practices.
 
 ## Step 7: Report
 
@@ -303,11 +333,11 @@ Existing (unchanged):
   planning/API_CONTRACT.md
   planning/ERD.md
 
-Total: 17/17 docs + CLAUDE.md + design language
+Total: 17/17 docs + CLAUDE.md + .claude/rules/ + design language
 
 Next steps:
   1. Review generated docs for accuracy
-  2. Commit: git add planning/ CLAUDE.md && git commit -m "docs: bootstrap planning documents"
+  2. Commit: git add planning/ CLAUDE.md .claude/ && git commit -m "docs: bootstrap planning documents"
   3. Refine any docs that need domain-specific detail
 
 Suggested workflow:
