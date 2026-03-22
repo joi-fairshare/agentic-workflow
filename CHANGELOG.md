@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `jq` is now a hard prerequisite with an abort message and install instructions if missing
 - API wait field shows `--` when the field is absent from the JSON payload
 - Quoted numeric `jq` fields to prevent eval injection; removed Rate label from fallback path
+- `setup.sh` merges hooks additively into existing `settings.json` rather than replacing; skips writing `shell-integration.sh` when the file is already identical
+- `setup.sh` initializes `terminal_width` via `stty size </dev/tty` instead of relying on `$COLUMNS` (which is unset in the installer subshell)
+- `setup.sh` guards the `statusLine` key with `jq has("statusLine")` and uses `grep -qF` for exact source-line matching
+- `config/statusline.sh` type-guards `resets_at` timestamps: applies `floor | tostring` only when the value is a JSON number, passes strings through as-is
+- `config/statusline.sh` removes `tput cols` from the width fallback; `COLS` now derives from `${COLUMNS:-}` only (tput is unreliable in Claude Code subprocesses)
 
 ## [Unreleased] - 2026-03-22
 
