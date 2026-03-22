@@ -8,8 +8,8 @@ INPUT=$(cat)
 
 # Fallback for empty or invalid input
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
-  printf '%b\n' '\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines    │ Rate\033[0m'
-  printf '%b\n' '--      │ --              │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --       │ --'
+  printf '%b\n' '\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m'
+  printf '%b\n' '--      │ --              │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --'
   exit 0
 fi
 
@@ -19,13 +19,13 @@ fi
 eval "$(echo "$INPUT" | jq -r '
   "MODEL=\(.model.display_name // "--" | @sh)",
   "DIR=\(.workspace.current_dir // "" | @sh)",
-  "CTX_PCT=\(.context_window.used_percentage // "")",
+  "CTX_PCT=\(.context_window.used_percentage // "" | tostring | @sh)",
   "BAR_FILL=\(if (.context_window.used_percentage // 0) > 0 then
       ((.context_window.used_percentage / 10) | round |
        if . > 10 then 10 elif . < 0 then 0 else . end)
-     else 0 end)",
-  "COST=\(.cost.total_cost_usd // 0)",
-  "TOTAL_MIN=\((.cost.total_duration_ms // 0) / 60000 | floor)",
+     else 0 end | tostring | @sh)",
+  "COST=\(.cost.total_cost_usd // 0 | tostring | @sh)",
+  "TOTAL_MIN=\((.cost.total_duration_ms // 0) / 60000 | floor | tostring | @sh)",
   "API_PCT=\(if (.cost.total_duration_ms // 0) > 0 then
       ((.cost.total_api_duration_ms // 0) * 100 / (.cost.total_duration_ms) | floor | tostring)
      else "" end | @sh)",
@@ -35,8 +35,8 @@ eval "$(echo "$INPUT" | jq -r '
         (.context_window.current_usage.input_tokens // 0)) as $total |
        if $total > 0 then ($read * 100 / $total | floor | tostring) else "" end)
      else "" end | @sh)",
-  "LINES_ADD=\(.cost.total_lines_added // 0)",
-  "LINES_DEL=\(.cost.total_lines_removed // 0)",
+  "LINES_ADD=\(.cost.total_lines_added // 0 | tostring | @sh)",
+  "LINES_DEL=\(.cost.total_lines_removed // 0 | tostring | @sh)",
   "RATE_PCT=\(.rate_limits.five_hour.used_percentage // "" | tostring | @sh)"
 ')"
 
