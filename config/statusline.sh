@@ -7,7 +7,7 @@
 # Column priority (left → right, leftmost always survive tier drops):
 #   5h Usage | 7d Usage | Context | Model | Branch | Cost | Time | Cache | API | Lines
 #
-# Width detection: stty size </dev/tty → $COLUMNS → tput cols → 200
+# Width detection: ~/.claude/terminal_width (shell-integration.sh) → stty /dev/tty → $COLUMNS → 200
 # Tiers (total visible chars, approx):
 #   ≥116: FULL   — all columns, branch×15, full ctx bar
 #   ≥101: MEDIUM — no Lines, branch×12, full ctx bar
@@ -16,16 +16,17 @@
 
 INPUT=$(cat)
 
-# Width detection: stty size </dev/tty reads the actual kernel winsize from the
-# controlling terminal, bypassing the subprocess PTY (which tput cols queries and
-# which Claude Code may have set to a narrow default). /dev/tty works even when
-# stdout/stdin are pipes and reflects window resize events immediately.
-COLS=""
-TERM_SIZE=$(stty size </dev/tty 2>/dev/null)
-if [ -n "$TERM_SIZE" ]; then
-  COLS=$(echo "$TERM_SIZE" | awk '{print $2}')
+# Width detection: read ~/.claude/terminal_width (written by shell-integration.sh
+# on every prompt and on SIGWINCH resize). This is the only reliable source because
+# Claude Code runs the statusline in a subprocess where /dev/tty is inaccessible,
+# $COLUMNS is 0, and tput cols returns the internal PTY default (80), not the
+# actual window width. The interactive shell always has the correct $COLUMNS.
+COLS=$(cat "$HOME/.claude/terminal_width" 2>/dev/null)
+# Fallbacks for first run before shell integration is active
+if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
+  TERM_SIZE=$(stty size </dev/tty 2>/dev/null)
+  [ -n "$TERM_SIZE" ] && COLS=$(echo "$TERM_SIZE" | awk '{print $2}')
 fi
-# Fallback: $COLUMNS (interactive bash) → tput cols → 200 (prefer full over empty)
 if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
   COLS=${COLUMNS:-$(tput cols 2>/dev/null)}
 fi
