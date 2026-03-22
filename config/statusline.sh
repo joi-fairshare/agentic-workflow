@@ -16,6 +16,11 @@
 
 INPUT=$(cat)
 
+# Brief pause so the shell's WINCH trap has time to write terminal_width before
+# we read it. Claude Code re-renders the statusline immediately on SIGWINCH;
+# without this sleep the file may still hold the pre-resize value.
+sleep 0.05
+
 # Width detection: read ~/.claude/terminal_width (written by shell-integration.sh
 # on every prompt and on SIGWINCH resize). This is the only reliable source because
 # Claude Code runs the statusline in a subprocess where /dev/tty is inaccessible,
