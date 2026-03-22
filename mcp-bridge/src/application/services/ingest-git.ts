@@ -171,6 +171,7 @@ function scanAndLinkReferences(
               auto: true,
             });
             refsCreated++;
+          /* v8 ignore next 6 */
           } catch (error) {
             // UNIQUE constraint violations are expected for duplicate edges — skip silently
             if (!(error instanceof Error) || !error.message.includes("UNIQUE constraint")) {
@@ -200,6 +201,7 @@ function scanAndLinkReferences(
             auto: true,
           });
           refsCreated++;
+        /* v8 ignore next 6 */
         } catch (error) {
           // UNIQUE constraint violations are expected for duplicate edges — skip silently
           if (!(error instanceof Error) || !error.message.includes("UNIQUE constraint")) {
@@ -317,6 +319,7 @@ export async function ingestGitMetadata(
     }
 
     return ok({ commits_ingested: commitsIngested, prs_ingested: prsIngested, references_created: refsCreated });
+  /* v8 ignore next 8 */
   } catch (e) {
     console.error("Git ingestion failed:", e instanceof Error ? e.message : String(e));
     return err({

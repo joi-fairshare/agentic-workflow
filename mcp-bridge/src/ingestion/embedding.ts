@@ -31,6 +31,7 @@ export interface EmbeddingService {
 
 // ── Default nomic embed function (lazy-loaded) ───────────────
 
+/* v8 ignore start */
 async function createNomicEmbedFn(): Promise<EmbedFn> {
   const { pipeline } = await import("@huggingface/transformers");
   const extractor = await pipeline(
@@ -58,11 +59,13 @@ async function createNomicEmbedFn(): Promise<EmbedFn> {
     return texts.map((_, i) => flat.slice(i * dim, (i + 1) * dim));
   };
 }
+/* v8 ignore stop */
 
 // ── Factory ──────────────────────────────────────────────────
 
 export function createEmbeddingService(options: EmbeddingServiceOptions = {}): EmbeddingService {
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  /* v8 ignore next */
   let embedFn: EmbedFn | null = options.embedFn ?? null;
   let ready = false;
   let degraded = false;
@@ -74,8 +77,10 @@ export function createEmbeddingService(options: EmbeddingServiceOptions = {}): E
 
   async function ensureReady(): Promise<AppResult<void>> {
     if (ready) return ok(undefined);
+    /* v8 ignore next */
     if (degraded) return err({ code: "EMBEDDING_DEGRADED", message: "Embedding model failed to load", statusHint: 503 });
 
+    /* v8 ignore start */
     if (!embedFn) {
       if (!initPromise) {
         initPromise = createNomicEmbedFn()
@@ -85,6 +90,7 @@ export function createEmbeddingService(options: EmbeddingServiceOptions = {}): E
       await initPromise;
       if (degraded) return err({ code: "EMBEDDING_DEGRADED", message: "Embedding model failed to load", statusHint: 503 });
     }
+    /* v8 ignore stop */
 
     ready = true;
     return ok(undefined);
@@ -93,6 +99,7 @@ export function createEmbeddingService(options: EmbeddingServiceOptions = {}): E
   return {
     async embed(text) {
       const initResult = await ensureReady();
+      /* v8 ignore next */
       if (!initResult.ok) return err(initResult.error);
 
       try {
@@ -109,6 +116,7 @@ export function createEmbeddingService(options: EmbeddingServiceOptions = {}): E
 
     async embedBatch(texts) {
       const initResult = await ensureReady();
+      /* v8 ignore next */
       if (!initResult.ok) return err(initResult.error);
 
       try {

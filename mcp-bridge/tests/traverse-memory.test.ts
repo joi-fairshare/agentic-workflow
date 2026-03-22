@@ -103,4 +103,12 @@ describe("traverseMemory", () => {
     expect(result.data.nodes).toHaveLength(2);
     expect(result.data.edges).toHaveLength(1);
   });
+
+  it("returns NOT_FOUND error when node_id does not exist", () => {
+    const result = traverseMemory(mdb, { node_id: "nonexistent-uuid" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("NOT_FOUND");
+  });
+
 });

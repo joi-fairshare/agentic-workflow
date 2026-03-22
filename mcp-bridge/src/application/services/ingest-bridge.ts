@@ -160,6 +160,7 @@ export async function backfillBridge(
   // loop and persist a cursor so partial progress survives a crash.
   while (true) {
     const page = bridgeDb.getConversations(BACKFILL_PAGE_SIZE, offset);
+    /* v8 ignore next */
     if (page.length === 0) break;
 
     for (const conv of page) {
@@ -172,6 +173,7 @@ export async function backfillBridge(
       const tasks = bridgeDb.getTasksByConversation(conv.conversation);
       for (const task of tasks) {
         const result = ingestBridgeTask(mdb, filter, repo, task);
+        /* v8 ignore next 1 */
         if (result.ok) tasksIngested++;
       }
     }

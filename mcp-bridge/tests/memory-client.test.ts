@@ -193,6 +193,33 @@ describe("FTS5 edge cases", () => {
   });
 });
 
+describe("truncateBody with multi-byte UTF-8 characters", () => {
+  it("truncates body with 3-byte chars and strips trailing UTF-8 replacement char", () => {
+    // Chinese character 中 (U+4E2D) is 3 bytes in UTF-8.
+    // MAX_BODY_BYTES = 50 * 1024 = 51200.
+    // 17067 chars × 3 bytes = 51201 bytes > 51200, so truncation occurs.
+    // Slicing at 51200 takes 17066 complete chars (51198 bytes) + 2 bytes of the 17067th char,
+    // which produces a UTF-8 replacement character (\uFFFD) that must be stripped.
+    const threeByteChar = "\u4e2d"; // 中 — 3 bytes in UTF-8
+    const longBody = threeByteChar.repeat(17067); // 51201 bytes total
+    const node = mdb.insertNode({
+      repo: "r",
+      kind: "message",
+      title: "multibyte test",
+      body: longBody,
+      meta: "{}",
+      source_id: "mb-s",
+      source_type: "bridge",
+    });
+    // Body should be truncated
+    expect(node.body.length).toBeLessThan(longBody.length);
+    // The replacement char from the truncated multi-byte char should be stripped
+    expect(node.body.endsWith("\uFFFD")).toBe(false);
+    // Should end with a complete Chinese character
+    expect(node.body.endsWith(threeByteChar)).toBe(true);
+  });
+});
+
 describe("KNN with repo filter", () => {
   it("searchKNN with repo filter returns only matching repo nodes", () => {
     const n1 = mdb.insertNode({ repo: "repo-a", kind: "message", title: "A", body: "test", meta: "{}", source_id: "a1", source_type: "t" });

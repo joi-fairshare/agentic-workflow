@@ -46,6 +46,65 @@ describe("server registerRoute error handling", () => {
     expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("defaults to 500 status when statusHint is not provided in error", async () => {
+    const schema = { response: z.object({ ok: z.boolean() }) };
+    const noHintController: ControllerDefinition = {
+      basePath: "/test",
+      routes: [
+        defineRoute({
+          method: "GET",
+          path: "/no-hint",
+          summary: "test",
+          schema,
+          handler: async () => ({
+            ok: false as const,
+            error: { code: "NO_HINT", message: "no status hint" },
+          }),
+        }),
+      ],
+    };
+    app = createServer([noHintController]);
+    await app.ready();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/test/no-hint",
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error.code).toBe("NO_HINT");
+  });
+
+  it("returns error with details field when handler returns error with details", async () => {
+    const schema = { response: z.object({ ok: z.boolean() }) };
+    const detailController: ControllerDefinition = {
+      basePath: "/test",
+      routes: [
+        defineRoute({
+          method: "GET",
+          path: "/with-details",
+          summary: "test",
+          schema,
+          handler: async () => ({
+            ok: false as const,
+            error: { code: "TEST", message: "msg", details: "extra info", statusHint: 422 as const },
+          }),
+        }),
+      ],
+    };
+    app = createServer([detailController]);
+    await app.ready();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/test/with-details",
+    });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json().ok).toBe(false);
+    expect(res.json().error.details).toBe("extra info");
+  });
+
   it("returns 500 with INTERNAL_ERROR on generic throw", async () => {
     const schema = { response: z.object({ ok: z.boolean() }) };
     const throwController: ControllerDefinition = {

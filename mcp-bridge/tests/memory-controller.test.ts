@@ -7,7 +7,7 @@ import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { createMemoryController } from "../src/transport/controllers/memory-controller.js";
 import type { ApiRequest } from "../src/transport/types.js";
-import type { CreateNodeSchema, GetContextSchema, CreateLinkSchema } from "../src/transport/schemas/memory-schemas.js";
+import type { CreateNodeSchema, GetContextSchema, CreateLinkSchema, SearchMemorySchema, TraverseSchema } from "../src/transport/schemas/memory-schemas.js";
 
 function createInMemoryDb(): Database.Database {
   const db = new Database(":memory:");
@@ -71,6 +71,31 @@ describe("memory-controller", () => {
       if (result.ok) return;
       expect(result.error.code).toBe("VALIDATION_ERROR");
     });
+
+    it("returns context sections when query matches nodes", async () => {
+      // Insert a node that will be found by the query
+      mdb.insertNode({
+        repo: "test-repo",
+        kind: "message",
+        title: "Context test node",
+        body: "This is content for context assembly testing",
+        meta: "{}",
+        source_id: "ctx-1",
+        source_type: "bridge",
+      });
+
+      const result = await controller.getContext({
+        query: { repo: "test-repo", query: "context assembly", max_tokens: 8000 },
+        body: undefined as never,
+        params: undefined as never,
+        requestId: "test",
+      } as ApiRequest<GetContextSchema>);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // sections should be an array (possibly empty if keyword search returns nothing)
+      expect(Array.isArray(result.data.sections)).toBe(true);
+    });
   });
 
   describe("createLink", () => {
@@ -95,6 +120,104 @@ describe("memory-controller", () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.code).toBe("NOT_FOUND");
+    });
+  });
+
+  describe("createLink with note", () => {
+    it("creates link with a note and filters secrets from it", async () => {
+      const fromNode = mdb.insertNode({ repo: "test-repo", kind: "topic", title: "From", body: "", meta: "{}", source_id: "fl-from", source_type: "bridge" });
+      const toNode = mdb.insertNode({ repo: "test-repo", kind: "decision", title: "To", body: "", meta: "{}", source_id: "fl-to", source_type: "bridge" });
+
+      const result = await controller.createLink({
+        body: { from_node: fromNode.id, to_node: toNode.id, kind: "related_to", note: "See discussion" },
+        params: undefined as never,
+        query: undefined as never,
+        requestId: "test",
+      } as ApiRequest<CreateLinkSchema>);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // The note should be stored in meta
+      expect(result.data.meta).toContain("See discussion");
+    });
+  });
+
+  describe("search", () => {
+    it("returns EMBEDDING_NOT_READY when mode=semantic and embedService is not ready", async () => {
+      const result = await controller.search({
+        query: { repo: "test-repo", query: "anything", mode: "semantic" as const, limit: 10 },
+        body: undefined as never,
+        params: undefined as never,
+        requestId: "test",
+      } as ApiRequest<SearchMemorySchema>);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("EMBEDDING_NOT_READY");
+    });
+
+    it("handles kinds filter (comma-separated kinds string)", async () => {
+      mdb.insertNode({ repo: "test-repo", kind: "decision", title: "A decision", body: "body", meta: "{}", source_id: "s-dec", source_type: "bridge" });
+
+      const result = await controller.search({
+        query: { repo: "test-repo", query: "decision", mode: "keyword" as const, kinds: "decision,topic", limit: 10 },
+        body: undefined as never,
+        params: undefined as never,
+        requestId: "test",
+      } as ApiRequest<SearchMemorySchema>);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it("returns error from searchMemory when semantic search fails (embed service ready but fails)", async () => {
+      // Use a mock where isReady()=true but embed() always fails, causing semantic search to error
+      const failReadyEmbed: EmbeddingService = {
+        async embed() { return { ok: false, error: { code: "EMBEDDING_FAILED", message: "crash", statusHint: 500 } }; },
+        async embedBatch() { return { ok: false, error: { code: "EMBEDDING_FAILED", message: "crash", statusHint: 500 } }; },
+        isReady() { return true; },
+        isDegraded() { return false; },
+        async warmUp() {},
+      };
+      const failController = createMemoryController(mdb, failReadyEmbed, createSecretFilter());
+
+      const result = await failController.search({
+        query: { repo: "test-repo", query: "anything", mode: "semantic" as const, limit: 10 },
+        body: undefined as never,
+        params: undefined as never,
+        requestId: "test",
+      } as ApiRequest<SearchMemorySchema>);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("EMBEDDING_FAILED");
+    });
+  });
+
+  describe("traverse", () => {
+    it("returns NOT_FOUND when node_id does not exist", async () => {
+      const result = await controller.traverse({
+        query: { direction: "outgoing" as const, max_depth: 3, max_nodes: 50 },
+        params: { id: "nonexistent-node-id" },
+        body: undefined as never,
+        requestId: "test",
+      } as ApiRequest<TraverseSchema>);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("NOT_FOUND");
+    });
+
+    it("handles edge_kinds filter (comma-separated string)", async () => {
+      const node = mdb.insertNode({ repo: "test-repo", kind: "conversation", title: "Conv", body: "body", meta: "{}", source_id: "conv-ek", source_type: "bridge" });
+
+      const result = await controller.traverse({
+        query: { direction: "outgoing" as const, edge_kinds: "contains,reply_to", max_depth: 3, max_nodes: 50 },
+        params: { id: node.id },
+        body: undefined as never,
+        requestId: "test",
+      } as ApiRequest<TraverseSchema>);
+
+      expect(result.ok).toBe(true);
     });
   });
 

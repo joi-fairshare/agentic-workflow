@@ -107,6 +107,25 @@ describe("ingestBridgeTask", () => {
     const edges = mdb.getEdgesFrom(convNode!.id);
     expect(edges.some((e) => e.kind === "spawned")).toBe(true);
   });
+
+  it("is idempotent — ingesting same task twice returns existing node", () => {
+    const conv = randomUUID();
+    const taskResult = assignTask(bridgeDb, {
+      conversation: conv,
+      domain: "frontend",
+      summary: "Fix UI",
+      details: "Button broken",
+      assigned_to: "agent",
+    });
+    if (!taskResult.ok) return;
+
+    ingestBridgeTask(mdb, filter, repo, taskResult.data);
+    const result2 = ingestBridgeTask(mdb, filter, repo, taskResult.data);
+
+    expect(result2.ok).toBe(true);
+    const allTasks = mdb.getNodesByRepoAndKind(repo, "task");
+    expect(allTasks.filter((n) => n.source_id === taskResult.data.id)).toHaveLength(1);
+  });
 });
 
 describe("backfillBridge", () => {
@@ -122,6 +141,22 @@ describe("backfillBridge", () => {
 
     const cursor = mdb.getCursor("bridge-backfill", repo);
     expect(cursor).toBeDefined();
+  });
+
+  it("ingests tasks from backfill", async () => {
+    const conv = randomUUID();
+    assignTask(bridgeDb, {
+      conversation: conv,
+      domain: "backend",
+      summary: "Backfill task",
+      details: "Task details",
+      assigned_to: "agent",
+    });
+
+    const result = await backfillBridge(mdb, bridgeDb, filter, repo);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.tasks_ingested).toBe(1);
   });
 });
 

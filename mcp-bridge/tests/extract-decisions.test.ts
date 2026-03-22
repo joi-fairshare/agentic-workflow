@@ -274,6 +274,19 @@ describe("extractDecisions", () => {
     expect(decisions).toHaveLength(0);
   });
 
+  it("skips message nodes with empty body", () => {
+    const conv = insertConversation();
+    const msg = insertMessage("", 1);
+    linkMessageToConversation(conv.id, msg.id);
+
+    const result = extractDecisions(mdb, { repo: "test" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.decisions_created).toBe(0);
+  });
+
+
   it("counts but does not duplicate already-extracted decisions", () => {
     // Create a conversation and message with a decision pattern
     const convNode = mdb.insertNode({ repo: "r", kind: "conversation", title: "Conv", body: "", meta: "{}", source_id: "conv-dedup", source_type: "test" });

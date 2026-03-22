@@ -98,6 +98,23 @@ describe("ingestTranscriptLines", () => {
     expect(node!.body).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
 
+  it("uses [type] as node title when message content is empty", () => {
+    const lines = [
+      JSON.stringify({ type: "assistant", uuid: "u-empty", parentUuid: null, message: {}, timestamp: "2026-01-01T00:00:00Z" }),
+    ];
+
+    const result = ingestTranscriptLines(mdb, filter, { repo, sessionId: "s-empty", sessionTitle: "Empty", lines });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.messages_ingested).toBe(1);
+
+    const node = mdb.getNodeBySource("transcript", "u-empty");
+    expect(node).toBeDefined();
+    // Empty content → title falls back to [type]
+    expect(node!.title).toBe("[assistant]");
+  });
+
   it("skips already-ingested message UUIDs within a session", () => {
     // Pre-insert a message node with a specific transcript source
     mdb.insertNode({

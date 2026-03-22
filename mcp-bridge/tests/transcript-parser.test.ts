@@ -69,6 +69,19 @@ describe("parseTranscriptLines", () => {
     expect(result.records[0].content).toBe("hello\nworld");
   });
 
+  it("skips array items that are objects without a text property (returns empty string)", () => {
+    const lines = [
+      JSON.stringify({
+        type: "assistant", uuid: "u1", parentUuid: null,
+        message: { content: [{ type: "tool_use", id: "t1" }, { type: "text", text: "hello" }] },
+        timestamp: "2026-01-01T00:00:00Z",
+      }),
+    ];
+    const result = parseTranscriptLines(lines);
+    // The tool_use item has no "text" field so returns "" and is filtered; only "hello" remains
+    expect(result.records[0].content).toBe("hello");
+  });
+
   it("returns empty content when message is present but content is absent", () => {
     const lines = [
       JSON.stringify({ type: "human", uuid: "u2", parentUuid: null, message: {}, timestamp: "2026-01-01T00:00:00Z" }),

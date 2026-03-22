@@ -18,7 +18,9 @@ vi.mock("node:fs", () => ({
 }));
 
 import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
 const mockExecFileSync = vi.mocked(execFileSync);
+const mockStatSync = vi.mocked(statSync);
 
 // ── Test setup ──────────────────────────────────────────────────────────
 
@@ -292,6 +294,16 @@ describe("ingestGitMetadata", () => {
     expect(result.error.code).toBe("GIT_ERROR");
   });
 
+  it("returns GIT_ERROR when repoPath is not a valid directory", async () => {
+    // Make statSync report that the path is not a directory
+    mockStatSync.mockReturnValueOnce({ isDirectory: () => false } as ReturnType<typeof statSync>);
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("GIT_ERROR");
+  });
+
   it("skips already-ingested PRs without creating duplicates", async () => {
     // Pre-insert a PR node
     mdb.insertNode({
@@ -320,5 +332,62 @@ describe("ingestGitMetadata", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.prs_ingested).toBe(0);
+  });
+
+  it("handles gh returning empty/whitespace output — skips PR ingestion", async () => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
+      const c = cmd as string;
+      const a = args as string[];
+      if (c === "git" && a[0] === "log") return "";
+      if (c === "gh" && a[0] === "pr") return "   ";
+      return "";
+    });
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.prs_ingested).toBe(0);
+  });
+
+  it("handles PR with null author and null body (uses fallback values)", async () => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
+      const c = cmd as string;
+      const a = args as string[];
+      if (c === "git" && a[0] === "log") return "";
+      if (c === "gh" && a[0] === "pr") {
+        // Provide raw JSON with null author and null body to trigger fallback branches
+        return JSON.stringify([
+          { number: 77, title: "Null author PR", author: null, state: "open", createdAt: "2026-03-15T08:00:00Z", body: null },
+        ]);
+      }
+      return "";
+    });
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.prs_ingested).toBe(1);
+
+    const prNode = mdb.getNodeBySource("github_pr", "#77");
+    expect(prNode).toBeDefined();
+    // Body should use the empty string fallback, not crash
+    expect(prNode!.body).toBeDefined();
+  });
+
+  it("logs non-Error objects when git log throws a non-Error", async () => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
+      const c = cmd as string;
+      const a = args as string[];
+      if (c === "git" && a[0] === "log") {
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw "string error";
+      }
+      return "";
+    });
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("GIT_ERROR");
   });
 });

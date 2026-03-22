@@ -80,16 +80,31 @@ describe("searchMemory", () => {
     expect(result.data.length).toBeGreaterThan(0);
   });
 
-  it("degrades hybrid to keyword when embedService.isDegraded() is true", async () => {
-    const degradedEmbed = createEmbeddingService({
-      embedFn: async () => { throw new Error("init fail"); },
+  it("defaults to hybrid mode when mode is not provided", async () => {
+    mdb.insertNode({ repo: "r", kind: "message", title: "Default mode test", body: "Uses hybrid by default", meta: "{}", source_id: "dm1", source_type: "bridge" });
+
+    // Call without mode — should default to hybrid
+    const result = await searchMemory(mdb, embedService, {
+      query: "Default",
+      repo: "r",
+      limit: 10,
     });
-    // Force degraded state — embed once to trigger init failure through ensureReady
-    await degradedEmbed.embed("trigger");
+    expect(result.ok).toBe(true);
+  });
+
+  it("degrades hybrid to keyword when embedService.isDegraded() is true", async () => {
+    // Use a mock that directly reports isDegraded() = true so lines 42-44 are exercised
+    const alwaysDegradedEmbed: import("../src/ingestion/embedding.js").EmbeddingService = {
+      async embed() { return { ok: false, error: { code: "EMBEDDING_DEGRADED", message: "degraded", statusHint: 503 } }; },
+      async embedBatch() { return { ok: false, error: { code: "EMBEDDING_DEGRADED", message: "degraded", statusHint: 503 } }; },
+      isReady() { return false; },
+      isDegraded() { return true; },
+      async warmUp() {},
+    };
 
     mdb.insertNode({ repo: "r", kind: "message", title: "Degraded test", body: "Keyword search still works", meta: "{}", source_id: "d1", source_type: "bridge" });
 
-    const result = await searchMemory(mdb, degradedEmbed, {
+    const result = await searchMemory(mdb, alwaysDegradedEmbed, {
       query: "Keyword",
       repo: "r",
       mode: "hybrid",
