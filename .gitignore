@@ -8,3 +8,4 @@ dist/
 .DS_Store
 .review-cache/
 .superpowers/
+.worktrees/
