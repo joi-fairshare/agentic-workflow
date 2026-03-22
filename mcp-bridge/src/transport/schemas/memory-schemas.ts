@@ -183,13 +183,20 @@ export type GetStatsSchema = typeof GetStatsSchema;
 
 export const IngestBodySchema = z.object({
   repo: z.string(),
-  source: z.enum(["bridge", "transcript", "git"]),
+  source: z.enum(["bridge", "transcript", "git", "generic", "claude-code"]),
+  session_id: z.string().optional(),
+  title: z.string().optional(),
   path: z.string().optional(),
+  content: z.string().optional(),
+  agent: z.string().max(64).regex(/^[a-zA-Z0-9_-]+$/).default("anonymous"),
 });
 export type IngestBody = z.infer<typeof IngestBodySchema>;
 
 export const IngestResponseSchema = z.object({
-  ingested: z.number(),
+  conversation_id: z.string(),
+  messages_ingested: z.number(),
+  edges_created: z.number(),
+  skipped: z.number(),
 });
 export type IngestResponse = z.infer<typeof IngestResponseSchema>;
 
@@ -198,6 +205,19 @@ export const IngestSchema = {
   response: IngestResponseSchema,
 } as const;
 export type IngestSchema = typeof IngestSchema;
+
+// ── expand_node ─────────────────────────────────────────────
+
+export const ExpandNodeSchema = {
+  params: z.object({ id: z.string() }),
+  response: z.object({
+    nodes_created: z.number(),
+    edges_created: z.number(),
+    nodes: z.array(NodeResponseSchema),
+    edges: z.array(EdgeResponseSchema),
+  }),
+} as const;
+export type ExpandNodeSchema = typeof ExpandNodeSchema;
 
 // ── create_link ────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { MemoryDbClient } from "../../db/memory-client.js";
 import type { EmbeddingService } from "../../ingestion/embedding.js";
 import type { SecretFilter } from "../../ingestion/secret-filter.js";
@@ -6,6 +7,9 @@ import { NODE_KINDS, type NodeKind } from "../../db/memory-schema.js";
 import { searchMemory } from "../../application/services/search-memory.js";
 import { traverseMemory } from "../../application/services/traverse-memory.js";
 import { assembleContext } from "../../application/services/assemble-context.js";
+import { ingestGenericChat } from "../../application/services/ingest-generic.js";
+import { ingestClaudeCodeSummary, expandClaudeCodeTurn } from "../../application/services/ingest-claude-code.js";
+import { ingestTranscriptLines } from "../../application/services/ingest-transcript.js";
 import type { ApiRequest, ApiResponse } from "../types.js";
 import { appErr } from "../types.js";
 import type {
@@ -17,6 +21,7 @@ import type {
   GetTopicsSchema,
   GetStatsSchema,
   IngestSchema,
+  ExpandNodeSchema,
   CreateLinkSchema,
   CreateNodeSchema,
   TraversalLogsQuerySchema,
@@ -195,11 +200,175 @@ export function createMemoryController(
       return { ok: true, data: stats };
     },
 
-    // Placeholder — wired fully in Task 16
     async ingest(
-      _req: ApiRequest<IngestSchema>,
+      req: ApiRequest<IngestSchema>,
     ): Promise<ApiResponse<IngestResponse>> {
-      return { ok: true, data: { ingested: 0 } };
+      const { repo, source, session_id, title, path, content } = req.body;
+
+      if (source === "bridge") {
+        return appErr({
+          code: "UNSUPPORTED_SOURCE",
+          message: "bridge ingestion is done via MCP events, not REST",
+          statusHint: 400,
+        });
+      }
+
+      if (source === "git") {
+        return appErr({
+          code: "UNSUPPORTED_SOURCE",
+          message: "git ingestion is not supported via REST",
+          statusHint: 400,
+        });
+      }
+
+      if (source === "generic") {
+        if (!content) {
+          return appErr({ code: "VALIDATION", message: "content is required for generic source", statusHint: 400 });
+        }
+        if (!session_id) {
+          return appErr({ code: "VALIDATION", message: "session_id is required for generic source", statusHint: 400 });
+        }
+        let messages: Array<{ role: string; content: string; timestamp?: string }>;
+        try {
+          messages = JSON.parse(content) as Array<{ role: string; content: string; timestamp?: string }>;
+        } catch {
+          return appErr({ code: "VALIDATION", message: "content must be a valid JSON array of messages", statusHint: 400 });
+        }
+        const result = ingestGenericChat(mdb, filter, {
+          repo,
+          sessionId: session_id,
+          sessionTitle: title ?? session_id,
+          messages,
+        });
+        if (!result.ok) return appErr(result.error);
+        return { ok: true, data: result.data };
+      }
+
+      if (source === "claude-code") {
+        if (!path) {
+          return appErr({ code: "VALIDATION", message: "path is required for claude-code source", statusHint: 400 });
+        }
+        if (!session_id) {
+          return appErr({ code: "VALIDATION", message: "session_id is required for claude-code source", statusHint: 400 });
+        }
+        let lines: string[];
+        try {
+          const raw = readFileSync(path, "utf-8");
+          lines = raw.split("\n").filter((l) => l.trim().length > 0);
+        } catch {
+          return appErr({ code: "IO_ERROR", message: `Failed to read file: ${path}`, statusHint: 400 });
+        }
+        const result = ingestClaudeCodeSummary(mdb, filter, {
+          repo,
+          sessionId: session_id,
+          filePath: path,
+          lines,
+        });
+        if (!result.ok) return appErr(result.error);
+        return { ok: true, data: result.data };
+      }
+
+      // source === "transcript"
+      if (!path) {
+        return appErr({ code: "VALIDATION", message: "path is required for transcript source", statusHint: 400 });
+      }
+      if (!session_id) {
+        return appErr({ code: "VALIDATION", message: "session_id is required for transcript source", statusHint: 400 });
+      }
+      let lines: string[];
+      try {
+        const raw = readFileSync(path, "utf-8");
+        lines = raw.split("\n").filter((l) => l.trim().length > 0);
+      } catch {
+        return appErr({ code: "IO_ERROR", message: `Failed to read file: ${path}`, statusHint: 400 });
+      }
+      const transcriptResult = ingestTranscriptLines(mdb, filter, {
+        repo,
+        sessionId: session_id,
+        sessionTitle: title ?? session_id,
+        lines,
+      });
+      if (!transcriptResult.ok) return appErr(transcriptResult.error);
+      return {
+        ok: true,
+        data: {
+          conversation_id: session_id,
+          messages_ingested: transcriptResult.data.messages_ingested,
+          edges_created: transcriptResult.data.edges_created,
+          skipped: transcriptResult.data.skipped,
+        },
+      };
+    },
+
+    async expand(
+      req: ApiRequest<ExpandNodeSchema>,
+    ): Promise<ApiResponse<{ nodes_created: number; edges_created: number; nodes: NodeResponse[]; edges: EdgeResponse[] }>> {
+      const turnNodeId = req.params.id;
+
+      // Read the turn node to get the file_path from metadata
+      const turnNode = mdb.getNode(turnNodeId);
+      if (!turnNode) {
+        return appErr({ code: "NOT_FOUND", message: `Node ${turnNodeId} not found`, statusHint: 404 });
+      }
+
+      // Parse metadata to get file_path
+      let meta: Record<string, unknown>;
+      try {
+        meta = JSON.parse(turnNode.meta) as Record<string, unknown>;
+      } catch {
+        return appErr({ code: "INTERNAL_ERROR", message: "Failed to parse node metadata", statusHint: 500 });
+      }
+
+      // Get the conversation node to find the file_path
+      const convEdges = mdb.getEdgesTo(turnNodeId);
+      const containsEdge = convEdges.find((e) => e.kind === "contains");
+      let filePath: string | undefined = meta.file_path as string | undefined;
+
+      if (!filePath && containsEdge) {
+        const convNode = mdb.getNode(containsEdge.from_node);
+        if (convNode) {
+          let convMeta: Record<string, unknown>;
+          try {
+            convMeta = JSON.parse(convNode.meta) as Record<string, unknown>;
+            filePath = convMeta.file_path as string | undefined;
+          } catch {
+            // ignore parse error
+          }
+        }
+      }
+
+      if (!filePath) {
+        return appErr({ code: "VALIDATION", message: "Cannot determine file_path for expansion", statusHint: 400 });
+      }
+
+      let lines: string[];
+      try {
+        const raw = readFileSync(filePath, "utf-8");
+        lines = raw.split("\n").filter((l) => l.trim().length > 0);
+      } catch {
+        return appErr({ code: "IO_ERROR", message: `Failed to read file: ${filePath}`, statusHint: 400 });
+      }
+
+      const result = expandClaudeCodeTurn(mdb, filter, turnNodeId, lines);
+      if (!result.ok) return appErr(result.error);
+
+      // Collect newly created child nodes and edges
+      const childEdges = mdb.getEdgesFrom(turnNodeId).filter((e) => e.kind === "contains");
+      const childNodes: NodeResponse[] = [];
+      for (const edge of childEdges) {
+        const node = mdb.getNode(edge.to_node);
+        if (node) childNodes.push(node);
+      }
+
+      return {
+        ok: true,
+        data: {
+          nodes_created: result.data.nodes_created,
+          edges_created: result.data.edges_created,
+          nodes: childNodes,
+          edges: childEdges,
+        },
+      };
     },
 
     async createLink(

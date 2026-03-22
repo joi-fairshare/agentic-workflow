@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -16,6 +17,8 @@ import { createSecretFilter } from "./ingestion/secret-filter.js";
 import { searchMemory } from "./application/services/search-memory.js";
 import { traverseMemory } from "./application/services/traverse-memory.js";
 import { assembleContext } from "./application/services/assemble-context.js";
+import { ingestGenericChat } from "./application/services/ingest-generic.js";
+import { ingestClaudeCodeSummary } from "./application/services/ingest-claude-code.js";
 
 // NOTE: a copy of this function exists in tests/mcp-tools.test.ts for unit-testing
 // the MCP tool handlers without invoking the real server. Both copies must stay
@@ -256,6 +259,83 @@ export async function startMcpServer(dbPath?: string) {
         });
       }
       return resultToContent({ ok: true as const, data: node });
+    },
+  );
+
+  // ── ingest_conversation ────────────────────────────────
+
+  server.tool(
+    "ingest_conversation",
+    "Ingest a conversation into the memory graph for long-term preservation.",
+    {
+      repo: z.string().describe("Repository slug"),
+      source: z.enum(["claude-code", "transcript", "generic"]).describe("Ingestion format"),
+      session_id: z.string().describe("Unique session ID for idempotency"),
+      title: z.string().optional().describe("Conversation title"),
+      content: z.string().optional().describe("Inline content (generic format)"),
+      path: z.string().optional().describe("File path (transcript/claude-code format)"),
+      agent: z.string().optional().describe("Agent identifier"),
+    },
+    async ({ repo, source, session_id, title, content, path }) => {
+      if (source === "generic") {
+        if (!content) {
+          return resultToContent({ ok: false as const, error: { code: "VALIDATION", message: "content is required for generic source" } });
+        }
+        let messages: Array<{ role: string; content: string; timestamp?: string }>;
+        try {
+          messages = JSON.parse(content) as Array<{ role: string; content: string; timestamp?: string }>;
+        } catch {
+          return resultToContent({ ok: false as const, error: { code: "VALIDATION", message: "content must be a valid JSON array of messages" } });
+        }
+        const result = ingestGenericChat(mdb, filter, {
+          repo,
+          sessionId: session_id,
+          sessionTitle: title ?? session_id,
+          messages,
+        });
+        return resultToContent(result);
+      }
+
+      if (source === "claude-code") {
+        if (!path) {
+          return resultToContent({ ok: false as const, error: { code: "VALIDATION", message: "path is required for claude-code source" } });
+        }
+        let lines: string[];
+        try {
+          const raw = readFileSync(path, "utf-8");
+          lines = raw.split("\n").filter((l) => l.trim().length > 0);
+        } catch {
+          return resultToContent({ ok: false as const, error: { code: "IO_ERROR", message: `Failed to read file: ${path}` } });
+        }
+        const result = ingestClaudeCodeSummary(mdb, filter, {
+          repo,
+          sessionId: session_id,
+          filePath: path,
+          lines,
+        });
+        return resultToContent(result);
+      }
+
+      // source === "transcript"
+      if (!path) {
+        return resultToContent({ ok: false as const, error: { code: "VALIDATION", message: "path is required for transcript source" } });
+      }
+      let lines: string[];
+      try {
+        const raw = readFileSync(path, "utf-8");
+        lines = raw.split("\n").filter((l) => l.trim().length > 0);
+      } catch {
+        return resultToContent({ ok: false as const, error: { code: "IO_ERROR", message: `Failed to read file: ${path}` } });
+      }
+      // Dynamically import to avoid circular dependency issues
+      const { ingestTranscriptLines } = await import("./application/services/ingest-transcript.js");
+      const result = ingestTranscriptLines(mdb, filter, {
+        repo,
+        sessionId: session_id,
+        sessionTitle: title ?? session_id,
+        lines,
+      });
+      return resultToContent(result);
     },
   );
 

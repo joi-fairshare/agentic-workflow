@@ -12,6 +12,7 @@ import {
   GetTopicsSchema,
   GetStatsSchema,
   IngestSchema,
+  ExpandNodeSchema,
   CreateLinkSchema,
   CreateNodeSchema,
   TraversalLogsQuerySchema,
@@ -84,6 +85,13 @@ export function createMemoryRoutes(
         summary: "Ingest data into memory from a source",
         schema: IngestSchema,
         handler: handlers.ingest,
+      }),
+      defineRoute({
+        method: "POST",
+        path: "/node/:id/expand",
+        summary: "Expand a summary-only turn into full detail nodes",
+        schema: ExpandNodeSchema,
+        handler: handlers.expand,
       }),
       defineRoute({
         method: "POST",

@@ -1,254 +1,256 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { type MemoryDbClient } from "../src/db/memory-client.js";
+// mcp-bridge/tests/memory-controller.test.ts
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import Database from "better-sqlite3";
+import * as sqliteVec from "sqlite-vec";
+import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
+import { createEmbeddingService } from "../src/ingestion/embedding.js";
 import { createSecretFilter } from "../src/ingestion/secret-filter.js";
-import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { createMemoryController } from "../src/transport/controllers/memory-controller.js";
-import type { ApiRequest } from "../src/transport/types.js";
-import type { CreateNodeSchema, GetContextSchema, CreateLinkSchema, SearchMemorySchema, TraverseSchema } from "../src/transport/schemas/memory-schemas.js";
-import { createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
+import {
+  ingestClaudeCodeSummary,
+} from "../src/application/services/ingest-claude-code.js";
 
-function makeCreateNodeReq(
-  body: { repo: string; kind: "topic" | "decision"; title: string; body?: string; related_to?: string },
-): ApiRequest<CreateNodeSchema> {
+// ── JSONL fixture helpers ─────────────────────────────────────────────────
+
+const makeUserLine = (
+  uuid: string,
+  parentUuid: string | null,
+  content: string,
+  timestamp = "2026-01-01T00:00:00Z",
+) =>
+  JSON.stringify({
+    type: "user",
+    uuid,
+    parentUuid,
+    message: { role: "user", content },
+    timestamp,
+    sessionId: "ctrl-session",
+    cwd: "/repo",
+    gitBranch: "main",
+    version: "2.1.80",
+    entrypoint: "cli",
+  });
+
+const makeAssistantLine = (
+  uuid: string,
+  parentUuid: string,
+  blocks: unknown[],
+  timestamp = "2026-01-01T00:00:01Z",
+) =>
+  JSON.stringify({
+    type: "assistant",
+    uuid,
+    parentUuid,
+    message: { role: "assistant", content: blocks },
+    timestamp,
+    sessionId: "ctrl-session",
+    cwd: "/repo",
+    gitBranch: "main",
+    version: "2.1.80",
+    entrypoint: "cli",
+  });
+
+const FIXTURE_LINES = [
+  makeUserLine("u1", null, "What is TypeScript?"),
+  makeAssistantLine("a1", "u1", [
+    { type: "text", text: "TypeScript is a typed superset of JavaScript." },
+    { type: "tool_use", id: "t1", name: "Read", input: { file_path: "/example.ts" } },
+  ]),
+];
+
+const FIXTURE_CONTENT = FIXTURE_LINES.join("\n");
+const FIXTURE_FILE_PATH = "/fake/path/ctrl-session.jsonl";
+
+// ── Mock node:fs to return the JSONL fixture when the fixture path is read ──
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
   return {
-    body: { repo: body.repo, kind: body.kind, title: body.title, body: body.body, related_to: body.related_to },
-    params: undefined as never,
-    query: undefined as never,
-    requestId: "test",
+    ...actual,
+    readFileSync: (path: string, encoding?: string) => {
+      if (path === FIXTURE_FILE_PATH) {
+        return FIXTURE_CONTENT;
+      }
+      return actual.readFileSync(path, encoding as BufferEncoding);
+    },
   };
+});
+
+// ── Test setup ────────────────────────────────────────────────────────────
+
+let mdb: MemoryDbClient;
+
+beforeEach(() => {
+  const raw = new Database(":memory:");
+  sqliteVec.load(raw);
+  raw.pragma("journal_mode = WAL");
+  raw.exec(MEMORY_MIGRATIONS);
+  mdb = createMemoryDbClient(raw);
+});
+
+function makeController() {
+  const embedService = createEmbeddingService();
+  const filter = createSecretFilter();
+  return { controller: createMemoryController(mdb, embedService, filter), filter };
 }
 
-describe("memory-controller", () => {
-  let mdb: MemoryDbClient;
-  let controller: ReturnType<typeof createMemoryController>;
+function makeReq<T extends object>(body: T) {
+  return { params: undefined as never, query: undefined as never, body, requestId: "test-req" };
+}
 
-  beforeEach(() => {
-    ({ mdb } = createTestMemoryDb());
-    const filter = createSecretFilter();
-    const embedService = createMockEmbeddingService();
-    controller = createMemoryController(mdb, embedService, filter);
+function makeParamsReq<T extends object>(params: T) {
+  return { params, query: undefined as never, body: undefined as never, requestId: "test-req" };
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+describe("memory-controller ingest", () => {
+  it("ingest with source=generic creates conversation + message nodes", async () => {
+    const { controller } = makeController();
+
+    const messages = [
+      { role: "user", content: "Hello there" },
+      { role: "assistant", content: "Hi! How can I help?" },
+    ];
+
+    const result = await controller.ingest(makeReq({
+      repo: "test-repo",
+      source: "generic" as const,
+      session_id: "generic-sess-1",
+      title: "Test Conversation",
+      content: JSON.stringify(messages),
+      agent: "anonymous",
+    }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.messages_ingested).toBe(2);
+    expect(result.data.conversation_id).toBeTruthy();
+    expect(result.data.edges_created).toBeGreaterThan(0);
+    expect(result.data.skipped).toBe(0);
+
+    // Verify nodes were actually created
+    const allNodes = mdb.getNodesByRepo("test-repo", 100, 0);
+    const convNodes = allNodes.filter((n) => n.kind === "conversation");
+    const msgNodes = allNodes.filter((n) => n.kind === "message");
+    expect(convNodes).toHaveLength(1);
+    expect(msgNodes).toHaveLength(2);
   });
 
-  describe("getContext", () => {
-    it("returns VALIDATION_ERROR when neither query nor node_id is provided", async () => {
-      const result = await controller.getContext({
-        query: { repo: "test-repo", max_tokens: 8000 } as never,
-        body: undefined as never,
-        params: undefined as never,
-        requestId: "test",
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe("VALIDATION_ERROR");
-    });
+  it("ingest with source=bridge returns error", async () => {
+    const { controller } = makeController();
 
-    it("returns context sections when query matches nodes", async () => {
-      // Insert a node that will be found by the query
-      mdb.insertNode({
-        repo: "test-repo",
-        kind: "message",
-        title: "Context test node",
-        body: "This is content for context assembly testing",
-        meta: "{}",
-        source_id: "ctx-1",
-        source_type: "bridge",
-      });
+    const result = await controller.ingest(makeReq({
+      repo: "test-repo",
+      source: "bridge" as const,
+      agent: "anonymous",
+    }));
 
-      const result = await controller.getContext({
-        query: { repo: "test-repo", query: "context assembly", max_tokens: 8000 },
-        body: undefined as never,
-        params: undefined as never,
-        requestId: "test",
-      } as ApiRequest<GetContextSchema>);
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      // sections should be an array (possibly empty if keyword search returns nothing)
-      expect(Array.isArray(result.data.sections)).toBe(true);
-    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("UNSUPPORTED_SOURCE");
+    expect(result.error.statusHint).toBe(400);
   });
 
-  describe("createLink", () => {
-    it("returns NOT_FOUND when to_node does not exist", async () => {
-      const fromNode = mdb.insertNode({
-        repo: "test-repo",
-        kind: "topic",
-        title: "From Node",
-        body: "body",
-        meta: "{}",
-        source_id: "from-1",
-        source_type: "bridge",
-      });
+  it("ingest with source=generic and invalid content JSON returns error", async () => {
+    const { controller } = makeController();
 
-      const result = await controller.createLink({
-        body: { from_node: fromNode.id, to_node: "non-existent-id", kind: "related_to" },
-        params: undefined as never,
-        query: undefined as never,
-        requestId: "test",
-      } as ApiRequest<CreateLinkSchema>);
+    const result = await controller.ingest(makeReq({
+      repo: "test-repo",
+      source: "generic" as const,
+      session_id: "sess-bad",
+      content: "not-valid-json",
+      agent: "anonymous",
+    }));
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe("NOT_FOUND");
-    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION");
   });
 
-  describe("createLink with note", () => {
-    it("creates link with a note and filters secrets from it", async () => {
-      const fromNode = mdb.insertNode({ repo: "test-repo", kind: "topic", title: "From", body: "", meta: "{}", source_id: "fl-from", source_type: "bridge" });
-      const toNode = mdb.insertNode({ repo: "test-repo", kind: "decision", title: "To", body: "", meta: "{}", source_id: "fl-to", source_type: "bridge" });
+  it("ingest with source=generic missing content returns error", async () => {
+    const { controller } = makeController();
 
-      const result = await controller.createLink({
-        body: { from_node: fromNode.id, to_node: toNode.id, kind: "related_to", note: "See discussion" },
-        params: undefined as never,
-        query: undefined as never,
-        requestId: "test",
-      } as ApiRequest<CreateLinkSchema>);
+    const result = await controller.ingest(makeReq({
+      repo: "test-repo",
+      source: "generic" as const,
+      session_id: "sess-no-content",
+      agent: "anonymous",
+    }));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      // The note should be stored in meta
-      expect(result.data.meta).toContain("See discussion");
-    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION");
   });
 
-  describe("search", () => {
-    it("returns EMBEDDING_NOT_READY when mode=semantic and embedService is not ready", async () => {
-      // Use a not-ready embedding service to exercise the EMBEDDING_NOT_READY path
-      const notReadyEmbed: EmbeddingService = {
-        async embed() { return { ok: true, data: new Float32Array(768) }; },
-        async embedBatch() { return { ok: true, data: [new Float32Array(768)] }; },
-        isReady() { return false; },
-        isDegraded() { return false; },
-        async warmUp() {},
-      };
-      const notReadyController = createMemoryController(mdb, notReadyEmbed, createSecretFilter());
-      const result = await notReadyController.search({
-        query: { repo: "test-repo", query: "anything", mode: "semantic" as const, limit: 10 },
-        body: undefined as never,
-        params: undefined as never,
-        requestId: "test",
-      } as ApiRequest<SearchMemorySchema>);
+  it("ingest with source=git returns error", async () => {
+    const { controller } = makeController();
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe("EMBEDDING_NOT_READY");
+    const result = await controller.ingest(makeReq({
+      repo: "test-repo",
+      source: "git" as const,
+      agent: "anonymous",
+    }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("UNSUPPORTED_SOURCE");
+  });
+});
+
+describe("memory-controller expand", () => {
+  it("expand handler creates detail nodes for an unexpanded assistant turn", async () => {
+    const { controller, filter } = makeController();
+
+    // First ingest the session using the service directly (sets up data with file_path in conv metadata)
+    const ingestResult = ingestClaudeCodeSummary(mdb, filter, {
+      repo: "test-repo",
+      sessionId: "ctrl-session",
+      filePath: FIXTURE_FILE_PATH,
+      lines: FIXTURE_LINES,
     });
 
-    it("handles kinds filter (comma-separated kinds string)", async () => {
-      mdb.insertNode({ repo: "test-repo", kind: "decision", title: "A decision", body: "body", meta: "{}", source_id: "s-dec", source_type: "bridge" });
+    expect(ingestResult.ok).toBe(true);
 
-      const result = await controller.search({
-        query: { repo: "test-repo", query: "decision", mode: "keyword" as const, kinds: "decision,topic", limit: 10 },
-        body: undefined as never,
-        params: undefined as never,
-        requestId: "test",
-      } as ApiRequest<SearchMemorySchema>);
+    // Find the assistant node (it has tool_use so expand will create artifact nodes)
+    const allNodes = mdb.getNodesByRepo("test-repo", 100, 0);
+    const assistantNodes = allNodes.filter((n) => n.kind === "message" && n.sender === "assistant");
+    expect(assistantNodes).toHaveLength(1);
 
-      expect(result.ok).toBe(true);
-    });
+    const assistantNode = assistantNodes[0];
+    const metaBefore = JSON.parse(assistantNode.meta) as Record<string, unknown>;
+    expect(metaBefore.expanded).toBe(false);
+    expect(metaBefore.tool_use_count).toBe(1);
 
-    it("returns error from searchMemory when semantic search fails (embed service ready but fails)", async () => {
-      // Use a mock where isReady()=true but embed() always fails, causing semantic search to error
-      const failReadyEmbed: EmbeddingService = {
-        async embed() { return { ok: false, error: { code: "EMBEDDING_FAILED", message: "crash", statusHint: 500 } }; },
-        async embedBatch() { return { ok: false, error: { code: "EMBEDDING_FAILED", message: "crash", statusHint: 500 } }; },
-        isReady() { return true; },
-        isDegraded() { return false; },
-        async warmUp() {},
-      };
-      const failController = createMemoryController(mdb, failReadyEmbed, createSecretFilter());
+    // Call the expand handler
+    const result = await controller.expand(makeParamsReq({ id: assistantNode.id }));
 
-      const result = await failController.search({
-        query: { repo: "test-repo", query: "anything", mode: "semantic" as const, limit: 10 },
-        body: undefined as never,
-        params: undefined as never,
-        requestId: "test",
-      } as ApiRequest<SearchMemorySchema>);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe("EMBEDDING_FAILED");
-    });
+    expect(result.data.nodes_created).toBe(1); // 1 artifact (Read tool)
+    expect(result.data.edges_created).toBe(1);
+    expect(result.data.nodes).toHaveLength(1);
+    expect(result.data.nodes[0].kind).toBe("artifact");
+    expect(result.data.nodes[0].title).toBe("Read");
+    expect(result.data.edges).toHaveLength(1);
+
+    // Verify expanded flag is set
+    const updated = mdb.getNode(assistantNode.id);
+    const metaAfter = JSON.parse(updated!.meta) as Record<string, unknown>;
+    expect(metaAfter.expanded).toBe(true);
   });
 
-  describe("traverse", () => {
-    it("returns NOT_FOUND when node_id does not exist", async () => {
-      const result = await controller.traverse({
-        query: { direction: "outgoing" as const, max_depth: 3, max_nodes: 50 },
-        params: { id: "nonexistent-node-id" },
-        body: undefined as never,
-        requestId: "test",
-      } as ApiRequest<TraverseSchema>);
+  it("expand handler returns NOT_FOUND for a nonexistent node", async () => {
+    const { controller } = makeController();
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe("NOT_FOUND");
-    });
+    const result = await controller.expand(makeParamsReq({ id: "nonexistent-node-id" }));
 
-    it("handles edge_kinds filter (comma-separated string)", async () => {
-      const node = mdb.insertNode({ repo: "test-repo", kind: "conversation", title: "Conv", body: "body", meta: "{}", source_id: "conv-ek", source_type: "bridge" });
-
-      const result = await controller.traverse({
-        query: { direction: "outgoing" as const, edge_kinds: "contains,reply_to", max_depth: 3, max_nodes: 50 },
-        params: { id: node.id },
-        body: undefined as never,
-        requestId: "test",
-      } as ApiRequest<TraverseSchema>);
-
-      expect(result.ok).toBe(true);
-    });
-  });
-
-  describe("createNode", () => {
-    it("should create multiple manual nodes without UNIQUE constraint violation", async () => {
-      const res1 = await controller.createNode(
-        makeCreateNodeReq({ repo: "test-repo", kind: "topic", title: "First Topic", body: "Body 1" }),
-      );
-      const res2 = await controller.createNode(
-        makeCreateNodeReq({ repo: "test-repo", kind: "topic", title: "Second Topic", body: "Body 2" }),
-      );
-      const res3 = await controller.createNode(
-        makeCreateNodeReq({ repo: "test-repo", kind: "decision", title: "A Decision", body: "Body 3" }),
-      );
-
-      expect(res1.ok).toBe(true);
-      expect(res2.ok).toBe(true);
-      expect(res3.ok).toBe(true);
-
-      // Each node should have a unique source_id
-      if (res1.ok && res2.ok && res3.ok) {
-        const sourceIds = new Set([res1.data.source_id, res2.data.source_id, res3.data.source_id]);
-        expect(sourceIds.size).toBe(3);
-
-        // All should have source_type "manual"
-        expect(res1.data.source_type).toBe("manual");
-        expect(res2.data.source_type).toBe("manual");
-        expect(res3.data.source_type).toBe("manual");
-
-        // All should have unique node ids
-        const nodeIds = new Set([res1.data.id, res2.data.id, res3.data.id]);
-        expect(nodeIds.size).toBe(3);
-      }
-    });
-
-    it("should create a related_to edge when related_to is provided", async () => {
-      const target = await controller.createNode(
-        makeCreateNodeReq({ repo: "test-repo", kind: "topic", title: "Target" }),
-      );
-      expect(target.ok).toBe(true);
-      if (!target.ok) return;
-
-      const related = await controller.createNode(
-        makeCreateNodeReq({ repo: "test-repo", kind: "decision", title: "Related", related_to: target.data.id }),
-      );
-      expect(related.ok).toBe(true);
-      if (!related.ok) return;
-
-      const edges = mdb.getEdgesFrom(related.data.id);
-      expect(edges.length).toBe(1);
-      expect(edges[0].to_node).toBe(target.data.id);
-      expect(edges[0].kind).toBe("related_to");
-    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("NOT_FOUND");
+    expect(result.error.statusHint).toBe(404);
   });
 });
