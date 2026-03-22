@@ -26,7 +26,7 @@ Read before making changes:
 | HTTP (UI) | Next.js 15 App Router |
 | Database | SQLite via better-sqlite3, WAL mode |
 | Vector search | sqlite-vec (KNN over node embeddings) |
-| Embeddings | @xenova/transformers (768-dim, lazy-loaded) |
+| Embeddings | @huggingface/transformers (768-dim, lazy-loaded) |
 | MCP | @modelcontextprotocol/sdk (stdio transport) |
 | Validation | Zod 3 |
 | Test | Vitest (in-memory SQLite; happy-dom for UI hooks) |
