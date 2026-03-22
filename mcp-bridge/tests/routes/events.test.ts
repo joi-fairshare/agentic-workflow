@@ -4,6 +4,10 @@ import type { FastifyInstance } from "fastify";
 import { createEventBus } from "../../src/application/events.js";
 import { registerSseRoute } from "../../src/routes/events.js";
 
+// NOTE: Real SSE stream behavior (headers, event format, cleanup) is tested in
+// sse-integration.test.ts using real TCP connections. This file covers route
+// registration and EventBus integration only.
+
 // NOTE: Fastify inject() buffers the full response before resolving. Since
 // SSE uses reply.raw.write() without ever calling reply.raw.end(), inject()
 // will hang indefinitely waiting for the stream to close. The tests below

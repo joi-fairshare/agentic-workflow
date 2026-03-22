@@ -20,6 +20,11 @@ class MockEventSource {
     this.listeners[type].push(listener);
   }
 
+  removeEventListener(type: string, listener: (e: MessageEvent) => void) {
+    const arr = this.listeners[type];
+    if (arr) this.listeners[type] = arr.filter(l => l !== listener);
+  }
+
   close() {}
 
   // Test helper: simulate an event
