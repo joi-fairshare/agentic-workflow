@@ -15,7 +15,9 @@ import { GraphCanvas } from "@/components/graph/graph-canvas";
 import { GraphToolbar } from "@/components/graph/graph-toolbar";
 import { NodeDetailPanel } from "@/components/graph/node-detail-panel";
 import { ContextBuilderPanel } from "@/components/graph/context-builder-panel";
+import { PathReplay } from "@/components/graph/path-replay";
 import { useGraphLayout } from "@/hooks/use-graph-layout";
+import { usePathReplay } from "@/hooks/use-path-replay";
 import { MemorySearchPanel } from "./memory-search-panel";
 import { TraversalLogPanel } from "./traversal-log-panel";
 
@@ -69,6 +71,7 @@ function filterBySender(
 export function MemoryExplorerPage() {
   const [repo, setRepo] = useState("");
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const replay = usePathReplay();
 
   // Selected node state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -204,9 +207,10 @@ export function MemoryExplorerPage() {
     [selectedNodeId, doTraverse, depth],
   );
 
-  // When a traversal log is selected, load its subgraph
+  // When a traversal log is selected, load its subgraph and initialize replay
   const handleSelectTraversal = useCallback(
     async (log: TraversalLog) => {
+      replay.loadSteps(log.steps);
       if (log.start_node) {
         setSelectedNodeId(log.start_node);
         await doTraverse(log.start_node);
@@ -216,7 +220,7 @@ export function MemoryExplorerPage() {
         await doTraverse(firstNodeId);
       }
     },
-    [doTraverse],
+    [doTraverse, replay],
   );
 
   return (
@@ -362,6 +366,9 @@ export function MemoryExplorerPage() {
           onSenderChange={setSelectedSender}
         />
 
+        {/* Path replay controls — shown when a traversal log is loaded */}
+        <PathReplay replay={replay} />
+
         {/* Graph canvas area */}
         <div
           style={{
@@ -370,6 +377,9 @@ export function MemoryExplorerPage() {
             minHeight: "calc(100vh - 120px)",
           }}
           data-highlighted-count={highlightedNodeIds.length}
+          data-replay-state={replay.state}
+          data-replay-current-node={replay.currentNodeId ?? ""}
+          data-replay-visited-count={replay.visitedNodeIds.size}
         >
           {traverseLoading && (
             <div
