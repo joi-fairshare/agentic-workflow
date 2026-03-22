@@ -68,6 +68,7 @@ export function ingestBridgeMessage(
       }),
       source_id: message.id,
       source_type: "bridge",
+      sender: message.sender,
     });
 
     mdb.insertEdge({
@@ -112,6 +113,7 @@ export function ingestBridgeTask(
       }),
       source_id: task.id,
       source_type: "bridge-task",
+      sender: task.assigned_to,
     });
 
     mdb.insertEdge({

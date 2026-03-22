@@ -66,6 +66,7 @@ export function ingestTranscriptLines(
         meta: JSON.stringify({ type: record.type, timestamp: record.timestamp }),
         source_id: record.uuid,
         source_type: "transcript",
+        sender: record.type,
       });
 
       uuidToNodeId.set(record.uuid, msgNode.id);

@@ -270,6 +270,7 @@ export async function ingestGitMetadata(
         meta: JSON.stringify({ sha: commit.sha, author: commit.author, date: commit.date }),
         source_id: commit.sha,
         source_type: "git",
+        sender: commit.author,
       });
 
       commitNodes.set(commit.sha, node);
@@ -303,6 +304,7 @@ export async function ingestGitMetadata(
           meta: JSON.stringify({ number: pr.number, author: pr.author, state: pr.state, createdAt: pr.createdAt }),
           source_id: sourceId,
           source_type: "github_pr",
+          sender: pr.author,
         });
 
         prNodes.set(sourceId, node);

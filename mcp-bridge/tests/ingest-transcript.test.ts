@@ -45,6 +45,13 @@ describe("ingestTranscriptLines", () => {
     const conv = mdb.getNodeBySource("transcript-session", "/path/to/session.jsonl");
     expect(conv).toBeDefined();
     expect(conv!.kind).toBe("conversation");
+
+    // Sender is derived from transcript type
+    const humanNode = mdb.getNodeBySource("transcript", "u1");
+    expect(humanNode!.sender).toBe("human");
+
+    const assistantNode = mdb.getNodeBySource("transcript", "u2");
+    expect(assistantNode!.sender).toBe("assistant");
   });
 
   it("wires reply_to edges based on parentUuid", () => {
