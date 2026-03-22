@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { createDbClient, type DbClient } from "../src/db/client.js";
 import { MIGRATIONS } from "../src/db/schema.js";
 import { createConversationController } from "../src/transport/controllers/conversation-controller.js";
+import * as getConversationsService from "../src/application/services/get-conversations.js";
+import { err } from "../src/application/result.js";
 import { randomUUID } from "node:crypto";
 
 let db: DbClient;
@@ -14,6 +16,27 @@ beforeEach(() => {
   raw.exec(MIGRATIONS);
   db = createDbClient(raw);
   controller = createConversationController(db);
+});
+
+describe("list error path", () => {
+  it("returns error when getConversations service fails", async () => {
+    vi.spyOn(getConversationsService, "getConversations").mockReturnValueOnce(
+      err({ code: "INTERNAL_ERROR", message: "DB failure", statusHint: 500 }),
+    );
+
+    const result = await controller.list({
+      query: { limit: 20, offset: 0 },
+      body: undefined as never,
+      params: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+
+    vi.restoreAllMocks();
+  });
 });
 
 describe("list", () => {

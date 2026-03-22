@@ -173,6 +173,17 @@ describe("inferTopics", () => {
     expect(result.data.edges_created).toBe(2);
   });
 
+  it("handles entries with identical embeddings gracefully", async () => {
+    // Insert multiple conversations with identical embeddings — triggers totalWeight=0 early stop
+    for (let i = 0; i < 5; i++) {
+      const node = mdb.insertNode({ repo: "r", kind: "conversation", title: `Same conv ${i}`, body: "identical", meta: "{}", source_id: `same-${i}`, source_type: "test" });
+      mdb.insertEmbedding(node.id, new Float32Array(EMBEDDING_DIMS).fill(0.5));
+    }
+
+    const result = await inferTopics(mdb, embedService, { repo: "r", k: 3, threshold: 0.0 });
+    expect(result.ok).toBe(true);
+  });
+
   it("uses the topic node title from the most-central cluster member", async () => {
     // All 3 identical vectors → 1 cluster, any member can be most central
     insertConvWithEmbedding("Alpha Conversation", axisVec(0), 1);

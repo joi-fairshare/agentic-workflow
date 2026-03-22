@@ -7,7 +7,7 @@ import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { createMemoryController } from "../src/transport/controllers/memory-controller.js";
 import type { ApiRequest } from "../src/transport/types.js";
-import type { CreateNodeSchema } from "../src/transport/schemas/memory-schemas.js";
+import type { CreateNodeSchema, GetContextSchema, CreateLinkSchema } from "../src/transport/schemas/memory-schemas.js";
 
 function createInMemoryDb(): Database.Database {
   const db = new Database(":memory:");
@@ -57,6 +57,45 @@ describe("memory-controller", () => {
     const filter = createSecretFilter();
     const embedService = createMockEmbeddingService();
     controller = createMemoryController(mdb, embedService, filter);
+  });
+
+  describe("getContext", () => {
+    it("returns VALIDATION_ERROR when neither query nor node_id is provided", async () => {
+      const result = await controller.getContext({
+        query: { repo: "test-repo", max_tokens: 8000 } as never,
+        body: undefined as never,
+        params: undefined as never,
+        requestId: "test",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("VALIDATION_ERROR");
+    });
+  });
+
+  describe("createLink", () => {
+    it("returns NOT_FOUND when to_node does not exist", async () => {
+      const fromNode = mdb.insertNode({
+        repo: "test-repo",
+        kind: "topic",
+        title: "From Node",
+        body: "body",
+        meta: "{}",
+        source_id: "from-1",
+        source_type: "bridge",
+      });
+
+      const result = await controller.createLink({
+        body: { from_node: fromNode.id, to_node: "non-existent-id", kind: "related_to" },
+        params: undefined as never,
+        query: undefined as never,
+        requestId: "test",
+      } as ApiRequest<CreateLinkSchema>);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("NOT_FOUND");
+    });
   });
 
   describe("createNode", () => {

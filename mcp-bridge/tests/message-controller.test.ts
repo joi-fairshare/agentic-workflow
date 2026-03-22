@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { createDbClient, type DbClient } from "../src/db/client.js";
 import { MIGRATIONS } from "../src/db/schema.js";
 import { createEventBus, type EventBus, type BridgeEvent } from "../src/application/events.js";
 import { createMessageController } from "../src/transport/controllers/message-controller.js";
+import * as sendContextService from "../src/application/services/send-context.js";
+import * as getMessagesService from "../src/application/services/get-messages.js";
+import { err } from "../src/application/result.js";
 import { randomUUID } from "node:crypto";
 
 let db: DbClient;
@@ -20,6 +23,69 @@ beforeEach(() => {
   events = [];
   eventBus.subscribe((e) => events.push(e));
   controller = createMessageController(db, eventBus);
+});
+
+describe("send error path", () => {
+  it("returns error when sendContext service fails", async () => {
+    vi.spyOn(sendContextService, "sendContext").mockReturnValueOnce(
+      err({ code: "INTERNAL_ERROR", message: "DB failure", statusHint: 500 }),
+    );
+
+    const result = await controller.send({
+      body: { conversation: randomUUID(), sender: "claude", recipient: "codex", payload: "hello" },
+      params: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+
+    vi.restoreAllMocks();
+  });
+});
+
+describe("getByConversation error path", () => {
+  it("returns error when getMessagesByConversation service fails", async () => {
+    vi.spyOn(getMessagesService, "getMessagesByConversation").mockReturnValueOnce(
+      err({ code: "INTERNAL_ERROR", message: "DB failure", statusHint: 500 }),
+    );
+
+    const result = await controller.getByConversation({
+      params: { conversation: randomUUID() },
+      body: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+
+    vi.restoreAllMocks();
+  });
+});
+
+describe("getUnread error path", () => {
+  it("returns error when getUnreadMessages service fails", async () => {
+    vi.spyOn(getMessagesService, "getUnreadMessages").mockReturnValueOnce(
+      err({ code: "INTERNAL_ERROR", message: "DB failure", statusHint: 500 }),
+    );
+
+    const result = await controller.getUnread({
+      query: { recipient: "bob" },
+      body: undefined as never,
+      params: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+
+    vi.restoreAllMocks();
+  });
 });
 
 describe("send", () => {

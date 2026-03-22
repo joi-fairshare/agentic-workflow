@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { createDbClient, type DbClient } from "../src/db/client.js";
 import { MIGRATIONS } from "../src/db/schema.js";
 import { createEventBus, type EventBus, type BridgeEvent } from "../src/application/events.js";
 import { createTaskController } from "../src/transport/controllers/task-controller.js";
+import * as assignTaskService from "../src/application/services/assign-task.js";
+import { err } from "../src/application/result.js";
 import { randomUUID } from "node:crypto";
 
 let db: DbClient;
@@ -20,6 +22,27 @@ beforeEach(() => {
   events = [];
   eventBus.subscribe((e) => events.push(e));
   controller = createTaskController(db, eventBus);
+});
+
+describe("assign error path", () => {
+  it("returns error when assignTask service fails", async () => {
+    vi.spyOn(assignTaskService, "assignTask").mockReturnValueOnce(
+      err({ code: "INTERNAL_ERROR", message: "DB failure", statusHint: 500 }),
+    );
+
+    const result = await controller.assign({
+      body: { conversation: randomUUID(), domain: "backend", summary: "Fix bug", details: "JWT broken", assigned_to: "codex" },
+      params: undefined as never,
+      query: undefined as never,
+      requestId: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+
+    vi.restoreAllMocks();
+  });
 });
 
 describe("assign", () => {

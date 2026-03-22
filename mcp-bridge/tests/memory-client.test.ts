@@ -186,6 +186,31 @@ describe("stats", () => {
   });
 });
 
+describe("FTS5 edge cases", () => {
+  it("searchFTS returns empty for blank query", () => {
+    const results = mdb.searchFTS("   ", "r", 10);
+    expect(results).toEqual([]);
+  });
+});
+
+describe("KNN with repo filter", () => {
+  it("searchKNN with repo filter returns only matching repo nodes", () => {
+    const n1 = mdb.insertNode({ repo: "repo-a", kind: "message", title: "A", body: "test", meta: "{}", source_id: "a1", source_type: "t" });
+    const n2 = mdb.insertNode({ repo: "repo-b", kind: "message", title: "B", body: "test", meta: "{}", source_id: "b1", source_type: "t" });
+
+    const emb = new Float32Array(768).fill(0.1);
+    mdb.insertEmbedding(n1.id, emb);
+    mdb.insertEmbedding(n2.id, emb);
+
+    const results = mdb.searchKNN(emb, 10, "repo-a");
+    expect(results.every((r) => {
+      const node = mdb.getNode(r.node_id);
+      return node?.repo === "repo-a";
+    })).toBe(true);
+    expect(results.length).toBeGreaterThan(0);
+  });
+});
+
 describe("embedding operations", () => {
   it("inserts and retrieves embeddings for a node", () => {
     const node = mdb.insertNode({

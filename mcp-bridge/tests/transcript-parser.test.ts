@@ -60,4 +60,21 @@ describe("parseTranscriptLines", () => {
     expect(result.records).toHaveLength(1);
     expect(result.records[0].content).toBe("");
   });
+
+  it("extracts content from array with plain string items", () => {
+    const lines = [
+      JSON.stringify({ type: "human", uuid: "u1", parentUuid: null, message: { content: ["hello", "world"] }, timestamp: "2026-01-01T00:00:00Z" }),
+    ];
+    const result = parseTranscriptLines(lines);
+    expect(result.records[0].content).toBe("hello\nworld");
+  });
+
+  it("returns empty content when message is present but content is absent", () => {
+    const lines = [
+      JSON.stringify({ type: "human", uuid: "u2", parentUuid: null, message: {}, timestamp: "2026-01-01T00:00:00Z" }),
+    ];
+    const result = parseTranscriptLines(lines);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].content).toBe("");
+  });
 });
