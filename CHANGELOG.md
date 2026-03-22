@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-22
+
+### Changed
+
+- Removed all `/* v8 ignore */` annotations from source files — coverage must be earned through real tests
+- Dropped 100% coverage threshold enforcement from vitest.config.ts in both packages
+- Updated TESTING.md, ARCHITECTURE.md, and CLAUDE.md to document prohibition on v8 ignore annotations
+
 ## [Unreleased] - 2026-03-21
 
 ### Added
