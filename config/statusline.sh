@@ -9,10 +9,11 @@
 #
 # Width detection: ~/.claude/terminal_width (shell-integration.sh) → stty /dev/tty → $COLUMNS → 200
 # Tiers (total visible chars, approx):
-#   ≥116: FULL   — all columns, branch×15, full ctx bar
-#   ≥101: MEDIUM — no Lines, branch×12, full ctx bar
-#   ≥78:  NARROW — no Lines/Cache/API, 7d % only (no reset), narrow ctx, branch×12
-#   <78:  COMPACT— 5h % only (no reset), narrow ctx, model, branch×10, cost, time
+#   ≥116: FULL      — all columns, branch×15, full ctx bar
+#   ≥101: MEDIUM    — no Lines, branch×12, full ctx bar
+#   ≥78:  NARROW    — no Lines/Cache/API, 7d % only (no reset), narrow ctx, branch×12
+#   ≥65:  COMPACT   — 5h % only (no reset), narrow ctx, model, branch×10, cost, time (64 chars)
+#   <65:  COMPACT-S — same as COMPACT but drops Time column (54 chars)
 
 INPUT=$(cat)
 
@@ -251,11 +252,23 @@ elif [ "$COLS" -ge 78 ] 2>/dev/null; then
   fi
 else
   # COMPACT: 5h % only (no reset), narrow ctx, model, branch×10, cost, time
-  if $HAS_RATE; then
-    printf '%b\n' "\033[2m5h    │ Context    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
-    printf '%b\n' "${USAGE5H_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  #   Full COMPACT:  5+10+10+10+7+7 = 49 content + 5×3 sep = 64 chars
+  #   No-Time COMPACT: drop Time when cols < 65 → 54 chars fits ≥54 col terminals
+  if [ "$COLS" -ge 65 ] 2>/dev/null; then
+    if $HAS_RATE; then
+      printf '%b\n' "\033[2m5h    │ Context    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
+      printf '%b\n' "${USAGE5H_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+    else
+      printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
+      printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+    fi
   else
-    printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
-    printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+    if $HAS_RATE; then
+      printf '%b\n' "\033[2m5h    │ Context    │ Model      │ Branch     │ Cost    \033[0m"
+      printf '%b\n' "${USAGE5H_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT")"
+    else
+      printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    \033[0m"
+      printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT")"
+    fi
   fi
 fi
