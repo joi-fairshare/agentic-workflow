@@ -155,7 +155,7 @@ usage_color() {
 }
 
 # --- 5-hour rate limit ---
-# Format: "87%↺4pm" (percent + clockwise-arrow + reset time)
+# Format: "87% 4pm" (percent + space + reset time — space avoids double-wide Unicode)
 # Width 9 (full with reset) or 5 (compact, percent only)
 HAS_RATE=false
 USAGE5H=""       # 9-char colored field for FULL/MEDIUM/NARROW tiers
@@ -174,7 +174,7 @@ if [ -n "$RATE5H_PCT" ] && [ "$RATE5H_PCT" != "null" ] && [ "$RATE5H_PCT" != "" 
   fi
 
   if [ -n "$RESET5H" ]; then
-    TEXT5H="${PCT5H}%↺${RESET5H}"   # e.g. "87%↺4pm"
+    TEXT5H="${PCT5H}% ${RESET5H}"   # e.g. "87% 4pm" — space avoids double-wide Unicode char
   else
     TEXT5H="${PCT5H}%"
   fi
@@ -183,7 +183,7 @@ if [ -n "$RATE5H_PCT" ] && [ "$RATE5H_PCT" != "null" ] && [ "$RATE5H_PCT" != "" 
 fi
 
 # --- 7-day rate limit ---
-# Format: "65%↺Fri" (percent + arrow + day-of-week)
+# Format: "65% Fri" (percent + space + day-of-week — space avoids double-wide Unicode)
 # Width 9 (full with reset) or 5 (narrow, percent only)
 USAGE7D=""       # 9-char colored field for FULL/MEDIUM tiers
 USAGE7D_SHORT="" # 5-char colored field for NARROW tier (no reset day)
@@ -199,7 +199,7 @@ if [ -n "$RATE7D_PCT" ] && [ "$RATE7D_PCT" != "null" ] && [ "$RATE7D_PCT" != "" 
   fi
 
   if [ -n "$RESET7D" ]; then
-    TEXT7D="${PCT7D}%↺${RESET7D}"   # e.g. "65%↺Fri"
+    TEXT7D="${PCT7D}% ${RESET7D}"   # e.g. "65% Fri" — space avoids double-wide Unicode char
   else
     TEXT7D="${PCT7D}%"
   fi
