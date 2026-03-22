@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { MEMORY_MIGRATIONS, createMemoryDatabase } from "../src/db/memory-schema.js";
+import { MEMORY_MIGRATIONS, createMemoryDatabase, NODE_KINDS, EDGE_KINDS, MAX_BODY_BYTES } from "../src/db/memory-schema.js";
 
 describe("MEMORY_MIGRATIONS", () => {
   it("creates all tables and indexes on a fresh database", () => {
@@ -125,6 +125,28 @@ describe("MEMORY_MIGRATIONS", () => {
          VALUES ('e2', 'r', 'n1', 'n2', 'contains', 1.0, '{}', 1, datetime('now'))`
       ).run()
     ).toThrow();
+  });
+});
+
+describe("constants", () => {
+  it("exports NODE_KINDS with expected values", () => {
+    expect(NODE_KINDS).toContain("message");
+    expect(NODE_KINDS).toContain("topic");
+    expect(NODE_KINDS).toContain("decision");
+    expect(NODE_KINDS).toContain("conversation");
+    expect(NODE_KINDS).toContain("artifact");
+    expect(NODE_KINDS).toContain("task");
+  });
+
+  it("exports EDGE_KINDS with expected values", () => {
+    expect(EDGE_KINDS).toContain("contains");
+    expect(EDGE_KINDS).toContain("related_to");
+    expect(EDGE_KINDS).toContain("reply_to");
+    expect(EDGE_KINDS).toContain("led_to");
+  });
+
+  it("exports MAX_BODY_BYTES as 50 KB", () => {
+    expect(MAX_BODY_BYTES).toBe(50 * 1024);
   });
 });
 
