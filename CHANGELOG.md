@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-03-22
 
+### Added
+
+- Adaptive statusline (`statusline.sh`) with context-first layout and five width tiers: FULL (>=116), MEDIUM (>=101), NARROW (>=78), COMPACT (>=65), COMPACT-S (<65)
+- Separate Usage (5h/7d rate limits) and Context columns in the statusline display
+- Mid-session terminal resize detection via hooks registered in `settings.json` (`PreToolUse`/`PostToolUse`/`Stop`)
+- Statusline installation integrated into `setup.sh`
+- `statusLine` config block added to `settings.json`
+
+### Fixed
+
+- Added COMPACT-S tier for terminals narrower than 65 columns to prevent field overflow
+- Added 50 ms sleep in `statusline.sh` before reading terminal width to resolve SIGWINCH race condition
+- Added 50 ms sleep after SIGWINCH in the Stop hook to close the resize race
+- Reliable terminal width resolution via shell integration file (avoids `tput` subshell returning 80)
+- Aligned Context header label with data column width across all tiers
+- Reverted tput-first approach; `$COLUMNS` is now the primary width source
+- Shell PID written out for hook-based resize signaling
+- Replaced double-wide Unicode `↺` with a plain space in usage reset format to prevent rendering issues
+- Widened field formats to prevent overflow; cache field preserved through the NARROW tier
+- `jq` is now a hard prerequisite with an abort message and install instructions if missing
+- API wait field shows `--` when the field is absent from the JSON payload
+- Quoted numeric `jq` fields to prevent eval injection; removed Rate label from fallback path
+
+## [Unreleased] - 2026-03-22
+
 ### Changed
 
 - Removed all `/* v8 ignore */` annotations from source files — coverage must be earned through real tests

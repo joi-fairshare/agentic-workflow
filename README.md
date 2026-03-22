@@ -7,6 +7,7 @@ A portable Claude Code workflow toolkit: custom skills, configuration archive, r
 - Node.js >= 20
 - [Claude Code](https://claude.com/claude-code) installed
 - [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (required by review skills)
+- [`jq`](https://jqlang.github.io/jq/) installed (required by the statusline; `brew install jq` on macOS)
 
 ## Contents
 
@@ -38,9 +39,42 @@ Extracted from `~/.claude/` for replication on any machine.
 | `/design-refine` | Dispatch Impeccable refinement commands |
 | `/design-verify` | Screenshot diff implementation vs mockup |
 
-**Config files:** `config/settings.json`, `config/mcp.json`
+**Config files:** `config/settings.json`, `config/mcp.json`, `config/statusline.sh`
 
-### 2. Bootstrap Skill
+### 2. Statusline
+
+`config/statusline.sh` is an adaptive two-line statusline for Claude Code sessions. It is installed to `~/.claude/statusline.sh` and wired into `settings.json` automatically by `setup.sh`.
+
+**Columns (left → right, highest priority leftmost):**
+
+| Column | Description |
+|--------|-------------|
+| 5h Usage | 5-hour rate-limit percentage + reset time |
+| 7d Usage | 7-day rate-limit percentage + reset day |
+| Context | Color-coded bar + percentage of context window used |
+| Model | Active model name (trimmed) |
+| Branch | Current git branch |
+| Cost | Session cost in USD |
+| Time | Session duration |
+| Cache | Cache read hit rate |
+| API | API wait percentage |
+| Lines | Lines added/removed |
+
+**Adaptive width tiers** — columns drop automatically as the terminal narrows:
+
+| Tier | Min width | Columns shown |
+|------|-----------|---------------|
+| FULL | 116 cols | All columns, branch up to 15 chars |
+| MEDIUM | 101 cols | No Lines; branch up to 12 chars |
+| NARROW | 78 cols | No Lines/Cache/API; 7d % only; narrow context bar |
+| COMPACT | 65 cols | 5h % only; narrow context bar; branch up to 10 chars |
+| COMPACT-S | < 65 cols | Same as COMPACT but drops Time column |
+
+Terminal width is read from `~/.claude/terminal_width` (written by the shell integration on every prompt and on `SIGWINCH`), which is the only reliable source because Claude Code runs the statusline in a subprocess where `/dev/tty` is inaccessible and `$COLUMNS` is 0.
+
+**Shell integration** is installed by `setup.sh` to `~/.claude/shell-integration.sh` and sourced from `~/.zshrc` / `~/.bashrc`. It keeps `~/.claude/terminal_width` current and writes `~/.claude/shell_pid` so resize events propagate mid-session via `SIGWINCH`.
+
+### 3. Bootstrap Skill
 
 Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
 
@@ -49,7 +83,7 @@ Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
 - Creates a CLAUDE.md if none exists
 - Handles bare repos, partially documented repos, and well-documented repos
 
-### 3. MCP Bridge (Claude Code / Codex)
+### 4. MCP Bridge (Claude Code / Codex)
 
 A TypeScript MCP server for bidirectional multi-agent communication.
 
@@ -104,7 +138,7 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - Secret filtering with regex-based redaction for API keys, tokens, and passwords
 - Bounded async queue for background ingestion with overflow drop
 
-### 4. Conversation Dashboard (UI)
+### 5. Conversation Dashboard (UI)
 
 A Next.js 15 App Router web UI for visualising bridge activity in real time.
 
@@ -130,8 +164,11 @@ cd ~/repos/agentic-workflow
 ```
 
 The setup script:
+- Checks for `jq` (hard prerequisite — aborts with install instructions if missing)
 - Symlinks skills into `~/.claude/skills/`
 - Copies config files (settings, MCP)
+- Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
+- Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
 - Installs and builds the MCP bridge
 - Installs UI dependencies
 - Registers `agentic-bridge` MCP server with Claude Code and Codex
@@ -188,7 +225,7 @@ agentic-workflow/
 │   ├── addressReview/         # Review fix implementer
 │   └── enhancePrompt/         # Context-aware prompt rewriter
 ├── bootstrap/                 # Repo documentation generator skill
-├── config/                    # Settings & MCP config archive
+├── config/                    # Settings, MCP config archive, statusline script
 ├── mcp-bridge/                # MCP bridge application
 │   ├── src/
 │   │   ├── application/       # AppResult<T>, EventBus, services (never throw)

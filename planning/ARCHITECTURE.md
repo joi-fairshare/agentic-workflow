@@ -157,7 +157,8 @@ agentic-workflow/
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
 ├── config/                              # Claude Code configuration archive
-│   ├── settings.json                    #   model, plugins, permissions, experimental flags
+│   ├── settings.json                    #   model, plugins, permissions, statusLine command, Stop/PreToolUse hooks
+│   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
 │   └── mcp.json                         #   MCP server registrations (mobai)
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
@@ -271,7 +272,7 @@ agentic-workflow/
 │           ├── diagrams.ts            #   Mermaid builders: buildDirectedGraph, buildSequenceDiagram
 │           └── types.ts               #   TypeScript types mirroring bridge schemas
 ├── start.sh                            # Start bridge (:3100) + UI (:3000) together
-├── setup.sh                            # One-command installer: symlinks 21 skills, copies config, creates output dir
+├── setup.sh                            # One-command installer: symlinks 21 skills, copies config, installs statusline, creates output dir
 ├── .gitignore                          # Ignores node_modules, dist, *.db, .env, .review-cache
 └── README.md                           # Project overview, setup instructions, env vars
 ```

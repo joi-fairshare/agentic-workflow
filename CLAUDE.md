@@ -121,7 +121,9 @@ agentic-workflow/
 │   ├── _preamble.md           # Shared preamble reference (not a skill)
 │   └── _design-preamble.md    # Shared design context preamble (not a skill)
 ├── bootstrap/                 # /bootstrap — repo documentation generator
-├── config/                    # Settings & MCP config archive
+├── config/                    # Settings, MCP config, and statusline script
+│   ├── settings.json          #   Claude Code settings (statusLine + Stop/PreToolUse hooks)
+│   └── statusline.sh          #   Adaptive statusline — 5 width tiers (installed to ~/.claude/)
 ├── mcp-bridge/                # MCP bridge application
 │   ├── src/
 │   │   ├── application/       # AppResult<T> pattern, service functions (never throw)
@@ -176,7 +178,7 @@ agentic-workflow/
 │   └── vitest.config.ts       # Coverage config: v8, no thresholds, covers hooks/ + lib/ (excl. types.ts)
 ├── planning/                  # Generated project documentation
 ├── start.sh                   # Start bridge + UI together
-└── setup.sh                   # One-command setup script
+└── setup.sh                   # One-command setup: skills, statusline, shell-integration, config, bridge, UI
 ```
 
 ## Key Patterns
@@ -297,7 +299,7 @@ npm test               # Vitest (hooks + lib tests)
 npm run test:coverage  # Run with 100% coverage enforcement
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install deps, build bridge, create output dir
+./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, create output dir
 ./start.sh             # Start bridge (:3100) + UI (:3000) together
 ```
 
