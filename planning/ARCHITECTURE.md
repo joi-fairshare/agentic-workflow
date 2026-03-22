@@ -271,6 +271,16 @@ agentic-workflow/
 │           ├── memory-api.ts          #   Fetch wrappers: searchMemory, traverseMemory, assembleContext
 │           ├── diagrams.ts            #   Mermaid builders: buildDirectedGraph, buildSequenceDiagram
 │           └── types.ts               #   TypeScript types mirroring bridge schemas
+├── .claude/
+│   └── rules/                          # Glob-scoped domain rules (auto-loaded by Claude Code)
+│       ├── bridge-services.md          #   AppResult pattern, EventBus, MCP tools, memory services
+│       ├── bridge-transport.md         #   Typed router, controller factories, Zod schema conventions
+│       ├── database.md                 #   DbClient, MemoryDbClient, schema reference, idempotency
+│       ├── design.md                   #   Design pipeline, artifact formats, design principles
+│       ├── ingestion.md                #   BoundedQueue, EmbeddingService, SecretFilter, ingestion services
+│       ├── skills.md                   #   Skill structure, preamble format, repo slug, output dirs
+│       ├── testing.md                  #   Test infrastructure, shared helpers, coverage policy
+│       └── ui.md                       #   Next.js App Router, hook conventions, SSE, API client
 ├── start.sh                            # Start bridge (:3100) + UI (:3000) together
 ├── setup.sh                            # One-command installer: symlinks 21 skills, copies config, installs statusline, creates output dir
 ├── .gitignore                          # Ignores node_modules, dist, *.db, .env, .review-cache
@@ -320,7 +330,7 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 **`/shipRelease`** — Pre-flight checks (clean tree, branch exists), fetch and rebase on base, run tests, audit coverage, push, open PR via `gh`, then auto-invoke `/syncDocs`. Writes release report to `releases/`.
 
-**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and `.claude/rules/` with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
+**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and the `.claude/rules/` rule files with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
 
 **`/weeklyRetro`** — Analyzes git history for per-person breakdowns (commits, lines, areas of activity), shipping streaks, test health trends, and generates actionable insights. Compares to previous retros if available. Writes retrospective to `retros/`.
 
@@ -360,7 +370,7 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md + `.claude/rules/` glob-scoped rule files for any repository. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines) and a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
 
 ## Component 2: MCP Bridge (mcp-bridge/)
 
@@ -478,7 +488,7 @@ A conversation memory and retrieval system that builds a persistent knowledge gr
 
 **Context Assembly** (`assemble-context.ts`) — Combines search and graph traversal to produce a token-budgeted context document. Sections are ranked by relevance and truncated to fit within the specified token budget (default 8000, max 32000). Returns a summary, sections with headings, and token estimates.
 
-**Embedding Service** (`ingestion/embedding.ts`) — Lazy-loading embedding model (768-dimensional vectors). Supports batch embedding with graceful degradation (falls back to keyword-only search if the model fails to load). The model is pre-warmed on server startup in the background.
+**Embedding Service** (`ingestion/embedding.ts`) — Lazy-loading embedding model via `@huggingface/transformers` (768-dimensional vectors). Supports batch embedding with graceful degradation (falls back to keyword-only search if the model fails to load). The model is pre-warmed on server startup in the background.
 
 **Secret Filter** (`ingestion/secret-filter.ts`) — Regex-based redaction applied to all ingested content. Matches API keys, tokens, passwords, and other sensitive patterns before storage.
 
@@ -511,7 +521,7 @@ Archived Claude Code configuration for replication across machines:
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 21 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill includes the shared preamble.** The preamble lists all 21 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 
@@ -543,4 +553,4 @@ Archived Claude Code configuration for replication across machines:
 
 18. **Embedding is lazy and gracefully degradable.** The embedding model loads on first use (pre-warmed in background on server start). If loading fails, the system falls back to keyword-only search. Batch embedding is supported for ingestion efficiency.
 
-19. **`/* v8 ignore */` annotations are prohibited.** Coverage must be earned through real tests — never hidden with `/* v8 ignore next */`, `/* v8 ignore start */`, or any v8 ignore variant. Both `mcp-bridge` and `ui` use Vitest with v8 coverage. Coverage thresholds are not enforced as hard build failures, but 100% remains the goal. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`).
+19. **`/* v8 ignore */` annotations are allowed only for genuinely untestable infrastructure.** Acceptable uses: model download paths in `embedding.ts`, FTS5 internal error handlers, and degenerate math branches in `infer-topics.ts`. Never use them to hide testable business logic. Both `mcp-bridge` and `ui` use Vitest with v8 coverage and enforce 100% thresholds. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`).

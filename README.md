@@ -80,7 +80,8 @@ Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
 
 - Detects which of 17 Pivot-pattern docs exist (BUSINESS_PLAN, ARCHITECTURE, ERD, etc.)
 - Generates missing docs adapted to the target repo's tech stack
-- Creates a CLAUDE.md if none exists
+- Creates a trimmed CLAUDE.md (navigation doc only, under 80 lines) if none exists
+- Creates a `.claude/rules/` directory with glob-scoped rule files inferred from the repo's structure
 - Handles bare repos, partially documented repos, and well-documented repos
 
 ### 4. MCP Bridge (Claude Code / Codex)
@@ -244,6 +245,7 @@ agentic-workflow/
 │       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
 │       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │       └── lib/               # API client, Mermaid builders, shared types
+├── .claude/rules/             # Glob-scoped domain rules (auto-loaded by Claude Code)
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
 ```

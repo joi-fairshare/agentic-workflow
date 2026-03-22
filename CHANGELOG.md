@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Glob-scoped rule files in `.claude/rules/` replacing the monolithic `CLAUDE.md` (rules: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `skills.md`, `testing.md`, `ui.md`)
+
+### Changed
+
+- `CLAUDE.md` trimmed to under 80 lines — now a navigation document with a pointer to `.claude/rules/`; skill count and add-skill steps corrected
+- Updated bootstrap skill (`bootstrap/SKILL.md`) to generate `.claude/rules/` directories and route `RULES_OK` audits correctly
+- Testing rules and merge gate updated to reflect the revised v8 ignore policy for PR #20 (allowed only for genuinely untestable infrastructure; prohibited for business logic)
+- Replaced stale `@xenova/transformers` package reference with `@huggingface/transformers` across documentation
+
+### Fixed
+
+- Corrected inaccurate rule file content found during review pass
+- `coverage/` directory added to `.gitignore`
+
+## [Unreleased] - 2026-03-22
+
+### Added
+
 - Adaptive statusline (`statusline.sh`) with context-first layout and five width tiers: FULL (>=116), MEDIUM (>=101), NARROW (>=78), COMPACT (>=65), COMPACT-S (<65)
 - Separate Usage (5h/7d rate limits) and Context columns in the statusline display
 - Mid-session terminal resize detection via hooks registered in `settings.json` (`PreToolUse`/`PostToolUse`/`Stop`)
