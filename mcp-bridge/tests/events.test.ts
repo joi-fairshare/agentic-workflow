@@ -47,4 +47,20 @@ describe("createEventBus", () => {
       bus.emit({ type: "task:updated", data: { id: "t1", conversation: "c1", status: "completed" } });
     }).not.toThrow();
   });
+
+  it("delivers memory:ingestion_dropped events", () => {
+    const bus = createEventBus();
+    const received: BridgeEvent[] = [];
+    bus.subscribe((e) => received.push(e));
+
+    const event: BridgeEvent = {
+      type: "memory:ingestion_dropped",
+      data: { reason: "queue full" },
+    };
+    bus.emit(event);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toBe(event);
+    expect(received[0].type).toBe("memory:ingestion_dropped");
+  });
 });

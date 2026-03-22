@@ -1,12 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import { createServer } from "../src/server.js";
 import { registerSseRoute } from "../src/routes/events.js";
-import { createEventBus } from "../src/application/events.js";
+import { createEventBus, type EventBus } from "../src/application/events.js";
 
 describe("SSE /events endpoint", () => {
   let app: ReturnType<typeof createServer>;
-  const eventBus = createEventBus();
+  let eventBus: EventBus;
+
+  beforeEach(() => {
+    eventBus = createEventBus();
+  });
 
   afterEach(async () => {
     if (app) await app.close();

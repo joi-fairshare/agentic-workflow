@@ -87,6 +87,33 @@ describe("node operations", () => {
   it("returns undefined for unknown source", () => {
     expect(mdb.getNodeBySource("bridge", "nonexistent")).toBeUndefined();
   });
+
+  it("deleteNodesBySourceType removes nodes and cascades to edges", () => {
+    const n1 = mdb.insertNode({ repo: "r", kind: "message", title: "a", body: "b", meta: "{}", source_id: "s1", source_type: "bridge" });
+    const n2 = mdb.insertNode({ repo: "r", kind: "message", title: "c", body: "d", meta: "{}", source_id: "s2", source_type: "bridge" });
+    const n3 = mdb.insertNode({ repo: "r", kind: "topic", title: "e", body: "f", meta: "{}", source_id: "s3", source_type: "manual" });
+
+    // Create edges: n3 → n1 and n3 → n2
+    mdb.insertEdge({ repo: "r", from_node: n3.id, to_node: n1.id, kind: "related_to", weight: 1.0, meta: "{}", auto: true });
+    mdb.insertEdge({ repo: "r", from_node: n3.id, to_node: n2.id, kind: "related_to", weight: 1.0, meta: "{}", auto: true });
+
+    // Verify setup
+    expect(mdb.getEdgesFrom(n3.id)).toHaveLength(2);
+    expect(mdb.getStats("r").node_count).toBe(3);
+
+    // Delete all bridge nodes in repo "r"
+    mdb.deleteNodesBySourceType("bridge", "r");
+
+    // Bridge nodes should be gone
+    expect(mdb.getNode(n1.id)).toBeUndefined();
+    expect(mdb.getNode(n2.id)).toBeUndefined();
+
+    // Manual node should remain
+    expect(mdb.getNode(n3.id)).toBeDefined();
+
+    // Edges pointing to deleted nodes should be cascade-deleted
+    expect(mdb.getEdgesFrom(n3.id)).toHaveLength(0);
+  });
 });
 
 describe("edge operations", () => {

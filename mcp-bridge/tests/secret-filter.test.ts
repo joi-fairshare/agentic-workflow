@@ -7,9 +7,17 @@ const filter = createSecretFilter();
 describe("redact", () => {
   it.each([
     ["AWS key", "AKIAIOSFODNN7EXAMPLE"],
+    ["AWS secret", 'aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"'],
+    ["Slack token", "xoxb-fake-test-token"],
+    ["GitHub PAT", "ghp_abcdefghijklmnopqrstuvwxyz1234567890abcd"],
+    ["Anthropic key", "sk-ant-api03-abcdefghijklmnopqrst"],
     ["OpenAI-style sk- key", "sk-abc123def456ghi789jk"],
     ["OpenAI-style sk- key (longer)", "sk-test123abc456def789ghi"],
-    ["GitHub PAT", "ghp_abcdefghijklmnopqrstuvwxyz1234567890abcd"],
+    ["Bearer token", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"],
+    ["PEM private key", "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQ...\n-----END RSA PRIVATE KEY-----"],
+    ["Connection string", "postgres://user:pass@localhost:5432/mydb"],
+    ["Password field", 'password: "super_secret_pass123"'],
+    ["Env secret", 'API_SECRET_TOKEN=AbCdEfGhIjKlMnOpQrStUvWx'],
   ])("redacts %s", (_label, input) => {
     expect(filter.redact(input)).toContain("[REDACTED]");
   });
