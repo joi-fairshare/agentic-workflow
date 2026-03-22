@@ -13,9 +13,13 @@ if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
   exit 0
 fi
 
-# Single jq call — extract all fields at once via eval-safe shell assignments
-# Computes: bar fill count, time in minutes, cache %, API % — avoids extra subprocesses
-# @sh quoting handles model names/paths with spaces; eval avoids bash 3.2 IFS/herestring issues
+# Single jq call — extract all fields at once via eval-safe shell assignments.
+# Computes: bar fill count, time in minutes, cache %, API % — avoids extra subprocesses.
+# Why eval/@sh instead of @tsv/IFS: bash 3.2 on macOS (the system shell) does not preserve
+# non-whitespace IFS characters in herestrings, causing @tsv tab-split to silently fail.
+# Safety: every field is piped through @sh before reaching eval, which POSIX-quotes the
+# value. String fields (MODEL, DIR, paths) use @sh directly. Numeric fields use
+# | tostring | @sh so that unexpected strings in the JSON cannot inject shell code.
 eval "$(echo "$INPUT" | jq -r '
   "MODEL=\(.model.display_name // "--" | @sh)",
   "DIR=\(.workspace.current_dir // "" | @sh)",
@@ -26,8 +30,8 @@ eval "$(echo "$INPUT" | jq -r '
      else 0 end | tostring | @sh)",
   "COST=\(.cost.total_cost_usd // 0 | tostring | @sh)",
   "TOTAL_MIN=\((.cost.total_duration_ms // 0) / 60000 | floor | tostring | @sh)",
-  "API_PCT=\(if (.cost.total_duration_ms // 0) > 0 then
-      ((.cost.total_api_duration_ms // 0) * 100 / (.cost.total_duration_ms) | floor | tostring)
+  "API_PCT=\(if (.cost.total_duration_ms // 0) > 0 and (.cost.total_api_duration_ms != null) then
+      (.cost.total_api_duration_ms * 100 / .cost.total_duration_ms | floor | tostring)
      else "" end | @sh)",
   "CACHE_PCT=\(if .context_window.current_usage then
       ((.context_window.current_usage.cache_read_input_tokens // 0) as $read |
