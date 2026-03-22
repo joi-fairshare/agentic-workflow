@@ -166,7 +166,7 @@ Both packages enforce 100% coverage on all thresholds (statements, branches, fun
 ```bash
 # MCP Bridge (Vitest, in-memory SQLite)
 cd mcp-bridge
-npm test                  # Run all tests (277 tests)
+npm test                  # Run all tests (293 tests)
 npm run test:watch        # Watch mode
 npm run test:coverage     # Enforce 100% coverage thresholds
 

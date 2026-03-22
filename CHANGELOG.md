@@ -64,6 +64,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage gap tests for search-memory, ingest-git, ingest-transcript, and extract-decisions
 - Coverage gap tests for controllers, memory-client, transcript-parser, and infer-topics
 - Comprehensive UI lib and hook tests achieving 100% coverage
+- Shared test helpers module (`tests/helpers.ts`) eliminating duplicated boilerplate across 24 test files
+- FTS5 adversarial input tests for double quotes, boolean operators, wildcards, parentheses, and backslashes
+
+### Fixed (Test Harness)
+
+- SSE integration test now uses event-driven resolution instead of hardcoded setTimeout
+- Queue test uses retry-based `waitUntil(predicate, timeout)` instead of fixed-delay polling
+- All memory test files now enable `foreign_keys = ON` pragma matching production behavior
+- Added cross-reference comments for duplicated `resultToContent` in mcp-tools.test.ts and mcp.ts
+- Mock `EmbeddingService.isReady()` now returns `true` matching production warmed-up state
 
 ## [1.0.0] - 2026-03-19
 

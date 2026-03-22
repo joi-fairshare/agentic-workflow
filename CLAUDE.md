@@ -305,7 +305,7 @@ npm run test:coverage  # Run with 100% coverage enforcement
 
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
-2. `npm test` passes with all tests green (277 bridge + 61 UI)
+2. `npm test` passes with all tests green (293 bridge + 61 UI)
 3. `npm run test:coverage` passes at 100% thresholds (both packages)
 4. No `any` types outside of Fastify integration boundaries
 

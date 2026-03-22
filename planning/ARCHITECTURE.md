@@ -163,7 +163,7 @@ agentic-workflow/
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
 │   ├── vitest.config.ts                 #   Vitest config — v8 coverage, 100% thresholds, excludes index.ts + mcp.ts
-│   ├── tests/                           #   Unit and integration tests (277 tests)
+│   ├── tests/                           #   Unit and integration tests (293 tests)
 │   │   ├── routes/                      #     Route integration tests via Fastify inject (messages, tasks, conversations, events, memory)
 │   │   ├── client.test.ts               #     DbClient unit tests
 │   │   ├── schema.test.ts               #     Migration and schema tests
@@ -190,7 +190,8 @@ agentic-workflow/
 │   │   ├── sse-integration.test.ts      #     SSE stream integration tests
 │   │   ├── server-errors.test.ts        #     Server error handling tests
 │   │   ├── result.test.ts               #     AppResult utility tests
-│   │   └── types.test.ts               #     Transport type tests
+│   │   ├── types.test.ts               #     Transport type tests
+│   │   └── helpers.ts                   #     Shared test helpers: createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService
 │   └── src/
 │       ├── index.ts                     #   REST entry point — binds Fastify on :3100, inits memory system
 │       ├── mcp.ts                       #   MCP entry point — stdio transport, 10 tools
