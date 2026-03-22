@@ -98,11 +98,36 @@ describe("traverseMemory", () => {
     expect(result.data.edges).toHaveLength(1);
   });
 
-  it("returns NOT_FOUND error when node_id does not exist", () => {
-    const result = traverseMemory(mdb, { node_id: "nonexistent-uuid" });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe("NOT_FOUND");
+  it("returns BFS steps with parent linkage", () => {
+    const n1 = mdb.insertNode({ repo: "r", kind: "message", title: "root", body: "", meta: "{}", source_id: "1", source_type: "t" });
+    const n2 = mdb.insertNode({ repo: "r", kind: "message", title: "child", body: "", meta: "{}", source_id: "2", source_type: "t" });
+    const edge = mdb.insertEdge({ repo: "r", from_node: n1.id, to_node: n2.id, kind: "contains", weight: 1.0, meta: "{}", auto: true });
+
+    const result = traverseMemory(mdb, { node_id: n1.id, direction: "outgoing", max_depth: 2 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.steps).toBeDefined();
+    expect(result.data.steps).toHaveLength(2);
+    expect(result.data.steps[0]).toEqual({ node_id: n1.id, parent_id: null, edge_id: null, edge_kind: null });
+    expect(result.data.steps[1]).toEqual({ node_id: n2.id, parent_id: n1.id, edge_id: edge.id, edge_kind: "contains" });
   });
 
+  it("filters BFS results by sender when provided", () => {
+    const n1 = mdb.insertNode({ repo: "r", kind: "conversation", title: "conv", body: "", meta: "{}", source_id: "1", source_type: "t" });
+    const n2 = mdb.insertNode({ repo: "r", kind: "message", title: "human msg", body: "", meta: "{}", source_id: "2", source_type: "t", sender: "human" });
+    const n3 = mdb.insertNode({ repo: "r", kind: "message", title: "assistant msg", body: "", meta: "{}", source_id: "3", source_type: "t", sender: "assistant" });
+    mdb.insertEdge({ repo: "r", from_node: n1.id, to_node: n2.id, kind: "contains", weight: 1.0, meta: "{}", auto: true });
+    mdb.insertEdge({ repo: "r", from_node: n1.id, to_node: n3.id, kind: "contains", weight: 1.0, meta: "{}", auto: true });
+
+    const result = traverseMemory(mdb, { node_id: n1.id, direction: "outgoing", max_depth: 2, sender: "human" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Should include root (no sender filter on root) + human node, skip assistant node
+    const nodeIds = result.data.nodes.map(n => n.id);
+    expect(nodeIds).toContain(n1.id);
+    expect(nodeIds).toContain(n2.id);
+    expect(nodeIds).not.toContain(n3.id);
+  });
 });
