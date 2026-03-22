@@ -99,6 +99,8 @@ export interface MemoryDbClient {
   getNodesByRepoAndKind(repo: string, kind: NodeKind): NodeRow[];
   /** Delete all nodes with the given source_type and repo. Cascades to edges and embeddings via ON DELETE CASCADE. */
   deleteNodesBySourceType(source_type: string, repo: string): void;
+  /** Update the meta JSON of an existing node. */
+  updateNodeMeta(id: string, meta: string): void;
 
   // Edges
   insertEdge(input: InsertEdgeInput): EdgeRow;
@@ -162,6 +164,10 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
 
     deleteNodesBySourceType: db.prepare(
       "DELETE FROM nodes WHERE source_type = @source_type AND repo = @repo"
+    ),
+
+    updateNodeMeta: db.prepare(
+      "UPDATE nodes SET meta = @meta, updated_at = datetime('now') WHERE id = @id"
     ),
 
     insertEdge: db.prepare(`
@@ -291,6 +297,10 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
 
     deleteNodesBySourceType(source_type, repo) {
       stmts.deleteNodesBySourceType.run({ source_type, repo });
+    },
+
+    updateNodeMeta(id, meta) {
+      stmts.updateNodeMeta.run({ id, meta });
     },
 
     insertEdge(input) {
