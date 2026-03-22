@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../../db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../../db/memory-schema.js";
-import { createSecretFilter } from "../../ingestion/secret-filter.js";
-import type { EmbeddingService } from "../../ingestion/embedding.js";
-import { createMemoryController } from "./memory-controller.js";
-import type { ApiRequest } from "../types.js";
-import type { CreateNodeSchema } from "../schemas/memory-schemas.js";
+import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
+import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { createSecretFilter } from "../src/ingestion/secret-filter.js";
+import type { EmbeddingService } from "../src/ingestion/embedding.js";
+import { createMemoryController } from "../src/transport/controllers/memory-controller.js";
+import type { ApiRequest } from "../src/transport/types.js";
+import type { CreateNodeSchema } from "../src/transport/schemas/memory-schemas.js";
 
 function createInMemoryDb(): Database.Database {
   const db = new Database(":memory:");
