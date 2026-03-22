@@ -89,7 +89,7 @@ export type FooInput = z.infer<typeof FooSchema>;
 | `controllers/message-controller.ts` | `send`, `getByConversation`, `getUnread` |
 | `controllers/task-controller.ts` | `assign`, `get`, `getByConversation`, `report` |
 | `controllers/conversation-controller.ts` | `list` (with pagination) |
-| `controllers/memory-controller.ts` | `search`, `traverse`, `assemble`, `createNode`, `createLink`, `getNode`, `getStats`, `ingest`, `ingestGit`, `ingestTranscript` |
+| `controllers/memory-controller.ts` | `search`, `getNode`, `getNodeEdges`, `traverse`, `getContext`, `getTopics`, `getStats`, `ingest`, `createLink`, `createNode` |
 
 ## ApiRequest Structure
 

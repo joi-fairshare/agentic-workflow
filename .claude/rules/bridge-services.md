@@ -39,8 +39,11 @@ import { createEventBus } from "../events.js";
 const bus = createEventBus();
 
 // Subscribe (returns unsubscribe function)
-const unsub = bus.on("message:created", (event) => {
-  sseClients.forEach(c => c.send(JSON.stringify(event)));
+// Handler receives the full BridgeEvent — check event.type to filter
+const unsub = bus.subscribe((event) => {
+  if (event.type === "message:created") {
+    sseClients.forEach(c => c.send(JSON.stringify(event)));
+  }
 });
 
 // Emit after successful DB write
@@ -55,7 +58,7 @@ Emit events **after** the DB write succeeds. Controllers emit — services do no
 
 The `BoundedQueue` decouples the EventBus from async memory processing. Pattern in `index.ts`:
 
-1. Subscribe `bus.on("message:created", ...)` → enqueue `{ id, conversation }`
+1. Subscribe `bus.subscribe(event => { if (event.type === "message:created") ... })` → enqueue `{ id, conversation }`
 2. Queue handler fetches full message row, calls `ingestBridgeMessage(memoryDb, secretFilter, repo, msg)`
 3. `onDrop` emits `memory:ingestion_dropped` event (non-fatal)
 4. `backfillBridge()` runs at startup (non-blocking) before subscribing to avoid missing messages
@@ -78,7 +81,7 @@ server.tool("tool_name", "description", ZodSchema.shape, async (args) => {
 - Tools define Zod schemas for all parameters (no coercion in tool body)
 - Tools never throw — services return AppResult, `resultToContent()` converts
 - 5 bridge tools: `send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`
-- 5 memory tools: `search_memory`, `traverse_memory`, `assemble_context`, `create_memory_node`, `create_memory_link`
+- 5 memory tools: `search_memory`, `traverse_memory`, `get_context`, `create_memory_node`, `create_memory_link`
 
 ## Server & Route Registration (server.ts)
 

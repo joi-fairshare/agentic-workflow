@@ -21,7 +21,11 @@ const queue = createBoundedQueue<{ id: string; conversation: string }>({
   onError: (err) => logger.error("ingestion error", err),
 });
 
-bus.on("message:created", (event) => queue.enqueue({ id: event.data.id, conversation: event.data.conversation }));
+bus.subscribe((event) => {
+  if (event.type === "message:created") {
+    queue.enqueue({ id: event.data.id, conversation: event.data.conversation });
+  }
+});
 ```
 
 When the queue is full (`maxSize` items pending), the **oldest** item is dropped and `onDrop` is called. This preserves recent messages at the cost of older ones — intentional tradeoff for backpressure.
@@ -93,7 +97,7 @@ await backfillBridge(memoryDb, bridgeDb, secretFilter, repo);
 
 ### extractDecisions
 
-Regex-based heuristic extraction of decision nodes from message bodies. Patterns: `decision ~`, `we chose`, `chosen:`, `decided to`. Creates `decision` kind nodes linked to the source message.
+Regex-based heuristic extraction of decision nodes from message bodies. Matches six patterns: `we/I decided to/that/on ...`, `the decision is/was to ...`, `going with/for ...`, `chose ... over ...`, `we're/we'll/we will/we are use/using/adopt/go with ...`, and `let's/let us use/go with/switch to/adopt ...`. Creates `decision` kind nodes linked to the source message. Deduplicates by title within the same conversation.
 
 ### inferTopics
 

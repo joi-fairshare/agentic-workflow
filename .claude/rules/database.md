@@ -89,7 +89,8 @@ Key methods:
 - `updateNode(id, patch)`
 - `deleteNode(id)`
 - `insertEdge(edge)` → `MemoryEdge`
-- `getEdges(nodeId, direction)` → `MemoryEdge[]`
+- `getEdgesFrom(nodeId)` → `EdgeRow[]` — outgoing edges where `from_node = nodeId`
+- `getEdgesTo(nodeId)` → `EdgeRow[]` — incoming edges where `to_node = nodeId`
 - `searchFTS(query, repo, limit)` → ranked `MemoryNode[]`
 - `searchKNN(embedding, limit, repo)` → nearest `MemoryNode[]`
 - `transaction<T>(fn: () => T): T`
