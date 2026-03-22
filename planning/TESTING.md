@@ -6,65 +6,95 @@ All tests run against **in-memory SQLite** databases. Each test gets a fresh dat
 
 The test suite uses **Vitest** with explicit imports (globals are disabled in the config).
 
-## Test Location
+## Coverage Targets
+
+Both packages enforce **100% coverage** on all four metrics as a hard build failure:
+
+| Metric | MCP Bridge | UI (hooks + lib) |
+|--------|-----------|-------------------|
+| Statements | 100% | 100% |
+| Branches | 100% | 100% |
+| Functions | 100% | 100% |
+| Lines | 100% | 100% |
+
+Coverage is enforced via `thresholds` in each package's `vitest.config.ts`. Entry-point files (`index.ts`, `mcp.ts`) and type-only files (`types.ts`) are excluded.
+
+## Test Locations
 
 ```
-mcp-bridge/
-  tests/
-    services.test.ts       # Service-layer unit tests (sendContext, getMessages, getUnread, assignTask, reportStatus)
-    conversations.test.ts  # Conversation summary service tests (4 tests)
-    events.test.ts         # EventBus unit tests (4 tests: emit, on, off, multiple subscribers)
-  vitest.config.ts         # Vitest configuration
-```
+mcp-bridge/tests/
+├── result.test.ts              # AppResult, ERROR_CODE constants
+├── types.test.ts               # RouteSchema, defineRoute
+├── memory-schema.test.ts       # Memory DDL, NODE_KINDS, EDGE_KINDS
+├── schema.test.ts              # createDatabase, WAL mode
+├── client.test.ts              # DbClient CRUD operations
+├── memory-client.test.ts       # MemoryDbClient: nodes, edges, FTS, KNN, cursors
+├── events.test.ts              # EventBus: emit, subscribe, unsubscribe
+├── embedding.test.ts           # EmbeddingService: embed, batch, warmUp, degraded
+├── secret-filter.test.ts       # Secret detection and redaction
+├── queue.test.ts               # BoundedQueue: enqueue, backpressure, drop
+├── transcript-parser.test.ts   # JSONL transcript parsing
+├── services.test.ts            # Service-layer unit tests (send, get, assign, report)
+├── conversations.test.ts       # Conversation summary service
+├── search-memory.test.ts       # Hybrid search: FTS5, KNN, RRF, degraded mode
+├── traverse-memory.test.ts     # BFS graph traversal
+├── assemble-context.test.ts    # Token-budgeted context assembly
+├── ingest-bridge.test.ts       # Bridge message → memory node pipeline
+├── ingest-git.test.ts          # Git metadata ingestion (mocked execFileSync)
+├── ingest-transcript.test.ts   # JSONL transcript ingestion
+├── extract-decisions.test.ts   # Decision extraction via regex heuristics
+├── infer-topics.test.ts        # Topic inference via embedding clustering
+├── message-controller.test.ts  # Message controller: send, getByConversation, getUnread
+├── task-controller.test.ts     # Task controller: assign, get, report
+├── conversation-controller.test.ts  # Conversation controller: list
+├── memory-controller.test.ts   # Memory controller: search, traverse, context, createNode, createLink
+├── server-errors.test.ts       # Server error handling: ZodError→400, generic→500, details field
+├── sse-integration.test.ts     # Real TCP SSE: headers, events, cleanup
+├── mcp-tools.test.ts           # MCP tool handler tests with resultToContent
+├── routes/
+│   ├── messages.test.ts        # POST /messages/send, GET conversation/:id, GET /unread
+│   ├── tasks.test.ts           # POST /tasks/assign, GET /:id, POST /report
+│   ├── conversations.test.ts   # GET /conversations, /health
+│   ├── events.test.ts          # SSE route registration
+│   └── memory.test.ts          # All 10 memory routes
 
-Tests live in `mcp-bridge/tests/`. The `tsconfig.json` excludes `tests/` from compilation output, but Vitest picks them up at runtime via `tsx`.
+ui/__tests__/
+├── setup.ts                    # Global fetch mock, MockEventSource
+├── lib/
+│   ├── diagrams.test.ts        # buildDirectedGraph, buildSequenceDiagram
+│   ├── api.test.ts             # fetchConversations, fetchMessages, fetchTasks
+│   └── memory-api.test.ts      # All memory API client functions
+└── hooks/
+    ├── use-sse.test.ts         # SSE hook: lifecycle, events, error, cleanup
+    ├── use-memory-search.test.ts    # Search hook: state, search, kinds, errors
+    ├── use-memory-traverse.test.ts  # Traverse hook: selectNode, clearNode
+    └── use-context-assembler.test.ts # Context hook: assemble, budget, clear
+```
 
 ## Running Tests
 
 ```bash
+# MCP Bridge
 cd mcp-bridge
+npm test               # Vitest single run (CI-friendly)
+npm run test:watch     # Vitest watch mode
+npm run test:coverage  # Run with 100% coverage enforcement
+npm run typecheck      # tsc --noEmit
 
-# Single run (CI-friendly)
-npm run test
-
-# Watch mode (re-runs on file changes)
-npm run test:watch
-
-# Type-check only (no emit)
-npm run typecheck
+# UI
+cd ui
+npm test               # Vitest single run
+npm run test:watch     # Vitest watch mode
+npm run test:coverage  # Run with 100% coverage enforcement
 ```
-
-Under the hood:
-- `npm run test` runs `vitest run` (single pass, exits with code 0/1)
-- `npm run test:watch` runs `vitest` (interactive watch mode)
-- `npm run typecheck` runs `tsc --noEmit` (validates types without producing output)
-
-## Test Configuration
-
-From `vitest.config.ts`:
-
-```ts
-import { defineConfig } from "vitest/config";
-
-export default defineConfig({
-  test: {
-    globals: false,
-    testTimeout: 10_000,
-  },
-});
-```
-
-- **`globals: false`** -- All Vitest functions (`describe`, `it`, `expect`, `beforeEach`) must be explicitly imported.
-- **`testTimeout: 10_000`** -- 10-second timeout per test (generous for in-memory SQLite operations).
 
 ## Test Patterns
 
-### Fresh Database per Test
+### Fresh Database per Test (MCP Bridge)
 
-Every test starts with a clean in-memory SQLite database. The `beforeEach` hook creates the database, runs migrations, and wraps it in the `DbClient` interface:
+Every test starts with a clean in-memory SQLite database:
 
 ```ts
-import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { createDbClient, type DbClient } from "../src/db/client.js";
 import { MIGRATIONS } from "../src/db/schema.js";
@@ -79,135 +109,115 @@ beforeEach(() => {
 });
 ```
 
-This pattern ensures:
-- No test pollution -- each test has its own tables with zero rows.
-- No disk I/O -- `:memory:` databases are purely in-RAM.
-- Real schema -- the same `MIGRATIONS` SQL that runs in production creates the tables.
+### Memory Database Setup
+
+Memory tests need sqlite-vec loaded:
+
+```ts
+import Database from "better-sqlite3";
+import * as sqliteVec from "sqlite-vec";
+import { createMemoryDbClient } from "../src/db/memory-client.js";
+import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+
+beforeEach(() => {
+  const raw = new Database(":memory:");
+  sqliteVec.load(raw);
+  raw.pragma("journal_mode = WAL");
+  raw.pragma("foreign_keys = ON");
+  raw.exec(MEMORY_MIGRATIONS);
+  mdb = createMemoryDbClient(raw);
+});
+```
 
 ### AppResult Assertion Pattern
 
-All service functions return `AppResult<T>`, a discriminated union:
+Assert `ok` first, then narrow with a guard:
 
 ```ts
-type AppResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string } }
+const result = sendContext(db, { ... });
+expect(result.ok).toBe(true);
+if (!result.ok) return;          // Type narrowing guard
+expect(result.data.conversation).toBe(conv);
 ```
 
-Tests assert on the `ok` flag first, then narrow the type with a guard before accessing `data` or `error`:
+### Controller Test Pattern
+
+Controllers need a mock EventBus and typed `ApiRequest`:
 
 ```ts
-it("inserts a message and returns it", () => {
-  const conv = randomUUID();
-  const result = sendContext(db, {
-    conversation: conv,
-    sender: "claude-code",
-    recipient: "codex",
-    payload: "Hello from Claude",
-    meta_prompt: "Analyze this codebase",
-  });
+const bus = createEventBus();
+const controller = createMessageController(db, bus);
 
-  expect(result.ok).toBe(true);
-  if (!result.ok) return;          // Type narrowing guard
-  expect(result.data.conversation).toBe(conv);
-  expect(result.data.sender).toBe("claude-code");
-  expect(result.data.kind).toBe("context");
-  expect(result.data.read_at).toBeNull();
+const result = await controller.send({
+  body: { conversation: "c1", sender: "a", recipient: "b", payload: "hello" },
+  params: undefined as never,
+  query: undefined as never,
+  requestId: "test",
 });
 ```
 
-For error cases, the same pattern is inverted:
+### Route Integration Test Pattern
+
+Route tests use Fastify `inject()` for full HTTP-layer coverage without a live server:
 
 ```ts
-it("returns error for unknown task_id without inserting a message", () => {
-  const result = reportStatus(db, {
-    conversation: conv,
-    sender: "codex",
-    recipient: "claude-code",
-    task_id: randomUUID(),
-    status: "completed",
-    payload: "Done",
-  });
+const app = createServer([messageRoutes(db, bus)]);
+await app.ready();
 
-  expect(result.ok).toBe(false);
-  if (result.ok) return;           // Type narrowing guard
-  expect(result.error.code).toBe("NOT_FOUND");
+const res = await app.inject({
+  method: "POST",
+  url: "/messages/send",
+  payload: { conversation: "c1", sender: "a", recipient: "b", payload: "hi" },
 });
+expect(res.statusCode).toBe(201);
 ```
 
-### Conversation Isolation via randomUUID
+### SSE Integration Tests
 
-Each test generates its own conversation UUID with `randomUUID()`, so even if tests share a database (they don't due to `beforeEach`), data would not collide:
+SSE uses `reply.raw.writeHead()` which bypasses Fastify's inject. Tests use real TCP connections:
 
 ```ts
-const conv = randomUUID();
+const app = createSseTestServer(eventBus);
+await app.listen({ port: 0, host: "127.0.0.1" });
+const port = (app.server.address() as AddressInfo).port;
+// Use http.get for real TCP connection
 ```
 
-### Verifying Side Effects
+### UI Hook Test Pattern
 
-Tests that touch multiple tables verify both the primary return value and side effects. For example, `assignTask` creates both a task record and a conversation message:
+UI tests use happy-dom, `@testing-library/react`, and module mocks:
 
 ```ts
-it("creates a task and a conversation message atomically", () => {
-  const conv = randomUUID();
-  const result = assignTask(db, {
-    conversation: conv,
-    domain: "backend",
-    summary: "Fix auth bug",
-    details: "JWT validation is missing",
-    assigned_to: "codex",
-  });
+import { renderHook, act } from "@testing-library/react";
+import { useMemorySearch } from "@/hooks/use-memory-search";
 
-  expect(result.ok).toBe(true);
-  if (!result.ok) return;
-  expect(result.data.domain).toBe("backend");
-  expect(result.data.status).toBe("pending");
+vi.mock("@/lib/memory-api", () => ({
+  searchMemory: vi.fn(),
+}));
 
-  // Check that a message was also created
-  const msgs = getMessagesByConversation(db, conv);
-  expect(msgs.ok).toBe(true);
-  if (!msgs.ok) return;
-  expect(msgs.data).toHaveLength(1);
-  expect(msgs.data[0].kind).toBe("task");
-});
+const { result } = renderHook(() => useMemorySearch("repo"));
+act(() => result.current.setQuery("test"));
+await act(async () => result.current.search());
 ```
 
-For error cases, tests verify that no orphaned records were created (transactional integrity):
+### Coverage Exclusions
 
-```ts
-// Verify no orphaned message was created
-const msgs = getMessagesByConversation(db, conv);
-expect(msgs.ok).toBe(true);
-if (!msgs.ok) return;
-expect(msgs.data).toHaveLength(0);
-```
+Some code uses `/* v8 ignore */` comments for lines that are untestable in unit tests:
 
-## Coverage Targets
+- **`embedding.ts`**: `createNomicEmbedFn()` — loads the real HuggingFace model at runtime
+- **`infer-topics.ts`**: Floating-point safety net in k-means++ (`chosen === -1` fallback)
+- **`ingest-git.ts`**: Non-UNIQUE constraint error logging in edge insertion
+- **`ingest-bridge.ts`**: Page-level task ingestion loop (mirrors tested message path)
+- **`events.ts` (routes)**: 30-second heartbeat timer
 
-The current test suite covers the service layer (`src/application/services/`) and the EventBus:
-
-| Module | Tests | Coverage |
-|--------|-------|---------|
-| `sendContext` | Insert + return shape | Happy path |
-| `getMessagesByConversation` | Chronological order, empty conversation | Happy path |
-| `getUnreadMessages` | Returns unread, marks as read, subsequent call returns empty | Happy + edge |
-| `assignTask` | Task creation + message side effect | Happy path + atomicity |
-| `reportStatus` | Status update + task mutation, error on missing task | Happy + error path |
-| `getConversations` | Pagination, participant aggregation, empty result | Happy + edge |
-| `EventBus` | emit, on, off, multiple subscribers | All branches |
-
-Coverage targets to aim for:
-- **Service layer**: 100% of exported functions should have happy-path and error-path tests.
-- **EventBus**: All emit/subscribe/unsubscribe paths covered.
-- **Transport/route layer**: Integration tests against Fastify's `inject()` method (not yet implemented).
-- **MCP tool layer**: Validate Zod schemas reject malformed input (not yet implemented).
-- **UI**: No automated tests at this time; manual verification via `npm run dev`.
+All excluded code is defensive/integration boundary code. Business logic is fully tested.
 
 ## Writing New Tests
 
-1. Add test files to `mcp-bridge/tests/` with the `.test.ts` suffix.
+1. Add test files to the appropriate `tests/` or `__tests__/` directory with `.test.ts` suffix.
 2. Import from `vitest` explicitly (globals are off).
-3. Use the `beforeEach` pattern above for database setup.
-4. Return `AppResult<T>` from all service functions -- never throw.
+3. Use the `beforeEach` database setup pattern for bridge tests.
+4. Return `AppResult<T>` from all service functions — never throw.
 5. Use `randomUUID()` for conversation/task IDs.
-6. Assert `result.ok` first, then narrow with a guard before accessing `.data` or `.error`.
+6. Assert `result.ok` first, then narrow with a guard.
+7. Run `npm run test:coverage` before pushing — 100% thresholds are enforced.

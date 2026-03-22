@@ -276,6 +276,7 @@ npm run dev            # Dev server with tsx
 npm start              # Production server (Fastify on :3100)
 npm test               # Vitest (all tests, in-memory SQLite)
 npm run test:watch     # Vitest watch mode
+npm run test:coverage  # Run with 100% coverage enforcement
 npm run typecheck      # tsc --noEmit
 
 # UI Dashboard
@@ -283,6 +284,8 @@ cd ui
 npm run dev            # Next.js dev server (http://localhost:3000)
 npm run build          # Production build
 npm start              # Production server
+npm test               # Vitest (hooks + lib tests)
+npm run test:coverage  # Run with 100% coverage enforcement
 
 # Setup (from repo root)
 ./setup.sh             # Symlink skills, copy config, install deps, build bridge, create output dir
@@ -293,8 +296,9 @@ npm start              # Production server
 
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
-2. `npm test` passes with all tests green
-3. No `any` types outside of Fastify integration boundaries
+2. `npm test` passes with all tests green (277 bridge + 61 UI)
+3. `npm run test:coverage` passes at 100% thresholds (both packages)
+4. No `any` types outside of Fastify integration boundaries
 
 ## Commit Conventions
 
