@@ -34,7 +34,7 @@ if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
   [ -n "$TERM_SIZE" ] && COLS=$(echo "$TERM_SIZE" | awk '{print $2}')
 fi
 if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
-  COLS=${COLUMNS:-$(tput cols 2>/dev/null)}
+  COLS=${COLUMNS:-}
 fi
 : "${COLS:=200}"
 
@@ -86,9 +86,9 @@ eval "$(echo "$INPUT" | jq -r '
   "LINES_ADD=\(.cost.total_lines_added // 0 | tostring | @sh)",
   "LINES_DEL=\(.cost.total_lines_removed // 0 | tostring | @sh)",
   "RATE5H_PCT=\(.rate_limits.five_hour.used_percentage // "" | tostring | @sh)",
-  "RATE5H_RESET=\(.rate_limits.five_hour.resets_at // "" | tostring | @sh)",
+  "RATE5H_RESET=\(.rate_limits.five_hour.resets_at // "" | if type == "number" then floor | tostring else . end | @sh)",
   "RATE7D_PCT=\(.rate_limits.seven_day.used_percentage // "" | tostring | @sh)",
-  "RATE7D_RESET=\(.rate_limits.seven_day.resets_at // "" | tostring | @sh)"
+  "RATE7D_RESET=\(.rate_limits.seven_day.resets_at // "" | if type == "number" then floor | tostring else . end | @sh)"
 ')"
 
 # --- Git branch ---
