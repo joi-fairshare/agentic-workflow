@@ -139,4 +139,10 @@ describe("createEmbeddingService", () => {
     if (result.ok) return;
     expect(result.error.message).toBe("Embedding failed");
   });
+
+  it("defaults embedFn to null when not provided", () => {
+    const svc = createEmbeddingService({});
+    expect(svc.isReady()).toBe(false);
+    expect(svc.isDegraded()).toBe(false);
+  });
 });

@@ -65,7 +65,6 @@ async function createNomicEmbedFn(): Promise<EmbedFn> {
 
 export function createEmbeddingService(options: EmbeddingServiceOptions = {}): EmbeddingService {
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
-  /* v8 ignore next */
   let embedFn: EmbedFn | null = options.embedFn ?? null;
   let ready = false;
   let degraded = false;

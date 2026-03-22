@@ -21,11 +21,13 @@ beforeEach(() => {
   const rawMem = new Database(":memory:");
   sqliteVec.load(rawMem);
   rawMem.pragma("journal_mode = WAL");
+  rawMem.pragma("busy_timeout = 5000");
   rawMem.exec(MEMORY_MIGRATIONS);
   mdb = createMemoryDbClient(rawMem);
 
   const rawBridge = new Database(":memory:");
   rawBridge.pragma("journal_mode = WAL");
+  rawBridge.pragma("foreign_keys = ON");
   rawBridge.exec(MIGRATIONS);
   bridgeDb = createDbClient(rawBridge);
 });

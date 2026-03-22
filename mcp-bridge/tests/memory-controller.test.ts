@@ -13,6 +13,7 @@ function createInMemoryDb(): Database.Database {
   const db = new Database(":memory:");
   sqliteVec.load(db);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
   db.exec(MEMORY_MIGRATIONS);
   return db;

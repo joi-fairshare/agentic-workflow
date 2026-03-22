@@ -173,7 +173,6 @@ export async function backfillBridge(
       const tasks = bridgeDb.getTasksByConversation(conv.conversation);
       for (const task of tasks) {
         const result = ingestBridgeTask(mdb, filter, repo, task);
-        /* v8 ignore next 1 */
         if (result.ok) tasksIngested++;
       }
     }

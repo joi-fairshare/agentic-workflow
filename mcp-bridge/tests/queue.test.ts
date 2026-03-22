@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createBoundedQueue } from "../src/ingestion/queue.js";
 
-function flushMicrotasks() {
+function waitForProcessing() {
   return new Promise<void>((resolve) => setTimeout(resolve, 50));
 }
 
@@ -16,7 +16,7 @@ describe("createBoundedQueue", () => {
 
     q.enqueue(1);
     q.enqueue(2);
-    await flushMicrotasks();
+    await waitForProcessing();
 
     expect(processed).toContain(1);
     expect(processed).toContain(2);
@@ -52,8 +52,8 @@ describe("createBoundedQueue", () => {
     q.enqueue(3);
     q.enqueue(4);
 
-    await flushMicrotasks();
-    await flushMicrotasks();
+    await waitForProcessing();
+    await waitForProcessing();
 
     expect(dropped.length).toBeGreaterThan(0);
     q.stop();
@@ -68,7 +68,7 @@ describe("createBoundedQueue", () => {
     });
 
     q.enqueue(1);
-    await flushMicrotasks();
+    await waitForProcessing();
 
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toBe("boom");
@@ -84,7 +84,7 @@ describe("createBoundedQueue", () => {
 
     q.stop();
     q.enqueue(1);
-    await flushMicrotasks();
+    await waitForProcessing();
 
     expect(processed).toHaveLength(0);
   });

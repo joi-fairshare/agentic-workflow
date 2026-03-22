@@ -46,12 +46,14 @@ let embedService: EmbeddingService;
 beforeEach(() => {
   const raw = new Database(":memory:");
   raw.pragma("journal_mode = WAL");
+  raw.pragma("foreign_keys = ON");
   raw.exec(MIGRATIONS);
   db = createDbClient(raw);
 
   const memRaw = new Database(":memory:");
   sqliteVec.load(memRaw);
   memRaw.pragma("journal_mode = WAL");
+  memRaw.pragma("busy_timeout = 5000");
   memRaw.pragma("foreign_keys = ON");
   memRaw.exec(MEMORY_MIGRATIONS);
   mdb = createMemoryDbClient(memRaw);

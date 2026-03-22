@@ -26,6 +26,7 @@ beforeEach(async () => {
   const raw = new Database(":memory:");
   sqliteVec.load(raw);
   raw.pragma("journal_mode = WAL");
+  raw.pragma("busy_timeout = 5000");
   raw.pragma("foreign_keys = ON");
   raw.exec(MEMORY_MIGRATIONS);
   mdb = createMemoryDbClient(raw);
