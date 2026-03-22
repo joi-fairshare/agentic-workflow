@@ -200,11 +200,21 @@ cat > "$SHELL_INTEGRATION_FILE" << 'SHELL_EOF'
 # Keeps ~/.claude/terminal_width updated so statusline.sh can read the actual
 # terminal width. Claude Code subprocesses cannot access /dev/tty or $COLUMNS,
 # so the interactive shell (which always has the correct value) writes it here.
+#
+# Also writes ~/.claude/shell_pid so Claude Code hooks can send SIGWINCH to
+# this shell, triggering a width update mid-session when the window is resized.
 
 _claude_update_width() {
-  local width="${COLUMNS:-$(tput cols 2>/dev/null)}"
-  [ -n "$width" ] && [ "$width" -gt 0 ] 2>/dev/null && \
-    printf '%s\n' "$width" > "$HOME/.claude/terminal_width"
+  # Write our PID so hooks can find and signal us
+  printf '%s\n' "$$" > "$HOME/.claude/shell_pid"
+  # Prefer tput cols (queries PTY directly via /dev/tty) over $COLUMNS which
+  # may be stale in the background shell while Claude Code is the foreground process.
+  local width
+  width=$(tput cols 2>/dev/null)
+  if [ -z "$width" ] || ! [ "$width" -gt 0 ] 2>/dev/null; then
+    width="${COLUMNS:-0}"
+  fi
+  [ "$width" -gt 0 ] 2>/dev/null && printf '%s\n' "$width" > "$HOME/.claude/terminal_width"
 }
 
 if [ -n "$ZSH_VERSION" ]; then
