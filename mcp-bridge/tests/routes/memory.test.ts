@@ -163,14 +163,29 @@ describe("GET /memory/search", () => {
 });
 
 describe("POST /memory/ingest", () => {
-  it("returns 201 with ingested count", async () => {
+  it("returns 400 for unsupported source", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/memory/ingest",
       payload: { source: "bridge", repo: "test" },
     });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 201 with ingested count for generic source", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/memory/ingest",
+      payload: {
+        source: "generic",
+        repo: "test",
+        session_id: "s1",
+        content: JSON.stringify([{ role: "user", content: "hi" }]),
+        agent: "test-agent",
+      },
+    });
     expect(res.statusCode).toBe(201);
-    expect(res.json().data.ingested).toBe(0);
+    expect(res.json().data.messages_ingested).toBe(1);
   });
 });
 
