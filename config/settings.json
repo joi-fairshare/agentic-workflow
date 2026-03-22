@@ -22,5 +22,9 @@
   },
   "skipDangerousModePermissionPrompt": true,
   "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh"
+  }
 }
