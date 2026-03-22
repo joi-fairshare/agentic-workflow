@@ -50,12 +50,12 @@ agentic-workflow/
 ```bash
 # MCP Bridge
 cd mcp-bridge && npm test               # Vitest (all tests, in-memory SQLite)
-cd mcp-bridge && npm run test:coverage  # Coverage report
+cd mcp-bridge && npm run test:coverage  # Run with 100% coverage enforcement
 cd mcp-bridge && npm run build          # TypeScript → dist/
 
 # UI Dashboard
 cd ui && npm test               # Vitest (hooks + lib tests)
-cd ui && npm run test:coverage  # Coverage report
+cd ui && npm run test:coverage  # Run with 100% coverage enforcement
 
 # Setup (from repo root)
 ./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, create output dir
@@ -67,7 +67,7 @@ cd ui && npm run test:coverage  # Coverage report
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
 2. `npm test` passes with all tests green (293 bridge + 61 UI)
-3. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
+3. `/* v8 ignore */` only for genuinely untestable infrastructure (model downloads, FTS5 internals, degenerate math) — never for business logic
 4. No `any` types outside of Fastify integration boundaries
 
 ## Commit Conventions

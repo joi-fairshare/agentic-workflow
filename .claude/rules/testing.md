@@ -10,7 +10,7 @@ globs: ["**/*.test.ts", "**/*.spec.ts", "**/vitest.config.ts"]
 
 **UI tests** — Vitest with `happy-dom` environment, `@` path alias pointing to `src/`, global `MockEventSource` defined in `ui/__tests__/setup.ts`. Tests cover `hooks/**/*.ts` and `lib/**/*.ts` only; `types.ts` is excluded.
 
-**Coverage policy:** No `/* v8 ignore */` annotations anywhere in source. If a branch is hard to reach, write the test — don't skip coverage. Thresholds are not enforced numerically, but every uncovered line represents a gap to fix.
+**Coverage policy:** 100% thresholds are enforced in both `mcp-bridge` and `ui` (`vitest.config.ts` thresholds: lines/functions/branches/statements). `/* v8 ignore */` annotations are allowed only for genuinely untestable infrastructure code (model download paths in `embedding.ts`, FTS5 internal error handlers, degenerate math branches in `infer-topics.ts`). Never use them to hide testable business logic.
 
 ## Shared Test Helpers
 
@@ -81,11 +81,12 @@ Test event emission by subscribing before the action that emits:
 
 ```typescript
 const events: BridgeEvent[] = [];
-bus.on("message:created", (e) => events.push(e));
+const unsub = bus.subscribe((event) => events.push(event));
 
 await controller.send(req);
 expect(events).toHaveLength(1);
 expect(events[0].type).toBe("message:created");
+unsub();
 ```
 
 ## Memory / Graph Tests
