@@ -4,29 +4,33 @@
 # Two-line output: dimmed header row + color-coded values
 # Spec: docs/superpowers/specs/2026-03-21-statusline-config-design.md
 #
-# Adapts to terminal width — drops lower-priority columns as space shrinks:
-#   ≥95 cols: full   (branch×15, bar×10, cost, time, cache, api, lines, rate)
-#   ≥80 cols: medium (branch×12, bar×10, cost, time, cache, api, lines — no rate)
-#   ≥65 cols: narrow (branch×12, bar×5,  cost, time, api, lines — no cache/rate)
-#    <65 cols: compact(branch×10, bar×5,  cost, time, lines — no cache/api/rate)
+# Adapts to terminal width — drops lower-priority columns as space shrinks.
+# Field widths are sized for real-world max values so columns never overflow:
+#   Model(10) Branch(15/12/10) Bar(10/5) Cost(7) Time(7) Cache(5/4) API(4) Lines(9) Rate(8)
+#
+# Tiers (visible chars):
+#   ≥100 cols: full   — all columns + Rate when available (~88 / ~99 with rate)
+#   ≥86  cols: medium — branch×12, bar×10, all columns, no rate (~85)
+#   ≥80  cols: narrow — branch×12, bar×5,  all columns, no rate (~79)
+#    <80  cols: compact— branch×10, bar×5,  no cache/api/rate    (~63)
 
 INPUT=$(cat)
 COLS=$(tput cols 2>/dev/null || echo 200)
 
-# Fallback for empty or invalid input
+# Fallback for empty or invalid input — headers and placeholder values per tier
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
-  if [ "$COLS" -ge 95 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m'
-    printf '%b\n' '--      │ --              │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --'
+  if [ "$COLS" -ge 100 ] 2>/dev/null; then
+    printf '%b\n' '\033[2mModel      │ Branch          │ Context    │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
+    printf '%b\n' '--         │ --              │ ░░░░░░░░░░ │ --      │ --      │ --    │ --   │ --       '
+  elif [ "$COLS" -ge 86 ] 2>/dev/null; then
+    printf '%b\n' '\033[2mModel      │ Branch       │ Context    │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
+    printf '%b\n' '--         │ --           │ ░░░░░░░░░░ │ --      │ --      │ --    │ --   │ --       '
   elif [ "$COLS" -ge 80 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mModel   │ Branch       │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m'
-    printf '%b\n' '--      │ --           │ ░░░░░░░░░░ │ --     │ --    │ --    │ --   │ --'
-  elif [ "$COLS" -ge 65 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mModel   │ Branch       │ Ctx   │ Cost   │ Time  │ API  │ Lines\033[0m'
-    printf '%b\n' '--      │ --           │ ░░░░░ │ --     │ --    │ --   │ --'
+    printf '%b\n' '\033[2mModel      │ Branch       │ Ctx   │ Cost    │ Time    │ Ca%  │ API  │ Lines    \033[0m'
+    printf '%b\n' '--         │ --           │ ░░░░░ │ --      │ --      │ --   │ --   │ --       '
   else
-    printf '%b\n' '\033[2mModel   │ Branch     │ Ctx   │ Cost   │ Time  │ Lines\033[0m'
-    printf '%b\n' '--      │ --         │ ░░░░░ │ --     │ --    │ --'
+    printf '%b\n' '\033[2mModel      │ Branch     │ Ctx   │ Cost    │ Time    │ Lines    \033[0m'
+    printf '%b\n' '--         │ --         │ ░░░░░ │ --      │ --      │ --       '
   fi
   exit 0
 fi
@@ -36,10 +40,10 @@ fi
 # Why eval/@sh instead of @tsv/IFS: bash 3.2 on macOS (the system shell) does not preserve
 # non-whitespace IFS characters in herestrings, causing @tsv tab-split to silently fail.
 # Safety: every field is piped through @sh before reaching eval, which POSIX-quotes the
-# value. String fields (MODEL, DIR) use @sh directly. Numeric fields use
-# | tostring | @sh so that unexpected strings in the JSON cannot inject shell code.
+# value. String fields use @sh directly. Numeric fields use | tostring | @sh so that
+# unexpected strings in the JSON cannot inject shell code.
 eval "$(echo "$INPUT" | jq -r '
-  "MODEL=\(.model.display_name // "--" | @sh)",
+  "MODEL=\(.model.display_name // "--" | ltrimstr("Claude ") | .[0:10] | @sh)",
   "DIR=\(.workspace.current_dir // "" | @sh)",
   "CTX_PCT=\(.context_window.used_percentage // "" | tostring | @sh)",
   "BAR_FILL=\(if (.context_window.used_percentage // 0) > 0 then
@@ -74,7 +78,7 @@ if [ -n "$DIR" ] && [ "$DIR" != "null" ]; then
     BRANCH=$(git -C "$DIR" rev-parse --short HEAD 2>/dev/null || echo "--")
   fi
 fi
-# Width-specific truncations
+# Width-specific truncations (trailing "..." signals truncation)
 BRANCH15="$BRANCH"
 [ "${#BRANCH}" -gt 15 ] && BRANCH15="${BRANCH:0:12}..."
 BRANCH12="$BRANCH"
@@ -144,25 +148,27 @@ if [ -n "$RATE_PCT" ] && [ "$RATE_PCT" != "null" ] && [ "$RATE_PCT" != "" ]; the
 fi
 
 # --- Adaptive output ---
-if [ "$COLS" -ge 95 ] 2>/dev/null; then
-  # FULL: all columns, branch=15, bar=10, rate if available (~81 cols / ~92 with rate)
+# Field format reference (col widths match header labels exactly):
+#   Model(10) Branch(15/12/10) Bar(10/5) Cost(7) Time(7) Cache(5/4) API(4) Lines(9) Rate(var)
+if [ "$COLS" -ge 100 ] 2>/dev/null; then
+  # FULL: all columns, branch=15, bar=10, rate if available (~88 cols / ~99 with rate)
   if [ -n "$RATE_FMT" ]; then
-    printf '%b\n' "\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines    │ Rate\033[0m"
-    printf '%b\n' "$(printf '%-7s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ ${BAR} │ $(printf '%-6s' "$COST_FMT") │ $(printf '%-5s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-8s' "$LINES_FMT") │ ${RATE_FMT}"
+    printf '%b\n' "\033[2mModel      │ Branch          │ Context    │ Cost    │ Time    │ Cache │ API  │ Lines     │ Rate\033[0m"
+    printf '%b\n' "$(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ ${BAR} │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT") │ ${RATE_FMT}"
   else
-    printf '%b\n' "\033[2mModel   │ Branch          │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m"
-    printf '%b\n' "$(printf '%-7s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ ${BAR} │ $(printf '%-6s' "$COST_FMT") │ $(printf '%-5s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-8s' "$LINES_FMT")"
+    printf '%b\n' "\033[2mModel      │ Branch          │ Context    │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
+    printf '%b\n' "$(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ ${BAR} │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
   fi
+elif [ "$COLS" -ge 86 ] 2>/dev/null; then
+  # MEDIUM: branch=12, bar=10, no rate (~85 cols)
+  printf '%b\n' "\033[2mModel      │ Branch       │ Context    │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
+  printf '%b\n' "$(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ ${BAR} │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
 elif [ "$COLS" -ge 80 ] 2>/dev/null; then
-  # MEDIUM: branch=12, bar=10, no rate (~78 cols)
-  printf '%b\n' "\033[2mModel   │ Branch       │ Context    │ Cost   │ Time  │ Cache │ API  │ Lines\033[0m"
-  printf '%b\n' "$(printf '%-7s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ ${BAR} │ $(printf '%-6s' "$COST_FMT") │ $(printf '%-5s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-8s' "$LINES_FMT")"
-elif [ "$COLS" -ge 65 ] 2>/dev/null; then
-  # NARROW: branch=12, bar=5, no cache, no rate (~65 cols)
-  printf '%b\n' "\033[2mModel   │ Branch       │ Ctx   │ Cost   │ Time  │ API  │ Lines\033[0m"
-  printf '%b\n' "$(printf '%-7s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ ${BAR5} │ $(printf '%-6s' "$COST_FMT") │ $(printf '%-5s' "$TIME_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-8s' "$LINES_FMT")"
+  # NARROW: branch=12, bar=5, cache=4, no rate (~79 cols)
+  printf '%b\n' "\033[2mModel      │ Branch       │ Ctx   │ Cost    │ Time    │ Ca%  │ API  │ Lines    \033[0m"
+  printf '%b\n' "$(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ ${BAR5} │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-4s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
 else
-  # COMPACT: branch=10, bar=5, no cache, no api, no rate (~56 cols)
-  printf '%b\n' "\033[2mModel   │ Branch     │ Ctx   │ Cost   │ Time  │ Lines\033[0m"
-  printf '%b\n' "$(printf '%-7s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ ${BAR5} │ $(printf '%-6s' "$COST_FMT") │ $(printf '%-5s' "$TIME_FMT") │ $(printf '%-8s' "$LINES_FMT")"
+  # COMPACT: branch=10, bar=5, no cache/api/rate (~63 cols)
+  printf '%b\n' "\033[2mModel      │ Branch     │ Ctx   │ Cost    │ Time    │ Lines    \033[0m"
+  printf '%b\n' "$(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ ${BAR5} │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-9s' "$LINES_FMT")"
 fi
