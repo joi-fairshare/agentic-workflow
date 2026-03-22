@@ -17,6 +17,9 @@ import { searchMemory } from "./application/services/search-memory.js";
 import { traverseMemory } from "./application/services/traverse-memory.js";
 import { assembleContext } from "./application/services/assemble-context.js";
 
+// NOTE: a copy of this function exists in tests/mcp-tools.test.ts for unit-testing
+// the MCP tool handlers without invoking the real server. Both copies must stay
+// in sync. If you change this formatting logic, update the test copy (and vice versa).
 function resultToContent<T>(result: { ok: true; data: T } | { ok: false; error: { code: string; message: string } }) {
   if (result.ok) {
     return {

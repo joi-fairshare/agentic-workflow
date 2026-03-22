@@ -1,41 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { createMemoryController } from "../src/transport/controllers/memory-controller.js";
 import type { ApiRequest } from "../src/transport/types.js";
 import type { CreateNodeSchema, GetContextSchema, CreateLinkSchema, SearchMemorySchema, TraverseSchema } from "../src/transport/schemas/memory-schemas.js";
-
-function createInMemoryDb(): Database.Database {
-  const db = new Database(":memory:");
-  sqliteVec.load(db);
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  db.pragma("foreign_keys = ON");
-  db.exec(MEMORY_MIGRATIONS);
-  return db;
-}
-
-function createMockEmbeddingService(): EmbeddingService {
-  return {
-    async embed() {
-      return { ok: true, data: new Float32Array(768) };
-    },
-    async embedBatch() {
-      return { ok: true, data: [new Float32Array(768)] };
-    },
-    isReady() {
-      return false;
-    },
-    isDegraded() {
-      return false;
-    },
-    async warmUp() {},
-  };
-}
+import { createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
 
 function makeCreateNodeReq(
   body: { repo: string; kind: "topic" | "decision"; title: string; body?: string; related_to?: string },
@@ -53,8 +23,7 @@ describe("memory-controller", () => {
   let controller: ReturnType<typeof createMemoryController>;
 
   beforeEach(() => {
-    const raw = createInMemoryDb();
-    mdb = createMemoryDbClient(raw);
+    ({ mdb } = createTestMemoryDb());
     const filter = createSecretFilter();
     const embedService = createMockEmbeddingService();
     controller = createMemoryController(mdb, embedService, filter);
@@ -145,7 +114,16 @@ describe("memory-controller", () => {
 
   describe("search", () => {
     it("returns EMBEDDING_NOT_READY when mode=semantic and embedService is not ready", async () => {
-      const result = await controller.search({
+      // Use a not-ready embedding service to exercise the EMBEDDING_NOT_READY path
+      const notReadyEmbed: EmbeddingService = {
+        async embed() { return { ok: true, data: new Float32Array(768) }; },
+        async embedBatch() { return { ok: true, data: [new Float32Array(768)] }; },
+        isReady() { return false; },
+        isDegraded() { return false; },
+        async warmUp() {},
+      };
+      const notReadyController = createMemoryController(mdb, notReadyEmbed, createSecretFilter());
+      const result = await notReadyController.search({
         query: { repo: "test-repo", query: "anything", mode: "semantic" as const, limit: 10 },
         body: undefined as never,
         params: undefined as never,

@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import Database from "better-sqlite3";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MIGRATIONS } from "../src/db/schema.js";
+import { type DbClient } from "../src/db/client.js";
 import { createEventBus, type EventBus, type BridgeEvent } from "../src/application/events.js";
 import { createTaskController } from "../src/transport/controllers/task-controller.js";
 import * as assignTaskService from "../src/application/services/assign-task.js";
 import { err } from "../src/application/result.js";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb } from "./helpers.js";
 
 let db: DbClient;
 let eventBus: EventBus;
@@ -14,11 +13,7 @@ let events: BridgeEvent[];
 let controller: ReturnType<typeof createTaskController>;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
+  ({ db } = createTestBridgeDb());
   eventBus = createEventBus();
   events = [];
   eventBus.subscribe((e) => events.push(e));

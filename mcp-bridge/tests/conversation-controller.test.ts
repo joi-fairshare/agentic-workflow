@@ -1,21 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import Database from "better-sqlite3";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MIGRATIONS } from "../src/db/schema.js";
+import { type DbClient } from "../src/db/client.js";
 import { createConversationController } from "../src/transport/controllers/conversation-controller.js";
 import * as getConversationsService from "../src/application/services/get-conversations.js";
 import { err } from "../src/application/result.js";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb } from "./helpers.js";
 
 let db: DbClient;
 let controller: ReturnType<typeof createConversationController>;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
+  ({ db } = createTestBridgeDb());
   controller = createConversationController(db);
 });
 

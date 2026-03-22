@@ -1,17 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MIGRATIONS } from "../src/db/schema.js";
+import { type DbClient } from "../src/db/client.js";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb } from "./helpers.js";
 
 let db: DbClient;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
+  ({ db } = createTestBridgeDb());
 });
 
 describe("insertMessage + getMessage", () => {

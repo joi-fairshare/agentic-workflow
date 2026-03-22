@@ -1,21 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
-import { createDbClient, type DbClient } from "../../src/db/client.js";
-import { MIGRATIONS } from "../../src/db/schema.js";
+import { type DbClient } from "../../src/db/client.js";
 import { createConversationRoutes } from "../../src/routes/conversations.js";
 import { createServer } from "../../src/server.js";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb } from "../helpers.js";
 
 let app: FastifyInstance;
 let db: DbClient;
 
 beforeEach(async () => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
+  ({ db } = createTestBridgeDb());
   const conversationRoutes = createConversationRoutes(db);
   app = createServer([conversationRoutes]);
   await app.ready();

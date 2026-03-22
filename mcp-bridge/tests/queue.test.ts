@@ -2,8 +2,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { createBoundedQueue } from "../src/ingestion/queue.js";
 
-function waitForProcessing() {
-  return new Promise<void>((resolve) => setTimeout(resolve, 50));
+/**
+ * Poll until the predicate returns true or the timeout (default 2000ms) expires.
+ * Checks every 10ms, so it's both fast and not sensitive to arbitrary fixed delays.
+ */
+async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error(`waitUntil timed out after ${timeoutMs}ms`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 describe("createBoundedQueue", () => {
@@ -16,7 +26,7 @@ describe("createBoundedQueue", () => {
 
     q.enqueue(1);
     q.enqueue(2);
-    await waitForProcessing();
+    await waitUntil(() => processed.length >= 2);
 
     expect(processed).toContain(1);
     expect(processed).toContain(2);
@@ -52,8 +62,7 @@ describe("createBoundedQueue", () => {
     q.enqueue(3);
     q.enqueue(4);
 
-    await waitForProcessing();
-    await waitForProcessing();
+    await waitUntil(() => dropped.length > 0);
 
     expect(dropped.length).toBeGreaterThan(0);
     q.stop();
@@ -68,7 +77,7 @@ describe("createBoundedQueue", () => {
     });
 
     q.enqueue(1);
-    await waitForProcessing();
+    await waitUntil(() => errors.length >= 1);
 
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toBe("boom");
@@ -84,7 +93,8 @@ describe("createBoundedQueue", () => {
 
     q.stop();
     q.enqueue(1);
-    await waitForProcessing();
+    // Queue is stopped — nothing to wait for; give the event loop one tick to confirm
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
 
     expect(processed).toHaveLength(0);
   });

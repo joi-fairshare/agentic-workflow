@@ -1,20 +1,13 @@
 // mcp-bridge/tests/memory-client.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { randomUUID } from "node:crypto";
+import { createTestMemoryDb } from "./helpers.js";
 
 let mdb: MemoryDbClient;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("busy_timeout = 5000");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
+  ({ mdb } = createTestMemoryDb());
 });
 
 describe("node operations", () => {
@@ -218,6 +211,46 @@ describe("FTS5 edge cases", () => {
   it("searchFTS returns empty for blank query", () => {
     const results = mdb.searchFTS("   ", "r", 10);
     expect(results).toEqual([]);
+  });
+});
+
+describe("FTS5 adversarial input sanitization", () => {
+  // Each test inserts a node so a successful match can be confirmed, then
+  // asserts that none of the adversarial queries throw — they must return
+  // either results or an empty array.
+
+  beforeEach(() => {
+    mdb.insertNode({ repo: "r", kind: "message", title: "adversarial test node", body: "sanitization check", meta: "{}", source_id: "adv-1", source_type: "bridge" });
+  });
+
+  it("handles embedded double quotes without throwing", () => {
+    expect(() => mdb.searchFTS('term "with" quotes', "r", 10)).not.toThrow();
+    const results = mdb.searchFTS('term "with" quotes', "r", 10);
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  it("handles FTS5 boolean operators as search terms without throwing", () => {
+    expect(() => mdb.searchFTS("NEAR OR NOT AND", "r", 10)).not.toThrow();
+    const results = mdb.searchFTS("NEAR OR NOT AND", "r", 10);
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  it("handles wildcard characters without throwing", () => {
+    expect(() => mdb.searchFTS("test*", "r", 10)).not.toThrow();
+    const results = mdb.searchFTS("test*", "r", 10);
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  it("handles parentheses and column syntax without throwing", () => {
+    expect(() => mdb.searchFTS("(nested) title:foo", "r", 10)).not.toThrow();
+    const results = mdb.searchFTS("(nested) title:foo", "r", 10);
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  it("handles backslash sequences without throwing", () => {
+    expect(() => mdb.searchFTS("path\\to\\file", "r", 10)).not.toThrow();
+    const results = mdb.searchFTS("path\\to\\file", "r", 10);
+    expect(Array.isArray(results)).toBe(true);
   });
 });
 

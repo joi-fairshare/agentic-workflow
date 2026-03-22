@@ -1,35 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
 import { createMemoryDbClient } from "../../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../../src/db/memory-schema.js";
 import { createSecretFilter } from "../../src/ingestion/secret-filter.js";
 import type { EmbeddingService } from "../../src/ingestion/embedding.js";
 import { createMemoryRoutes } from "../../src/routes/memory.js";
 import { createServer } from "../../src/server.js";
 import type { FastifyInstance } from "fastify";
-
-function createMockEmbeddingService(): EmbeddingService {
-  return {
-    async embed() { return { ok: true, data: new Float32Array(768) }; },
-    async embedBatch() { return { ok: true, data: [new Float32Array(768)] }; },
-    isReady() { return false; },
-    isDegraded() { return false; },
-    async warmUp() {},
-  };
-}
+import { createTestMemoryDb, createMockEmbeddingService } from "../helpers.js";
 
 let app: FastifyInstance;
 let mdb: ReturnType<typeof createMemoryDbClient>;
 
 beforeEach(async () => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("busy_timeout = 5000");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
+  ({ mdb } = createTestMemoryDb());
   const filter = createSecretFilter();
   const embedService = createMockEmbeddingService();
   const memoryRoutes = createMemoryRoutes(mdb, embedService, filter);
@@ -146,11 +128,26 @@ describe("GET /memory/topics", () => {
 
 describe("GET /memory/search", () => {
   it("returns 503 when embedding not ready and semantic mode requested", async () => {
-    const res = await app.inject({
-      method: "GET",
-      url: "/memory/search?query=test&repo=test&mode=semantic",
-    });
-    expect(res.statusCode).toBe(503);
+    // Build a separate app with a not-ready embedding service to exercise the 503 path
+    const notReadyEmbed: EmbeddingService = {
+      async embed() { return { ok: true, data: new Float32Array(768) }; },
+      async embedBatch() { return { ok: true, data: [new Float32Array(768)] }; },
+      isReady() { return false; },
+      isDegraded() { return false; },
+      async warmUp() {},
+    };
+    const { mdb: localMdb } = createTestMemoryDb();
+    const notReadyApp = createServer([createMemoryRoutes(localMdb, notReadyEmbed, createSecretFilter())]);
+    await notReadyApp.ready();
+    try {
+      const res = await notReadyApp.inject({
+        method: "GET",
+        url: "/memory/search?query=test&repo=test&mode=semantic",
+      });
+      expect(res.statusCode).toBe(503);
+    } finally {
+      await notReadyApp.close();
+    }
   });
 
   it("returns results for keyword search", async () => {

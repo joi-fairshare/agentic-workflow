@@ -1,22 +1,15 @@
 // mcp-bridge/tests/search-memory.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { createEmbeddingService, type EmbeddingService } from "../src/ingestion/embedding.js";
 import { searchMemory, type SearchInput } from "../src/application/services/search-memory.js";
+import { createTestMemoryDb } from "./helpers.js";
 
 let mdb: MemoryDbClient;
 let embedService: EmbeddingService;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("busy_timeout = 5000");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
+  ({ mdb } = createTestMemoryDb());
 
   embedService = createEmbeddingService({
     embedFn: async (texts) =>

@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MIGRATIONS } from "../src/db/schema.js";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type DbClient } from "../src/db/client.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { sendContext } from "../src/application/services/send-context.js";
@@ -15,8 +11,11 @@ import { searchMemory } from "../src/application/services/search-memory.js";
 import { traverseMemory } from "../src/application/services/traverse-memory.js";
 import { assembleContext } from "../src/application/services/assemble-context.js";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
 
-// Mirrors the resultToContent helper from mcp.ts
+// NOTE: resultToContent below mirrors the private helper in mcp.ts.
+// Both implementations must remain in sync. If you change the formatting
+// logic in mcp.ts, update this copy (and vice versa).
 function resultToContent<T>(result: { ok: true; data: T } | { ok: false; error: { code: string; message: string } }) {
   if (result.ok) {
     return {
@@ -29,36 +28,14 @@ function resultToContent<T>(result: { ok: true; data: T } | { ok: false; error: 
   };
 }
 
-function createMockEmbedding(): EmbeddingService {
-  return {
-    async embed() { return { ok: true, data: new Float32Array(768) }; },
-    async embedBatch() { return { ok: true, data: [new Float32Array(768)] }; },
-    isReady() { return false; },
-    isDegraded() { return false; },
-    async warmUp() {},
-  };
-}
-
 let db: DbClient;
 let mdb: MemoryDbClient;
 let embedService: EmbeddingService;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
-
-  const memRaw = new Database(":memory:");
-  sqliteVec.load(memRaw);
-  memRaw.pragma("journal_mode = WAL");
-  memRaw.pragma("busy_timeout = 5000");
-  memRaw.pragma("foreign_keys = ON");
-  memRaw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(memRaw);
-
-  embedService = createMockEmbedding();
+  ({ db } = createTestBridgeDb());
+  ({ mdb } = createTestMemoryDb());
+  embedService = createMockEmbeddingService();
 });
 
 describe("resultToContent", () => {

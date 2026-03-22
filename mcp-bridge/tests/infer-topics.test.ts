@@ -1,22 +1,15 @@
 // mcp-bridge/tests/infer-topics.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { createEmbeddingService, type EmbeddingService, EMBEDDING_DIMS } from "../src/ingestion/embedding.js";
 import { inferTopics } from "../src/application/services/infer-topics.js";
+import { createTestMemoryDb } from "./helpers.js";
 
 let mdb: MemoryDbClient;
 let embedService: EmbeddingService;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("busy_timeout = 5000");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
+  ({ mdb } = createTestMemoryDb());
 
   // Minimal mock — isReady() returns true, embed() won't be called by inferTopics
   embedService = createEmbeddingService({

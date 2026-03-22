@@ -33,17 +33,17 @@ describe("SSE /events endpoint", () => {
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => {
           chunks.push(chunk);
-          // After getting connected event, emit a bridge event then close
+          // After getting connected event, emit a bridge event
           if (chunks.length === 1) {
             eventBus.emit({
               type: "message:created",
               data: { id: "m1", conversation: "c1" },
             });
-            // Give it a moment to arrive, then disconnect
-            setTimeout(() => {
-              req.destroy();
-              resolve();
-            }, 50);
+          }
+          // Resolve as soon as we have both the connected event and the custom event
+          if (chunks.length >= 2) {
+            req.destroy();
+            resolve();
           }
         });
         res.on("error", () => resolve()); // ignore ECONNRESET

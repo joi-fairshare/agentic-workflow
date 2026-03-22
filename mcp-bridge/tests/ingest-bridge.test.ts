@@ -1,16 +1,13 @@
 // mcp-bridge/tests/ingest-bridge.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
-import { MIGRATIONS } from "../src/db/schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
+import { type DbClient } from "../src/db/client.js";
 import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import { ingestBridgeMessage, ingestBridgeTask, backfillBridge, normalizeRepoSlug } from "../src/application/services/ingest-bridge.js";
 import { sendContext } from "../src/application/services/send-context.js";
 import { assignTask } from "../src/application/services/assign-task.js";
 import { randomUUID } from "node:crypto";
+import { createTestBridgeDb, createTestMemoryDb } from "./helpers.js";
 
 let mdb: MemoryDbClient;
 let bridgeDb: DbClient;
@@ -18,18 +15,8 @@ const filter = createSecretFilter();
 const repo = "test-repo";
 
 beforeEach(() => {
-  const rawMem = new Database(":memory:");
-  sqliteVec.load(rawMem);
-  rawMem.pragma("journal_mode = WAL");
-  rawMem.pragma("busy_timeout = 5000");
-  rawMem.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(rawMem);
-
-  const rawBridge = new Database(":memory:");
-  rawBridge.pragma("journal_mode = WAL");
-  rawBridge.pragma("foreign_keys = ON");
-  rawBridge.exec(MIGRATIONS);
-  bridgeDb = createDbClient(rawBridge);
+  ({ mdb } = createTestMemoryDb());
+  ({ db: bridgeDb } = createTestBridgeDb());
 });
 
 describe("ingestBridgeMessage", () => {

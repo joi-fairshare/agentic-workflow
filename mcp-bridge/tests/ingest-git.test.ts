@@ -1,11 +1,9 @@
 // mcp-bridge/tests/ingest-git.test.ts
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient, type MemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
+import { type MemoryDbClient } from "../src/db/memory-client.js";
 import { createSecretFilter } from "../src/ingestion/secret-filter.js";
 import { ingestGitMetadata, type IngestGitInput } from "../src/application/services/ingest-git.js";
+import { createTestMemoryDb } from "./helpers.js";
 
 // ── Mock child_process ─────────────────────────────────────────────────
 
@@ -40,12 +38,7 @@ function makeGhPrOutput(prs: Array<{ number: number; title: string; author: stri
 }
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("busy_timeout = 5000");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
+  ({ mdb } = createTestMemoryDb());
   vi.clearAllMocks();
 });
 
