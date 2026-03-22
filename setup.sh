@@ -360,6 +360,7 @@ echo "                    design-mockup, design-implement, design-refine, design
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"
+echo "Statusline:         $CLAUDE_DIR/statusline.sh"
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
 echo "MCP bridge:         $BRIDGE_DIR/"
 echo "MCP registered:     Claude Code + Codex (agentic-bridge)"
