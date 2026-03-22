@@ -4,6 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
+# Check for jq (required by statusline)
+if ! command -v jq &>/dev/null; then
+  echo "  ⚠ jq not found — statusline will not work. Install: brew install jq"
+fi
+
 # Canonical list of skills managed by this toolkit
 MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify)
 
@@ -152,6 +157,23 @@ if [ -f "$SETTINGS_FILE" ]; then
 else
   cp "$SCRIPT_DIR/config/settings.json" "$SETTINGS_FILE"
   echo "  settings.json: copied"
+fi
+
+# --- Statusline ---
+echo ""
+echo "Installing statusline..."
+cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/statusline.sh"
+chmod +x "$CLAUDE_DIR/statusline.sh"
+echo "  statusline script installed"
+
+# Merge statusLine into existing settings.json if absent
+if [ -f "$SETTINGS_FILE" ]; then
+  if command -v jq &>/dev/null && ! jq -e '.statusLine' "$SETTINGS_FILE" &>/dev/null; then
+    jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  statusLine config added to existing settings.json"
+  fi
 fi
 
 # --- MCP Config ---
