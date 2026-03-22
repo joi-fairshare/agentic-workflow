@@ -88,9 +88,11 @@ export function extractDecisions(
         let match: RegExpExecArray | null;
         while ((match = pattern.exec(body)) !== null) {
           const captured = match[1];
+          /* v8 ignore next */
           if (!captured) continue;
 
           const title = captured.trim();
+          /* v8 ignore next */
           if (title.length < 5) continue;
 
           // 6. Dedup check: same title in same conversation

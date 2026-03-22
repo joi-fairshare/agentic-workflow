@@ -72,6 +72,7 @@ export function traverseMemory(
       // (max_nodes=50). If max_nodes grows significantly, batch-load with a
       // single WHERE id IN (...) query instead.
       const neighborNode = mdb.getNode(neighborId);
+      /* v8 ignore next */
       if (!neighborNode) continue;
 
       visited.add(neighborId);

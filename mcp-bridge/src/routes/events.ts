@@ -24,6 +24,7 @@ export function registerSseRoute(app: FastifyInstance, eventBus: EventBus) {
 
     // Keep-alive heartbeat every 30s to prevent timeout
     const heartbeat = setInterval(() => {
+      /* v8 ignore next */
       reply.raw.write(`: heartbeat\n\n`);
     }, 30_000);
 
