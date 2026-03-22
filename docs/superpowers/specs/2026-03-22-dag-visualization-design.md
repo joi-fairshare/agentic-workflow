@@ -20,7 +20,7 @@ Visualize a single conversation's memory subgraph — how messages, tasks, topic
 - **Right panel (top):** Selected node detail — title, body, metadata, edge list (in/out), timestamps.
 - **Right panel (bottom):** Context builder — assemble context for this conversation, token budget bar, section breakdown with relevance scores, included nodes highlighted in graph with gold dashed rings.
 
-**Entry point:** New "Graph" tab on the existing `/conversation/[id]` page, alongside the Timeline view.
+**Entry point:** Nested route at `/conversation/[id]/graph`. A shared `conversation/[id]/layout.tsx` provides the conversation header and data fetching for both the Timeline (`page.tsx`) and Graph views. Tab-style navigation links between them.
 
 ### 2. Cross-Conversation Memory Explorer (`/memory` — enhanced)
 
@@ -111,7 +111,7 @@ Both pages share these capabilities via the graph toolbar:
   - Click a section → highlights its source nodes in graph
 - Legend distinguishes "in context" (gold ring) vs "excluded" (dimmed)
 
-**API change required:** The existing `ContextSection` response shape (`heading`, `content`, `relevance`, `token_estimate`) does not include node IDs, making it impossible to map sections back to graph nodes. The `ContextSectionSchema` must be extended with a `node_ids: string[]` field that lists which memory node IDs contributed to each section. The `assembleContext` service already has this information internally — it just needs to include it in the response.
+**API change required:** The existing `ContextSection` response shape (`heading`, `content`, `relevance`, `token_estimate`) does not include node IDs, making it impossible to map sections back to graph nodes. The `ContextSectionSchema` must be extended with `node_ids: z.array(z.string()).default([])` — optional with an empty default for backward compatibility. The service always populates it, but existing consumers that don't expect the field will not break. Note: with the current 1:1 section-to-node mapping, each section will have exactly one node_id. The array type is a deliberate design choice for future section aggregation.
 
 ### 4. Agent Path Replay (Memory Explorer page)
 
@@ -133,15 +133,20 @@ Both pages share these capabilities via the graph toolbar:
 
 ### Traversal Logging
 
-New `traversal_logs` table in `memory-schema.ts`:
+New `traversal_logs` table in `memory-schema.ts` (in `memory.db`, not `bridge.db`, because it references `nodes(id)` and is consumed by the memory API endpoints). IDs are UUIDv4 via `crypto.randomUUID()`, consistent with nodes and edges tables.
+
+**Replay with deleted nodes:** When replaying a traversal whose nodes have been deleted, the UI shows step markers at positions with "deleted node" placeholders. The step sequence and edge kinds are preserved from the log, allowing the replay animation to run even with gaps.
+
+**Retention:** The `GET /memory/traversals` endpoint limits results via its `limit` parameter (default 20, max 100). On server startup, logs older than 30 days are pruned automatically.
 
 ```sql
 CREATE TABLE IF NOT EXISTS traversal_logs (
   id TEXT PRIMARY KEY,
   repo TEXT NOT NULL,
-  agent TEXT NOT NULL,
+  agent TEXT NOT NULL DEFAULT 'anonymous',
   operation TEXT NOT NULL CHECK(operation IN ('traverse', 'context')),
   start_node TEXT,             -- nullable: SET NULL on node deletion preserves log history
+                               -- (intentionally differs from edges ON DELETE CASCADE — logs are historical records, not structural)
   params TEXT NOT NULL,       -- JSON: direction, max_depth, edge_kinds, query, token_budget
   steps TEXT NOT NULL,          -- JSON array of {node_id, parent_id, edge_id, edge_kind}
   scores TEXT,                 -- JSON: node_id → relevance score (context ops only)
@@ -149,8 +154,7 @@ CREATE TABLE IF NOT EXISTS traversal_logs (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (start_node) REFERENCES nodes(id) ON DELETE SET NULL
 );
-CREATE INDEX idx_traversal_logs_repo ON traversal_logs(repo);
-CREATE INDEX idx_traversal_logs_created ON traversal_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_traversal_logs_repo_created ON traversal_logs(repo, created_at DESC);
 ```
 
 **Data shape (TypeScript):**
@@ -185,19 +189,26 @@ interface TraversalLog {
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/memory/traversals?repo=X` | List recent traversal logs |
-| `GET` | `/memory/traversal/:id` | Get a specific traversal with full path data |
+| `GET` | `/memory/traversals?repo=X&limit=20` | List recent traversal logs (limit: `z.coerce.number().min(1).max(100).default(20)`) |
+| `GET` | `/memory/traversals/:id` | Get a specific traversal with full path data |
+
+Each endpoint requires a corresponding Zod schema in `memory-schemas.ts` (`TraversalLogsQuerySchema`, `TraversalLogParamsSchema`, `TraversalLogResponseSchema`), controller method in `createMemoryController`, and `defineRoute()` call in `createMemoryRoutes` — following existing patterns. Update `planning/API_CONTRACT.md` with the new endpoint documentation.
 
 ### Service Changes
 
-- `traverseMemory` — records BFS steps (node/parent/edge tuples in visit order) and writes a `traversal_log` after completing
-- `assembleContext` — records which nodes were selected, relevance scores, and token budget allocation; writes a `traversal_log` with `operation: "context"`
-- Both services accept an optional `agent` parameter to identify who triggered the traversal
+- `traverseMemory` — **remains a pure read-only function.** It returns BFS steps as `{ node_id, parent_id, edge_id, edge_kind }` tuples in visit order alongside the existing `{ root, nodes[], edges[] }` result. It does not write traversal logs.
+- `assembleContext` — **remains read-only.** It returns `node_ids` per section and relevance scores alongside the existing result. It does not write traversal logs.
+- Both services accept an optional `agent` parameter to identify who triggered the traversal.
+
+**Traversal log recording** happens in the **controller layer** (`memory-controller.ts`), not in the services. After the service returns, the controller calls `mdb.insertTraversalLog()` with the result data. This preserves single-responsibility: services read and compute, controllers compose side effects. If the log insert fails, the controller still returns the service result (log failure does not break the primary operation) and logs a warning.
+
+**Secret filtering:** The `params.query` field must be passed through `SecretFilter.redact()` before serialization into the log, since search queries may accidentally contain secrets.
 
 **Agent identity flow:**
-- **REST API:** New optional `agent` query parameter on `GET /memory/traverse/:id` and `GET /memory/context`. Defaults to `"anonymous"` if omitted. The UI passes `"ui-user"` when a human triggers traversal/context from the browser.
-- **MCP tools:** The `traverse_memory` and `get_context` MCP tool schemas gain an optional `agent` string field. Claude Code sessions pass their agent identifier (e.g. `"claude-code"`, `"codex"`). This is the primary source of real agent names.
-- **Service layer:** `TraverseInput` and `AssembleContextInput` types gain `agent?: string`. Services pass this through to `insertTraversalLog`.
+- **REST API:** New optional `agent` query parameter on `GET /memory/traverse/:id` and `GET /memory/context`. Validated as `z.string().max(64).regex(/^[a-zA-Z0-9_-]+$/).default("anonymous")`. The UI passes `"ui-user"` when a human triggers traversal/context from the browser.
+- **MCP tools:** The `traverse_memory` and `get_context` MCP tool schemas gain an optional `agent` string field with the same validation. Claude Code sessions pass their agent identifier (e.g. `"claude-code"`, `"codex"`). This is the primary source of real agent names.
+- **Service layer:** `TraverseInput` and `AssembleContextInput` types gain `agent?: string`. The controller passes this through to `insertTraversalLog`.
+- **Note:** Agent identity is self-asserted, not authenticated. It should not be used for authorization decisions.
 
 ### MemoryDbClient Additions
 
@@ -256,6 +267,11 @@ components/
 4. Search results → matched nodes highlighted with glow + score badges, non-matches dimmed
 5. Context assembly → gold dashed rings on included nodes, token budget in panel
 6. Path replay → `use-path-replay` steps through `traversal_log.path`, highlighting each node/edge in BFS sequence with animation
+
+## Deprecations
+
+- `ui/src/components/memory-graph.tsx` — removed, fully superseded by `graph/graph-canvas.tsx`
+- The Mermaid dependency and `diagram-renderer.tsx` remain — they serve the conversation detail page's Agent Graph and Sequence Diagram panels, which are not part of this feature's scope
 
 ## New Dependencies
 
