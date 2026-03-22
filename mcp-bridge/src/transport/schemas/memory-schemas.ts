@@ -100,6 +100,8 @@ export const TraverseQuerySchema = z.object({
   edge_kinds: z.string().optional(),
   max_depth: z.coerce.number().min(1).max(10).default(3),
   max_nodes: z.coerce.number().min(1).max(200).default(50),
+  agent: z.string().max(64).regex(/^[a-zA-Z0-9_-]+$/).default("anonymous"),
+  sender: z.string().optional(),
 });
 export type TraverseQuery = z.infer<typeof TraverseQuerySchema>;
 
@@ -124,6 +126,7 @@ export const ContextQuerySchema = z.object({
   node_id: z.string().optional(),
   repo: z.string(),
   max_tokens: z.coerce.number().min(1).max(32000).default(8000),
+  agent: z.string().max(64).regex(/^[a-zA-Z0-9_-]+$/).default("anonymous"),
 });
 export type ContextQuery = z.infer<typeof ContextQuerySchema>;
 
@@ -228,3 +231,47 @@ export const CreateNodeSchema = {
   response: NodeResponseSchema,
 } as const;
 export type CreateNodeSchema = typeof CreateNodeSchema;
+
+// ── traversal_logs ─────────────────────────────────────────
+
+export const TraversalLogStepSchema = z.object({
+  node_id: z.string(),
+  parent_id: z.string().nullable(),
+  edge_id: z.string().nullable(),
+  edge_kind: z.string().nullable(),
+});
+
+export const TraversalLogResponseSchema = z.object({
+  id: z.string(),
+  repo: z.string(),
+  agent: z.string(),
+  operation: z.enum(["traverse", "context"]),
+  start_node: z.string().nullable(),
+  params: z.record(z.unknown()),
+  steps: z.array(TraversalLogStepSchema),
+  scores: z.record(z.number()).optional(),
+  token_allocation: z.record(z.number()).optional(),
+  created_at: z.string(),
+});
+export type TraversalLogResponse = z.infer<typeof TraversalLogResponseSchema>;
+
+export const TraversalLogsQuerySchema = {
+  querystring: z.object({
+    repo: z.string(),
+    limit: z.coerce.number().min(1).max(100).default(20),
+  }),
+  response: z.array(TraversalLogResponseSchema),
+} as const;
+export type TraversalLogsQuerySchema = typeof TraversalLogsQuerySchema;
+
+export const TraversalLogParamsSchema = {
+  params: z.object({ id: z.string() }),
+  response: TraversalLogResponseSchema,
+} as const;
+export type TraversalLogParamsSchema = typeof TraversalLogParamsSchema;
+
+export const SendersQuerySchema = {
+  querystring: z.object({ repo: z.string() }),
+  response: z.array(z.string()),
+} as const;
+export type SendersQuerySchema = typeof SendersQuerySchema;

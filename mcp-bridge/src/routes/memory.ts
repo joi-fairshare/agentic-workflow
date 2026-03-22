@@ -14,6 +14,9 @@ import {
   IngestSchema,
   CreateLinkSchema,
   CreateNodeSchema,
+  TraversalLogsQuerySchema,
+  TraversalLogParamsSchema,
+  SendersQuerySchema,
 } from "../transport/schemas/memory-schemas.js";
 
 export function createMemoryRoutes(
@@ -95,6 +98,27 @@ export function createMemoryRoutes(
         summary: "Create a new memory node",
         schema: CreateNodeSchema,
         handler: handlers.createNode,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/traversals",
+        summary: "List recent traversal logs",
+        schema: TraversalLogsQuerySchema,
+        handler: handlers.getTraversalLogs,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/traversals/:id",
+        summary: "Get a specific traversal log",
+        schema: TraversalLogParamsSchema,
+        handler: handlers.getTraversalLog,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/senders",
+        summary: "List distinct senders for a repo",
+        schema: SendersQuerySchema,
+        handler: handlers.getSenders,
       }),
     // Each defineRoute() call returns RouteEntry<TSchema> with a distinct TSchema,
     // so the array literal has a union element type that TypeScript cannot

@@ -19,6 +19,10 @@ import type {
   IngestSchema,
   CreateLinkSchema,
   CreateNodeSchema,
+  TraversalLogsQuerySchema,
+  TraversalLogParamsSchema,
+  SendersQuerySchema,
+  TraversalLogResponse,
   NodeResponse,
   EdgeResponse,
   SearchResult,
@@ -94,7 +98,7 @@ export function createMemoryController(
     async traverse(
       req: ApiRequest<TraverseSchema>,
     ): Promise<ApiResponse<TraverseResponse>> {
-      const { direction, edge_kinds, max_depth, max_nodes } = req.query;
+      const { direction, edge_kinds, max_depth, max_nodes, agent, sender } = req.query;
 
       // Parse comma-separated edge_kinds string into array
       const edgeKindsArray: string[] | undefined = edge_kinds
@@ -107,15 +111,32 @@ export function createMemoryController(
         edge_kinds: edgeKindsArray,
         max_depth,
         max_nodes,
+        sender,
       });
       if (!result.ok) return appErr(result.error);
+
+      // Record traversal log — failure does not break the response
+      const startNode = mdb.getNode(req.params.id);
+      try {
+        mdb.insertTraversalLog({
+          repo: startNode?.repo ?? "unknown",
+          agent,
+          operation: "traverse",
+          start_node: req.params.id,
+          params: { direction, edge_kinds, max_depth, max_nodes },
+          steps: result.data.steps,
+        });
+      } catch {
+        // Log failure is non-fatal
+      }
+
       return { ok: true, data: result.data };
     },
 
     async getContext(
       req: ApiRequest<GetContextSchema>,
     ): Promise<ApiResponse<ContextResponse>> {
-      const { query, node_id, repo, max_tokens } = req.query;
+      const { query, node_id, repo, max_tokens, agent } = req.query;
       const result = await assembleContext(mdb, embedService, {
         query,
         node_id,
@@ -132,8 +153,31 @@ export function createMemoryController(
           content: s.content,
           token_estimate: Math.ceil(s.content.length / 4),
           relevance: s.relevance,
+          node_ids: s.node_ids,
         })),
       };
+
+      // Record context traversal log — failure does not break the response
+      try {
+        const allNodeIds = result.data.sections.flatMap((s) => s.node_ids);
+        const steps = allNodeIds.map((nid) => ({
+          node_id: nid,
+          parent_id: null,
+          edge_id: null,
+          edge_kind: null,
+        }));
+        mdb.insertTraversalLog({
+          repo,
+          agent,
+          operation: "context",
+          start_node: node_id ?? null,
+          params: { query, node_id, max_tokens },
+          steps,
+        });
+      } catch {
+        // Log failure is non-fatal
+      }
+
       return { ok: true, data };
     },
 
@@ -232,6 +276,31 @@ export function createMemoryController(
       });
 
       return { ok: true, data: node };
+    },
+
+    async getTraversalLogs(
+      req: ApiRequest<TraversalLogsQuerySchema>,
+    ): Promise<ApiResponse<TraversalLogResponse[]>> {
+      const { repo, limit } = req.query;
+      const logs = mdb.getTraversalLogs(repo, limit);
+      return { ok: true, data: logs };
+    },
+
+    async getTraversalLog(
+      req: ApiRequest<TraversalLogParamsSchema>,
+    ): Promise<ApiResponse<TraversalLogResponse>> {
+      const log = mdb.getTraversalLog(req.params.id);
+      if (!log) {
+        return appErr({ code: "NOT_FOUND", message: `Traversal log ${req.params.id} not found`, statusHint: 404 });
+      }
+      return { ok: true, data: log };
+    },
+
+    async getSenders(
+      req: ApiRequest<SendersQuerySchema>,
+    ): Promise<ApiResponse<string[]>> {
+      const senders = mdb.getDistinctSenders(req.query.repo);
+      return { ok: true, data: senders };
     },
   };
 }
