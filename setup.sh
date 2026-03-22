@@ -182,11 +182,32 @@ echo "  statusline script installed"
 
 # Merge statusLine into existing settings.json if absent
 if [ -f "$SETTINGS_FILE" ]; then
-  if command -v jq &>/dev/null && ! jq -e '.statusLine' "$SETTINGS_FILE" &>/dev/null; then
-    jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
-      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    echo "  statusLine config added to existing settings.json"
+  if command -v jq &>/dev/null; then
+    # Add statusLine key if absent (use has() so null values are not re-merged)
+    if ! jq -e 'has("statusLine")' "$SETTINGS_FILE" &>/dev/null; then
+      jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      echo "  statusLine config added to existing settings.json"
+    fi
+
+    # Merge Stop hook if not already present
+    if ! jq -e 'has("hooks") and (.hooks | has("Stop"))' "$SETTINGS_FILE" &>/dev/null; then
+      STOP_HOOK='[{"hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; sleep 0.05; true"}]}]'
+      jq --argjson stop "$STOP_HOOK" '.hooks.Stop = $stop' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      echo "  hooks.Stop added to existing settings.json"
+    fi
+
+    # Merge PreToolUse hook if not already present
+    if ! jq -e 'has("hooks") and (.hooks | has("PreToolUse"))' "$SETTINGS_FILE" &>/dev/null; then
+      PRETOOLUSE_HOOK='[{"matcher":".*","hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; true"}]}]'
+      jq --argjson ptu "$PRETOOLUSE_HOOK" '.hooks.PreToolUse = $ptu' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      echo "  hooks.PreToolUse added to existing settings.json"
+    fi
   fi
 fi
 
@@ -195,7 +216,9 @@ echo ""
 echo "Installing shell integration..."
 
 SHELL_INTEGRATION_FILE="$CLAUDE_DIR/shell-integration.sh"
-cat > "$SHELL_INTEGRATION_FILE" << 'SHELL_EOF'
+# Write integration content to a temp file first; skip overwrite if identical
+_SI_TMP="$(mktemp)"
+cat > "$_SI_TMP" << 'SHELL_EOF'
 # Claude Code shell integration — written by agentic-workflow setup.sh
 # Keeps ~/.claude/terminal_width updated so statusline.sh can read the actual
 # terminal width. Claude Code subprocesses cannot access /dev/tty or $COLUMNS,
@@ -228,7 +251,13 @@ fi
 _claude_update_width
 SHELL_EOF
 
-echo "  shell-integration.sh: written"
+if cmp -s "$_SI_TMP" "$SHELL_INTEGRATION_FILE" 2>/dev/null; then
+  echo "  shell-integration.sh: already up to date (skipped)"
+else
+  mv "$_SI_TMP" "$SHELL_INTEGRATION_FILE"
+  echo "  shell-integration.sh: written"
+fi
+rm -f "$_SI_TMP"
 
 # Add one source line to shell config if not already present
 INTEGRATION_LINE='[ -f ~/.claude/shell-integration.sh ] && source ~/.claude/shell-integration.sh'
@@ -237,7 +266,7 @@ ADDED_TO=()
 
 for shell_config in "${SHELL_CONFIGS[@]}"; do
   if [ -f "$shell_config" ]; then
-    if ! grep -q "shell-integration.sh" "$shell_config" 2>/dev/null; then
+    if ! grep -qF 'source ~/.claude/shell-integration.sh' "$shell_config" 2>/dev/null; then
       printf '\n# Claude Code statusline width sync\n%s\n' "$INTEGRATION_LINE" >> "$shell_config"
       ADDED_TO+=("$shell_config")
       echo "  Added to $shell_config"
@@ -247,9 +276,13 @@ for shell_config in "${SHELL_CONFIGS[@]}"; do
   fi
 done
 
-# Initialize the width file immediately from the current shell
-bash "$SHELL_INTEGRATION_FILE"
-CURRENT_WIDTH=$(cat "$CLAUDE_DIR/terminal_width" 2>/dev/null || echo "n/a")
+# Initialize the width file immediately from the current interactive shell's tty.
+# Running shell-integration.sh in a non-interactive subshell leaves $COLUMNS unset,
+# causing tput to return 80 regardless of actual terminal size. Reading from /dev/tty
+# directly via stty gives the real dimensions of the parent terminal.
+CURRENT_WIDTH=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+CURRENT_WIDTH="${CURRENT_WIDTH:-${COLUMNS:-80}}"
+printf '%s\n' "$CURRENT_WIDTH" > "$CLAUDE_DIR/terminal_width"
 echo "  terminal_width initialized: $CURRENT_WIDTH cols"
 
 if [ "${#ADDED_TO[@]}" -gt 0 ]; then
