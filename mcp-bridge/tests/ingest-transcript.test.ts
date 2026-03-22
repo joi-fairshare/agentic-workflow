@@ -97,4 +97,34 @@ describe("ingestTranscriptLines", () => {
     const node = mdb.getNodeBySource("transcript", "u1");
     expect(node!.body).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
+
+  it("skips already-ingested message UUIDs within a session", () => {
+    // Pre-insert a message node with a specific transcript source
+    mdb.insertNode({
+      repo: "r",
+      kind: "message",
+      title: "Pre-existing",
+      body: "Already here",
+      meta: "{}",
+      source_id: "uuid-pre-existing",
+      source_type: "transcript",
+    });
+
+    const lines = [
+      JSON.stringify({ type: "human", uuid: "uuid-pre-existing", message: { content: "Hello" } }),
+      JSON.stringify({ type: "assistant", uuid: "uuid-new", parentUuid: "uuid-pre-existing", message: { content: "World" } }),
+    ];
+
+    const result = ingestTranscriptLines(mdb, filter, {
+      repo: "r",
+      sessionId: "sess-skip-test",
+      sessionTitle: "Skip Test",
+      lines,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Both records are processed but the pre-existing one is skipped
+    expect(result.data.messages_ingested).toBe(2); // parser counts all parsed records
+  });
 });

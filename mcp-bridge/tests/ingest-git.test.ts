@@ -275,4 +275,50 @@ describe("ingestGitMetadata", () => {
     expect(result.data.prs_ingested).toBe(0);
     expect(result.data.references_created).toBe(0);
   });
+
+  it("returns error when git log throws", async () => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
+      const c = cmd as string;
+      const a = args as string[];
+      if (c === "git" && a[0] === "log") {
+        throw new Error("git log failed");
+      }
+      return "";
+    });
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("GIT_ERROR");
+  });
+
+  it("skips already-ingested PRs without creating duplicates", async () => {
+    // Pre-insert a PR node
+    mdb.insertNode({
+      repo,
+      kind: "artifact",
+      title: "PR #99: Existing",
+      body: "Already ingested",
+      meta: "{}",
+      source_id: "#99",
+      source_type: "github_pr",
+    });
+
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
+      const c = cmd as string;
+      const a = args as string[];
+      if (c === "git" && a[0] === "log") return "";
+      if (c === "gh" && a[0] === "pr") {
+        return makeGhPrOutput([
+          { number: 99, title: "Existing", author: "alice", state: "merged", createdAt: "2026-03-15T08:00:00Z", body: "Already ingested" },
+        ]);
+      }
+      return "";
+    });
+
+    const result = await ingestGitMetadata(mdb, filter, baseInput);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.prs_ingested).toBe(0);
+  });
 });

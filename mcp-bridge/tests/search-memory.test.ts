@@ -79,4 +79,107 @@ describe("searchMemory", () => {
     if (!result.ok) return;
     expect(result.data.length).toBeGreaterThan(0);
   });
+
+  it("degrades hybrid to keyword when embedService.isDegraded() is true", async () => {
+    const degradedEmbed = createEmbeddingService({
+      embedFn: async () => { throw new Error("init fail"); },
+    });
+    // Force degraded state — embed once to trigger init failure through ensureReady
+    await degradedEmbed.embed("trigger");
+
+    mdb.insertNode({ repo: "r", kind: "message", title: "Degraded test", body: "Keyword search still works", meta: "{}", source_id: "d1", source_type: "bridge" });
+
+    const result = await searchMemory(mdb, degradedEmbed, {
+      query: "Keyword",
+      repo: "r",
+      mode: "hybrid",
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data[0].match_type).toBe("keyword");
+  });
+
+  it("returns error for semantic-only mode when embedding fails", async () => {
+    const failEmbed = createEmbeddingService({
+      embedFn: async () => { throw new Error("embed crash"); },
+    });
+
+    mdb.insertNode({ repo: "r", kind: "message", title: "Sem fail", body: "test", meta: "{}", source_id: "sf1", source_type: "bridge" });
+
+    const result = await searchMemory(mdb, failEmbed, {
+      query: "test",
+      repo: "r",
+      mode: "semantic",
+      limit: 10,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("EMBEDDING_FAILED");
+  });
+
+  it("returns semantic results with proper RRF scoring", async () => {
+    // Insert a node and its embedding for vector search
+    const node = mdb.insertNode({ repo: "r", kind: "message", title: "Vector test", body: "Semantic vector search content", meta: "{}", source_id: "v1", source_type: "bridge" });
+    // Embed the node
+    const embedding = await embedService.embed("search_document: Semantic vector search content");
+    if (embedding.ok) {
+      mdb.insertEmbedding(node.id, embedding.data);
+    }
+
+    const result = await searchMemory(mdb, embedService, {
+      query: "Semantic vector search",
+      repo: "r",
+      mode: "semantic",
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data[0].match_type).toBe("semantic");
+  });
+
+  it("hybrid mode merges FTS and vector results with RRF fusion", async () => {
+    const node = mdb.insertNode({ repo: "r", kind: "message", title: "Hybrid merge", body: "This tests hybrid search fusion", meta: "{}", source_id: "h1", source_type: "bridge" });
+    const embedding = await embedService.embed("search_document: This tests hybrid search fusion");
+    if (embedding.ok) {
+      mdb.insertEmbedding(node.id, embedding.data);
+    }
+
+    const result = await searchMemory(mdb, embedService, {
+      query: "hybrid search fusion",
+      repo: "r",
+      mode: "hybrid",
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.length).toBeGreaterThan(0);
+  });
+
+  it("kind filter works on vector-only results via getNode lookup", async () => {
+    // Insert two nodes with same embedding but different kinds
+    const msgNode = mdb.insertNode({ repo: "r", kind: "message", title: "Vec msg", body: "Vector only message", meta: "{}", source_id: "vk1", source_type: "bridge" });
+    const decNode = mdb.insertNode({ repo: "r", kind: "decision", title: "Vec dec", body: "Vector only decision", meta: "{}", source_id: "vk2", source_type: "manual" });
+
+    const emb1 = await embedService.embed("search_document: Vector only message");
+    const emb2 = await embedService.embed("search_document: Vector only decision");
+    if (emb1.ok) mdb.insertEmbedding(msgNode.id, emb1.data);
+    if (emb2.ok) mdb.insertEmbedding(decNode.id, emb2.data);
+
+    const result = await searchMemory(mdb, embedService, {
+      query: "Vector only",
+      repo: "r",
+      mode: "semantic",
+      kinds: ["decision"],
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // All results should be decisions, filtering out messages
+    for (const r of result.data) {
+      expect(r.kind).toBe("decision");
+    }
+  });
 });

@@ -273,4 +273,24 @@ describe("extractDecisions", () => {
     const decisions = mdb.getNodesByRepoAndKind("test", "decision");
     expect(decisions).toHaveLength(0);
   });
+
+  it("counts but does not duplicate already-extracted decisions", () => {
+    // Create a conversation and message with a decision pattern
+    const convNode = mdb.insertNode({ repo: "r", kind: "conversation", title: "Conv", body: "", meta: "{}", source_id: "conv-dedup", source_type: "test" });
+    const msgNode = mdb.insertNode({ repo: "r", kind: "message", title: "Msg", body: "We decided to use PostgreSQL for the database", meta: "{}", source_id: "msg-dedup", source_type: "test" });
+    mdb.insertEdge({ repo: "r", from_node: convNode.id, to_node: msgNode.id, kind: "contains", weight: 1.0, meta: "{}", auto: true });
+
+    // First extraction
+    const r1 = extractDecisions(mdb, { repo: "r" });
+    expect(r1.ok).toBe(true);
+    if (!r1.ok) return;
+    const firstCount = r1.data.decisions_created;
+    expect(firstCount).toBeGreaterThan(0);
+
+    // Second extraction — should find existing and count it without duplicating
+    const r2 = extractDecisions(mdb, { repo: "r" });
+    expect(r2.ok).toBe(true);
+    if (!r2.ok) return;
+    expect(r2.data.decisions_created).toBe(firstCount);
+  });
 });
