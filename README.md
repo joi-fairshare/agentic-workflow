@@ -21,6 +21,22 @@ Extracted from `~/.claude/` for replication on any machine.
 | `/addressReview` | Implement review fixes with parallel agents |
 | `/enhancePrompt` | Context-aware prompt rewriter |
 | `/bootstrap` | Repo documentation generator (see below) |
+| `/rootCause` | 4-phase systematic debugging |
+| `/bugHunt` | Fix-and-verify loop with regression tests |
+| `/bugReport` | Structured bug report with health scores |
+| `/shipRelease` | Sync, test, push, open PR |
+| `/syncDocs` | Post-ship doc updater |
+| `/weeklyRetro` | Weekly retrospective with shipping streaks |
+| `/officeHours` | YC-style brainstorming → design doc |
+| `/productReview` | Founder/product lens plan review |
+| `/archReview` | Engineering architecture plan review |
+| `/design-analyze` | Extract design tokens from reference sites |
+| `/design-language` | Define brand personality and aesthetic direction |
+| `/design-evolve` | Merge new reference into design language |
+| `/design-mockup` | Generate HTML mockup from design language |
+| `/design-implement` | Generate production code from mockup |
+| `/design-refine` | Dispatch Impeccable refinement commands |
+| `/design-verify` | Screenshot diff implementation vs mockup |
 
 **Config files:** `config/settings.json`, `config/mcp.json`
 
@@ -96,7 +112,7 @@ A Next.js 15 App Router web UI for visualising bridge activity in real time.
 - Paginated conversation list with UUID filter and SSE live updates
 - Per-conversation detail view: chronological timeline, directed graph, sequence diagram
 - Mermaid-powered diagrams built from live message + task data
-- Memory Explorer page (`/memory`) with search, graph traversal, and context assembly views
+- Memory Explorer page (`/memory`) with search, graph traversal, context assembly, and interactive MemoryGraph visualisation
 - Reverse-proxies `/api/*` to the bridge REST API (`:3100`)
 
 **Run the dashboard:**
@@ -143,6 +159,25 @@ cd ui && npm run dev          # Next.js on http://localhost:3000
 | `DB_PATH` | `./bridge.db` | SQLite database file path |
 | `ALLOW_REMOTE` | unset | Set to `1` to allow non-loopback binding |
 
+## Testing
+
+Both packages enforce 100% coverage on all thresholds (statements, branches, functions, lines).
+
+```bash
+# MCP Bridge (Vitest, in-memory SQLite)
+cd mcp-bridge
+npm test                  # Run all tests (277 tests)
+npm run test:watch        # Watch mode
+npm run test:coverage     # Enforce 100% coverage thresholds
+
+# UI (Vitest + happy-dom)
+cd ui
+npm test                  # Run all tests (61 tests)
+npm run test:coverage     # Enforce 100% coverage thresholds
+```
+
+Test coverage spans unit tests (controllers, services, DB client, schemas, utilities), integration tests (all REST routes via Fastify inject, SSE stream, MCP tool handlers), and hook/lib tests for the UI layer.
+
 ## Architecture
 
 ```
@@ -155,20 +190,21 @@ agentic-workflow/
 ├── bootstrap/                 # Repo documentation generator skill
 ├── config/                    # Settings & MCP config archive
 ├── mcp-bridge/                # MCP bridge application
-│   └── src/
-│       ├── application/       # AppResult<T>, EventBus, services (never throw)
-│       ├── db/                # SQLite schema, client interface, transactions
-│       │                      #   + memory-schema.ts, memory-client.ts (knowledge graph)
-│       ├── ingestion/         # Embedding service, async queue, secret filter, transcript parser
-│       ├── transport/         # Typed router, Zod schemas, controllers
-│       ├── routes/            # Route factories (messages, tasks, conversations, memory, events)
-│       ├── server.ts          # Fastify server factory
-│       ├── mcp.ts             # MCP stdio server (10 tools: 5 messaging + 5 memory)
-│       └── index.ts           # REST API entry point
+│   ├── src/
+│   │   ├── application/       # AppResult<T>, EventBus, services (never throw)
+│   │   ├── db/                # SQLite schema, client interface, transactions
+│   │   │                      #   + memory-schema.ts, memory-client.ts (knowledge graph)
+│   │   ├── ingestion/         # Embedding service, async queue, secret filter, transcript parser
+│   │   ├── transport/         # Typed router, Zod schemas, controllers
+│   │   ├── routes/            # Route factories (messages, tasks, conversations, memory, events)
+│   │   ├── server.ts          # Fastify server factory
+│   │   ├── mcp.ts             # MCP stdio server (10 tools: 5 messaging + 5 memory)
+│   │   └── index.ts           # REST API entry point
+│   └── tests/                 # Vitest suite — unit + integration, 100% coverage
 ├── ui/                        # Next.js 15 conversation dashboard
 │   └── src/
 │       ├── app/               # App Router pages (conversations, detail, memory explorer)
-│       ├── components/        # Timeline, DiagramRenderer, CopyButton
+│       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
 │       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │       └── lib/               # API client, Mermaid builders, shared types
 ├── start.sh                   # Start bridge + UI together

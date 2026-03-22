@@ -46,6 +46,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Extracted custom hooks from Memory Explorer page component for reusability
+- Relocated memory-controller tests to the `tests/` directory for consistency
+- Updated testing documentation with coverage targets and new conventions
+
+### Added (Test Harness)
+
+- Coverage infrastructure for mcp-bridge with 100% line/branch/function thresholds enforced via Vitest
+- Test infrastructure for UI package with Vitest and happy-dom
+- Unit tests for DbClient covering all prepared-statement operations
+- Unit tests for message, task, and conversation controllers
+- Integration tests for message, task, conversation, and memory routes via Fastify inject
+- Integration tests for SSE endpoint and server error handling
+- MCP tool handler tests with `resultToContent` validation
+- Tests for result helpers, route types, and memory-schema utilities
+- Tests for secret-filter, transcript-parser, and BoundedQueue
+- Coverage gap tests for schema validation, SSE integration, and embedding service
+- Coverage gap tests for search-memory, ingest-git, ingest-transcript, and extract-decisions
+- Coverage gap tests for controllers, memory-client, transcript-parser, and infer-topics
+- Comprehensive UI lib and hook tests achieving 100% coverage
 
 ## [1.0.0] - 2026-03-19
 

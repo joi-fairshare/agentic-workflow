@@ -162,6 +162,35 @@ agentic-workflow/
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
+│   ├── vitest.config.ts                 #   Vitest config — v8 coverage, 100% thresholds, excludes index.ts + mcp.ts
+│   ├── tests/                           #   Unit and integration tests (277 tests)
+│   │   ├── routes/                      #     Route integration tests via Fastify inject (messages, tasks, conversations, events, memory)
+│   │   ├── client.test.ts               #     DbClient unit tests
+│   │   ├── schema.test.ts               #     Migration and schema tests
+│   │   ├── memory-schema.test.ts        #     Memory DDL tests
+│   │   ├── memory-client.test.ts        #     MemoryDbClient unit tests
+│   │   ├── message-controller.test.ts   #     Message controller unit tests
+│   │   ├── task-controller.test.ts      #     Task controller unit tests
+│   │   ├── conversation-controller.test.ts #  Conversation controller unit tests
+│   │   ├── memory-controller.test.ts    #     Memory controller unit tests
+│   │   ├── mcp-tools.test.ts            #     MCP tool handler tests (resultToContent validation)
+│   │   ├── services.test.ts             #     Application service unit tests
+│   │   ├── search-memory.test.ts        #     Hybrid search service tests
+│   │   ├── traverse-memory.test.ts      #     Graph traversal service tests
+│   │   ├── assemble-context.test.ts     #     Context assembly service tests
+│   │   ├── ingest-bridge.test.ts        #     Bridge ingestion pipeline tests
+│   │   ├── ingest-transcript.test.ts    #     Transcript ingestion tests
+│   │   ├── ingest-git.test.ts           #     Git ingestion tests
+│   │   ├── extract-decisions.test.ts    #     Decision extraction tests
+│   │   ├── infer-topics.test.ts         #     Topic inference tests
+│   │   ├── embedding.test.ts            #     EmbeddingService tests
+│   │   ├── queue.test.ts                #     BoundedQueue tests
+│   │   ├── secret-filter.test.ts        #     SecretFilter tests
+│   │   ├── transcript-parser.test.ts    #     JSONL parser tests
+│   │   ├── sse-integration.test.ts      #     SSE stream integration tests
+│   │   ├── server-errors.test.ts        #     Server error handling tests
+│   │   ├── result.test.ts               #     AppResult utility tests
+│   │   └── types.test.ts               #     Transport type tests
 │   └── src/
 │       ├── index.ts                     #   REST entry point — binds Fastify on :3100, inits memory system
 │       ├── mcp.ts                       #   MCP entry point — stdio transport, 10 tools
@@ -214,6 +243,11 @@ agentic-workflow/
 │           └── memory.ts             #   10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, node
 ├── ui/                                 # Next.js 15 App Router conversation dashboard
 │   ├── next.config.ts                  #   Reverse proxy /api/* → http://localhost:3100/*
+│   ├── vitest.config.ts                #   Vitest config — happy-dom, v8 coverage, 100% thresholds (hooks + lib only)
+│   ├── __tests__/                      #   UI tests (61 tests)
+│   │   ├── setup.ts                    #     Global test setup: mocks fetch and EventSource (MockEventSource)
+│   │   ├── hooks/                      #     Hook tests: use-sse, use-memory-search, use-memory-traverse, use-context-assembler
+│   │   └── lib/                        #     Lib tests: api, memory-api, diagrams
 │   └── src/
 │       ├── app/
 │       │   ├── layout.tsx             #   Dark mode layout, Inter font, Bridge UI header
@@ -506,3 +540,5 @@ Archived Claude Code configuration for replication across machines:
 17. **All ingested content is secret-filtered.** The `SecretFilter` applies regex-based redaction to node titles and bodies before storage, catching API keys, tokens, passwords, and other sensitive patterns. Both MCP tools and REST endpoints filter content before writing to the memory database.
 
 18. **Embedding is lazy and gracefully degradable.** The embedding model loads on first use (pre-warmed in background on server start). If loading fails, the system falls back to keyword-only search. Batch embedding is supported for ingestion efficiency.
+
+19. **Test coverage is enforced at 100%.** Both `mcp-bridge` and `ui` use Vitest with v8 coverage and `thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 }`. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points with no unit-testable logic); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`). `npm run test:coverage` must pass before merging any PR.

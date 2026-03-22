@@ -27,7 +27,7 @@ Read before making changes:
 | Embeddings | @xenova/transformers (768-dim, lazy-loaded) |
 | MCP | @modelcontextprotocol/sdk (stdio transport) |
 | Validation | Zod 3 |
-| Test | Vitest (in-memory SQLite) |
+| Test | Vitest (in-memory SQLite; happy-dom for UI hooks) |
 | Build | tsc (ESM, Node16 module resolution) |
 
 ## Skills (21)
@@ -123,48 +123,57 @@ agentic-workflow/
 ├── bootstrap/                 # /bootstrap — repo documentation generator
 ├── config/                    # Settings & MCP config archive
 ├── mcp-bridge/                # MCP bridge application
-│   └── src/
-│       ├── application/       # AppResult<T> pattern, service functions (never throw)
-│       │   ├── result.ts      # ok<T>(), err<T>(), AppError, AppResult<T>
-│       │   ├── events.ts      # EventBus factory — pub/sub (message:created, task:created, task:updated)
-│       │   └── services/      # Business logic — pure functions taking DbClient or MemoryDbClient
-│       │       ├── search-memory.ts    # Hybrid search (FTS5 + KNN + RRF fusion)
-│       │       ├── traverse-memory.ts  # BFS graph traversal with direction/depth/kind filters
-│       │       ├── assemble-context.ts # Token-budgeted context assembly
-│       │       ├── ingest-bridge.ts    # Bridge message → memory node pipeline
-│       │       ├── ingest-git.ts       # Git metadata (commits, PRs) ingestion
-│       │       ├── ingest-transcript.ts # JSONL transcript ingestion
-│       │       ├── extract-decisions.ts # Decision extraction via regex heuristics
-│       │       └── infer-topics.ts     # Topic inference via embedding clustering (k-means++)
-│       ├── ingestion/         # Shared ingestion infrastructure
-│       │   ├── embedding.ts   # EmbeddingService — lazy-loaded @xenova/transformers (768-dim)
-│       │   ├── queue.ts       # BoundedQueue<T> — bounded async queue with backpressure
-│       │   ├── secret-filter.ts # Regex-based secret detection and redaction
-│       │   └── transcript-parser.ts # JSONL transcript parser
-│       ├── db/                # SQLite schema, client interface, transactions
-│       │   ├── schema.ts      # MIGRATIONS constant, createDatabase()
-│       │   ├── client.ts      # DbClient interface (prepared statements, no SQL injection)
-│       │   ├── memory-schema.ts # Memory graph DDL: nodes, edges, FTS5, sqlite-vec
-│       │   └── memory-client.ts # MemoryDbClient interface for graph operations
-│       ├── transport/         # Typed router, Zod schemas, controllers
-│       │   ├── types.ts       # RouteSchema, defineRoute<TSchema>()
-│       │   ├── schemas/       # Zod schemas for messages, tasks, conversations, and memory
-│       │   └── controllers/   # Controller factories (message, task, conversation, memory)
-│       ├── routes/            # Route factories (wire schemas → handlers)
-│       │   ├── messages.ts    # POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
-│       │   ├── tasks.ts       # POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
-│       │   ├── conversations.ts # GET /conversations
-│       │   ├── events.ts      # GET /events (SSE, heartbeat every 30s)
-│       │   └── memory.ts      # 10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, create
-│       ├── server.ts          # Fastify server factory
-│       ├── mcp.ts             # MCP stdio server (10 tools: 5 bridge + 5 memory)
-│       └── index.ts           # REST API entry point (creates EventBus, memory system, ingestion queue)
+│   ├── src/
+│   │   ├── application/       # AppResult<T> pattern, service functions (never throw)
+│   │   │   ├── result.ts      # ok<T>(), err<T>(), AppError, AppResult<T>
+│   │   │   ├── events.ts      # EventBus factory — pub/sub (message:created, task:created, task:updated)
+│   │   │   └── services/      # Business logic — pure functions taking DbClient or MemoryDbClient
+│   │   │       ├── search-memory.ts    # Hybrid search (FTS5 + KNN + RRF fusion)
+│   │   │       ├── traverse-memory.ts  # BFS graph traversal with direction/depth/kind filters
+│   │   │       ├── assemble-context.ts # Token-budgeted context assembly
+│   │   │       ├── ingest-bridge.ts    # Bridge message → memory node pipeline
+│   │   │       ├── ingest-git.ts       # Git metadata (commits, PRs) ingestion
+│   │   │       ├── ingest-transcript.ts # JSONL transcript ingestion
+│   │   │       ├── extract-decisions.ts # Decision extraction via regex heuristics
+│   │   │       └── infer-topics.ts     # Topic inference via embedding clustering (k-means++)
+│   │   ├── ingestion/         # Shared ingestion infrastructure
+│   │   │   ├── embedding.ts   # EmbeddingService — lazy-loaded @xenova/transformers (768-dim)
+│   │   │   ├── queue.ts       # BoundedQueue<T> — bounded async queue with backpressure
+│   │   │   ├── secret-filter.ts # Regex-based secret detection and redaction
+│   │   │   └── transcript-parser.ts # JSONL transcript parser
+│   │   ├── db/                # SQLite schema, client interface, transactions
+│   │   │   ├── schema.ts      # MIGRATIONS constant, createDatabase()
+│   │   │   ├── client.ts      # DbClient interface (prepared statements, no SQL injection)
+│   │   │   ├── memory-schema.ts # Memory graph DDL: nodes, edges, FTS5, sqlite-vec
+│   │   │   └── memory-client.ts # MemoryDbClient interface for graph operations
+│   │   ├── transport/         # Typed router, Zod schemas, controllers
+│   │   │   ├── types.ts       # RouteSchema, defineRoute<TSchema>()
+│   │   │   ├── schemas/       # Zod schemas for messages, tasks, conversations, and memory
+│   │   │   └── controllers/   # Controller factories (message, task, conversation, memory)
+│   │   ├── routes/            # Route factories (wire schemas → handlers)
+│   │   │   ├── messages.ts    # POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
+│   │   │   ├── tasks.ts       # POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
+│   │   │   ├── conversations.ts # GET /conversations
+│   │   │   ├── events.ts      # GET /events (SSE, heartbeat every 30s)
+│   │   │   └── memory.ts      # 10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, create
+│   │   ├── server.ts          # Fastify server factory
+│   │   ├── mcp.ts             # MCP stdio server (10 tools: 5 bridge + 5 memory)
+│   │   └── index.ts           # REST API entry point (creates EventBus, memory system, ingestion queue)
+│   ├── tests/                 # Vitest test suite (mirrors src/ structure)
+│   │   ├── routes/            # Route integration tests (messages, tasks, conversations, events, memory)
+│   │   └── *.test.ts          # Unit tests for controllers, services, db, ingestion, MCP tools
+│   └── vitest.config.ts       # Coverage config: v8, 100% thresholds, excludes index.ts + mcp.ts
 ├── ui/                        # Next.js 15 App Router conversation dashboard
-│   └── src/
-│       ├── app/               # Pages: / (conversations), /conversation/[id], /memory (explorer)
-│       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
-│       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
-│       └── lib/               # api.ts, memory-api.ts, diagrams.ts, types.ts
+│   ├── src/
+│   │   ├── app/               # Pages: / (conversations), /conversation/[id], /memory (explorer)
+│   │   ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
+│   │   ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
+│   │   └── lib/               # api.ts, memory-api.ts, diagrams.ts, types.ts
+│   ├── __tests__/             # Vitest test suite (happy-dom environment)
+│   │   ├── hooks/             # Hook tests (use-sse, use-memory-search, use-memory-traverse, use-context-assembler)
+│   │   ├── lib/               # Lib tests (api, memory-api, diagrams)
+│   │   └── setup.ts           # Global test setup
+│   └── vitest.config.ts       # Coverage config: v8, 100% thresholds, covers hooks/ + lib/ (excl. types.ts)
 ├── planning/                  # Generated project documentation
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
