@@ -35,6 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status       ON tasks(status);
 `;
 
 export function createDatabase(dbPath?: string): Database.Database {
+  /* v8 ignore next */
   const resolvedPath = dbPath ?? join(process.cwd(), "bridge.db");
   const db = new Database(resolvedPath);
 

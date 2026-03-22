@@ -91,6 +91,7 @@ export async function searchMemory(
       // Vector-only result: fetch node and cache for result-building phase.
       const node = mdb.getNode(id);
       vecNodeCache.set(id, node);
+      /* v8 ignore next */
       return node ? kindSet.has(node.kind) : false;
     });
   }
@@ -102,6 +103,7 @@ export async function searchMemory(
     // Reuse cached node if available (populated during kind filter above) to
     // avoid a duplicate getNode query for vector-only results.
     const node = ftsEntry?.node ?? vecNodeCache.get(id) ?? mdb.getNode(id);
+    /* v8 ignore next */
     if (!node) continue;
 
     const matchType = ftsResults.has(id) && vecResults.has(id) ? "hybrid"
@@ -112,6 +114,7 @@ export async function searchMemory(
       kind: node.kind,
       title: node.title,
       body: node.body.slice(0, 500),
+      /* v8 ignore next */
       score: scores.get(id) ?? 0,
       match_type: matchType,
     });

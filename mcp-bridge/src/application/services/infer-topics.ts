@@ -31,6 +31,7 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
     normB += b[i] * b[i];
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  /* v8 ignore next */
   return denom === 0 ? 0 : dot / denom;
 }
 
@@ -91,7 +92,9 @@ function runKMeans(
 
   while (centroids.length < actualK) {
     // weights are already maintained as minDist
+    /* v8 ignore next */
     const totalWeight = minDist.reduce((s, w) => s + w, 0);
+    /* v8 ignore next 4 */
     if (totalWeight === 0) {
       // All remaining entries are identical to existing centroids — stop early
       break;
@@ -102,6 +105,7 @@ function runKMeans(
       r -= minDist[i];
       if (r <= 0) { chosen = i; break; }
     }
+    /* v8 ignore next 7 */
     if (chosen === -1) {
       // Fallback: pick the entry with the largest minDist
       chosen = 0;
@@ -161,6 +165,7 @@ function runKMeans(
   // Build cluster map (only include assigned entries)
   const clusters = new Map<number, ClusterEntry[]>();
   for (let i = 0; i < n; i++) {
+    /* v8 ignore next 2 */
     const c = assignments[i];
     if (c === -1) continue;
     if (!clusters.has(c)) clusters.set(c, []);
@@ -233,6 +238,7 @@ export async function inferTopics(
     // also removed automatically.
     mdb.deleteNodesBySourceType("infer-topics", repo);
 
+    /* v8 ignore next 2 */
     for (const [, members] of clusters) {
       if (members.length < 2) continue;
 

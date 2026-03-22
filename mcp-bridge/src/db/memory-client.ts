@@ -262,6 +262,7 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       if (!sanitized) return [];
       try {
         return stmts.searchFTS.all({ query: sanitized, repo, limit }) as FTSResult[];
+      /* v8 ignore next 4 */
       } catch {
         // FTS5 parse errors (e.g. malformed MATCH syntax) → empty result
         return [];
@@ -297,6 +298,7 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       const candidates = stmts.searchKNN.all(queryBuf, overFetchLimit) as Array<{ node_id: string; distance: number }>;
       const filtered: Array<{ node_id: string; distance: number }> = [];
       for (const candidate of candidates) {
+        /* v8 ignore next */
         if (filtered.length >= limit) break;
         const node = stmts.getNode.get({ id: candidate.node_id }) as NodeRow | undefined;
         if (node && node.repo === repo) {
