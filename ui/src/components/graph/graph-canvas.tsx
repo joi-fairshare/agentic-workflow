@@ -12,6 +12,12 @@ import {
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { MessageNode } from "./node-types/message-node";
+import { ConversationNode } from "./node-types/conversation-node";
+import { TopicNode } from "./node-types/topic-node";
+import { DecisionNode } from "./node-types/decision-node";
+import { TaskNode } from "./node-types/task-node";
+import { ArtifactNode } from "./node-types/artifact-node";
 
 const NODE_KIND_COLORS: Record<string, string> = {
   message: "#3B82F6",
@@ -24,10 +30,16 @@ const NODE_KIND_COLORS: Record<string, string> = {
 
 const DEFAULT_NODE_COLOR = "#71717A";
 
-// nodeTypes is intentionally empty here; custom node components will be
-// registered in Task 14. Defined outside the component to maintain a stable
-// reference and avoid React Flow re-registrations on every render.
-const nodeTypes = {};
+// Defined outside the component to maintain a stable reference and avoid
+// React Flow re-registrations on every render.
+const nodeTypes = {
+  message: MessageNode,
+  conversation: ConversationNode,
+  topic: TopicNode,
+  decision: DecisionNode,
+  task: TaskNode,
+  artifact: ArtifactNode,
+};
 
 interface GraphCanvasProps {
   nodes: Node[];
