@@ -35,17 +35,17 @@ fi
 # Fallback for empty or invalid input
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
   if [ "$COLS" -ge 116 ] 2>/dev/null; then
-    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
-    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --  │ --         │ --              │ --      │ --      │ --    │ --   │ --       '
+    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context         │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
+    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --   │ --         │ --              │ --      │ --      │ --    │ --   │ --       '
   elif [ "$COLS" -ge 101 ] 2>/dev/null; then
-    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m'
-    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --  │ --         │ --           │ --      │ --      │ --    │ --   '
+    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context         │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m'
+    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --   │ --         │ --           │ --      │ --      │ --    │ --   '
   elif [ "$COLS" -ge 78 ] 2>/dev/null; then
-    printf '%b\n' '\033[2m5h Usage  │ 7d    │ Context   │ Model      │ Branch       │ Cost    │ Time    \033[0m'
-    printf '%b\n' '--        │ --    │ ░░░░░ --  │ --         │ --           │ --      │ --      '
+    printf '%b\n' '\033[2m5h Usage  │ 7d    │ Context    │ Model      │ Branch       │ Cost    │ Time    \033[0m'
+    printf '%b\n' '--        │ --    │ ░░░░░ --   │ --         │ --           │ --      │ --      '
   else
-    printf '%b\n' '\033[2m5h     │ Context   │ Model      │ Branch     │ Cost    │ Time    \033[0m'
-    printf '%b\n' '--     │ ░░░░░ --  │ --         │ --         │ --      │ --      '
+    printf '%b\n' '\033[2m5h    │ Context    │ Model      │ Branch     │ Cost    │ Time    \033[0m'
+    printf '%b\n' '--    │ ░░░░░ --   │ --         │ --         │ --      │ --      '
   fi
   exit 0
 fi
@@ -220,25 +220,25 @@ fi
 if [ "$COLS" -ge 116 ] 2>/dev/null; then
   # FULL: all columns, branch×15, full ctx bar
   if $HAS_RATE; then
-    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
+    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context         │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
     printf '%b\n' "${USAGE5H} │ ${USAGE7D} │ ${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
   else
-    printf '%b\n' "\033[2mContext        │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
+    printf '%b\n' "\033[2mContext         │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
     printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
   fi
 elif [ "$COLS" -ge 101 ] 2>/dev/null; then
   # MEDIUM: no Lines, branch×12, full ctx bar
   if $HAS_RATE; then
-    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
+    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context         │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
     printf '%b\n' "${USAGE5H} │ ${USAGE7D} │ ${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT")"
   else
-    printf '%b\n' "\033[2mContext        │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
+    printf '%b\n' "\033[2mContext         │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
     printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT")"
   fi
 elif [ "$COLS" -ge 78 ] 2>/dev/null; then
   # NARROW: no Lines/Cache/API, 7d % only (no reset day), narrow ctx bar, branch×12
   if $HAS_RATE; then
-    printf '%b\n' "\033[2m5h Usage  │ 7d    │ Context   │ Model      │ Branch       │ Cost    │ Time    \033[0m"
+    printf '%b\n' "\033[2m5h Usage  │ 7d    │ Context    │ Model      │ Branch       │ Cost    │ Time    \033[0m"
     printf '%b\n' "${USAGE5H} │ ${USAGE7D_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
   else
     printf '%b\n' "\033[2mContext    │ Model      │ Branch       │ Cost    │ Time    \033[0m"
@@ -247,7 +247,7 @@ elif [ "$COLS" -ge 78 ] 2>/dev/null; then
 else
   # COMPACT: 5h % only (no reset), narrow ctx, model, branch×10, cost, time
   if $HAS_RATE; then
-    printf '%b\n' "\033[2m5h     │ Context   │ Model      │ Branch     │ Cost    │ Time    \033[0m"
+    printf '%b\n' "\033[2m5h    │ Context    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
     printf '%b\n' "${USAGE5H_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
   else
     printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
