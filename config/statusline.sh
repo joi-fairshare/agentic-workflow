@@ -4,48 +4,55 @@
 # Two-line output: dimmed header row + color-coded values
 # Spec: docs/superpowers/specs/2026-03-21-statusline-config-design.md
 #
-# Context (usage %) is the highest-priority column and always appears leftmost.
+# Column priority (left → right, leftmost always survive tier drops):
+#   5h Usage | 7d Usage | Context | Model | Branch | Cost | Time | Cache | API | Lines
 #
-# Width detection: $COLUMNS (parent shell) → tput cols → 200 (prefer full over empty)
-# Tiers (visible chars excluding ANSI):
-#   ≥105 cols: full   — all columns + Rate when available (~93 / ~104 with rate)
-#   ≥91  cols: medium — branch×12, bar×10, all columns, no rate (~90)
-#   ≥75  cols: narrow — branch×12, bar×5, no Lines/Rate (~71) — keeps Cache
-#    <75  cols: compact— branch×10, bar×5, no Lines/Cache/API/Rate (~56)
+# Width detection: stty size </dev/tty → $COLUMNS → tput cols → 200
+# Tiers (total visible chars, approx):
+#   ≥116: FULL   — all columns, branch×15, full ctx bar
+#   ≥101: MEDIUM — no Lines, branch×12, full ctx bar
+#   ≥78:  NARROW — no Lines/Cache/API, 7d % only (no reset), narrow ctx, branch×12
+#   <78:  COMPACT— 5h % only (no reset), narrow ctx, model, branch×10, cost, time
 
 INPUT=$(cat)
 
-# $COLUMNS is set by interactive bash and may be inherited by subprocesses.
-# tput cols queries the PTY, which may report the statusline area width, not the
-# terminal window width — so prefer $COLUMNS, then tput, then default to full (200).
-COLS=${COLUMNS:-$(tput cols 2>/dev/null)}
+# Width detection: stty size </dev/tty reads the actual kernel winsize from the
+# controlling terminal, bypassing the subprocess PTY (which tput cols queries and
+# which Claude Code may have set to a narrow default). /dev/tty works even when
+# stdout/stdin are pipes and reflects window resize events immediately.
+COLS=""
+TERM_SIZE=$(stty size </dev/tty 2>/dev/null)
+if [ -n "$TERM_SIZE" ]; then
+  COLS=$(echo "$TERM_SIZE" | awk '{print $2}')
+fi
+# Fallback: $COLUMNS (interactive bash) → tput cols → 200 (prefer full over empty)
+if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
+  COLS=${COLUMNS:-$(tput cols 2>/dev/null)}
+fi
 : "${COLS:=200}"
 
 # Fallback for empty or invalid input
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
-  if [ "$COLS" -ge 105 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mContext        │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
-    printf '%b\n' '░░░░░░░░░░ --  │ --         │ --              │ --      │ --      │ --    │ --   │ --       '
-  elif [ "$COLS" -ge 91 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mContext        │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
-    printf '%b\n' '░░░░░░░░░░ --  │ --         │ --           │ --      │ --      │ --    │ --   │ --       '
-  elif [ "$COLS" -ge 75 ] 2>/dev/null; then
-    printf '%b\n' '\033[2mContext    │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m'
-    printf '%b\n' '░░░░░ --   │ --         │ --           │ --      │ --      │ --    │ --   '
+  if [ "$COLS" -ge 116 ] 2>/dev/null; then
+    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m'
+    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --  │ --         │ --              │ --      │ --      │ --    │ --   │ --       '
+  elif [ "$COLS" -ge 101 ] 2>/dev/null; then
+    printf '%b\n' '\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m'
+    printf '%b\n' '--        │ --        │ ░░░░░░░░░░ --  │ --         │ --           │ --      │ --      │ --    │ --   '
+  elif [ "$COLS" -ge 78 ] 2>/dev/null; then
+    printf '%b\n' '\033[2m5h Usage  │ 7d    │ Context   │ Model      │ Branch       │ Cost    │ Time    \033[0m'
+    printf '%b\n' '--        │ --    │ ░░░░░ --  │ --         │ --           │ --      │ --      '
   else
-    printf '%b\n' '\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m'
-    printf '%b\n' '░░░░░ --   │ --         │ --         │ --      │ --      '
+    printf '%b\n' '\033[2m5h     │ Context   │ Model      │ Branch     │ Cost    │ Time    \033[0m'
+    printf '%b\n' '--     │ ░░░░░ --  │ --         │ --         │ --      │ --      '
   fi
   exit 0
 fi
 
 # Single jq call — extract all fields at once via eval-safe shell assignments.
-# Computes: bar fill counts (10-char and 5-char), time in minutes, cache %, API %.
-# Why eval/@sh instead of @tsv/IFS: bash 3.2 on macOS (the system shell) does not preserve
-# non-whitespace IFS characters in herestrings, causing @tsv tab-split to silently fail.
-# Safety: every field is piped through @sh before reaching eval, which POSIX-quotes the
-# value. String fields use @sh directly. Numeric fields use | tostring | @sh so that
-# unexpected strings in the JSON cannot inject shell code.
+# Why eval/@sh instead of @tsv/IFS: bash 3.2 on macOS does not preserve
+# non-whitespace IFS characters in herestrings, causing @tsv tab-split to fail.
+# Safety: every field is piped through @sh before reaching eval.
 eval "$(echo "$INPUT" | jq -r '
   "MODEL=\(.model.display_name // "--" | ltrimstr("Claude ") | .[0:10] | @sh)",
   "DIR=\(.workspace.current_dir // "" | @sh)",
@@ -71,7 +78,10 @@ eval "$(echo "$INPUT" | jq -r '
      else "" end | @sh)",
   "LINES_ADD=\(.cost.total_lines_added // 0 | tostring | @sh)",
   "LINES_DEL=\(.cost.total_lines_removed // 0 | tostring | @sh)",
-  "RATE_PCT=\(.rate_limits.five_hour.used_percentage // "" | tostring | @sh)"
+  "RATE5H_PCT=\(.rate_limits.five_hour.used_percentage // "" | tostring | @sh)",
+  "RATE5H_RESET=\(.rate_limits.five_hour.resets_at // "" | tostring | @sh)",
+  "RATE7D_PCT=\(.rate_limits.seven_day.used_percentage // "" | tostring | @sh)",
+  "RATE7D_RESET=\(.rate_limits.seven_day.resets_at // "" | tostring | @sh)"
 ')"
 
 # --- Git branch ---
@@ -82,32 +92,24 @@ if [ -n "$DIR" ] && [ "$DIR" != "null" ]; then
     BRANCH=$(git -C "$DIR" rev-parse --short HEAD 2>/dev/null || echo "--")
   fi
 fi
-BRANCH15="$BRANCH"
-[ "${#BRANCH}" -gt 15 ] && BRANCH15="${BRANCH:0:12}..."
-BRANCH12="$BRANCH"
-[ "${#BRANCH}" -gt 12 ] && BRANCH12="${BRANCH:0:9}..."
-BRANCH10="$BRANCH"
-[ "${#BRANCH}" -gt 10 ] && BRANCH10="${BRANCH:0:7}..."
+BRANCH15="$BRANCH"; [ "${#BRANCH}" -gt 15 ] && BRANCH15="${BRANCH:0:12}..."
+BRANCH12="$BRANCH"; [ "${#BRANCH}" -gt 12 ] && BRANCH12="${BRANCH:0:9}..."
+BRANCH10="$BRANCH"; [ "${#BRANCH}" -gt 10 ] && BRANCH10="${BRANCH:0:7}..."
 
 # --- Context bar and color ---
 BARS="██████████"
 SPACES="░░░░░░░░░░"
-BAR_FILL=${BAR_FILL:-0}
-[ "$BAR_FILL" = "null" ] && BAR_FILL=0
-BAR_FILL5=${BAR_FILL5:-0}
-[ "$BAR_FILL5" = "null" ] && BAR_FILL5=0
+BAR_FILL=${BAR_FILL:-0}; [ "$BAR_FILL" = "null" ] && BAR_FILL=0
+BAR_FILL5=${BAR_FILL5:-0}; [ "$BAR_FILL5" = "null" ] && BAR_FILL5=0
 
 CTX_INT=$(printf '%.0f' "${CTX_PCT:-0}" 2>/dev/null || echo "0")
-if [ "$CTX_INT" -gt 75 ] 2>/dev/null; then
-  CTX_COLOR='\033[31m'
-elif [ "$CTX_INT" -ge 50 ] 2>/dev/null; then
-  CTX_COLOR='\033[33m'
-else
-  CTX_COLOR='\033[32m'
+if [ "$CTX_INT" -gt 75 ] 2>/dev/null; then CTX_COLOR='\033[31m'
+elif [ "$CTX_INT" -ge 50 ] 2>/dev/null; then CTX_COLOR='\033[33m'
+else CTX_COLOR='\033[32m'
 fi
 
 # Context column: colored bar + space + right-padded percentage
-# %-4s pads "0%" → "0%  ", "62%" → "62% ", "100%" → "100%" — keeps column width fixed
+# %-4s pads "0%" → "0%  ", "76%" → "76% ", "100%" → "100%" — fixed column width
 CTX_PCT_FMT=$(printf '%-4s' "${CTX_INT}%")
 # Full (bar=10): 10 + 1 + 4 = 15 visible chars
 CTX_FULL="${CTX_COLOR}${BARS:0:$BAR_FILL}${SPACES:0:$((10 - BAR_FILL))}\033[0m ${CTX_PCT_FMT}"
@@ -118,8 +120,7 @@ CTX_NARROW="${CTX_COLOR}${BARS:0:$BAR_FILL5}${SPACES:0:$((5 - BAR_FILL5))}\033[0
 COST_FMT=$(printf '$%.2f' "${COST:-0}" 2>/dev/null || echo '$0.00')
 
 # --- Time ---
-TOTAL_MIN=${TOTAL_MIN:-0}
-[ "$TOTAL_MIN" = "null" ] && TOTAL_MIN=0
+TOTAL_MIN=${TOTAL_MIN:-0}; [ "$TOTAL_MIN" = "null" ] && TOTAL_MIN=0
 if [ "$TOTAL_MIN" -ge 60 ] 2>/dev/null; then
   TIME_FMT="$((TOTAL_MIN / 60))h $((TOTAL_MIN % 60))m"
 else
@@ -143,45 +144,112 @@ fi
 # --- Lines changed ---
 LINES_FMT="+${LINES_ADD:-0} -${LINES_DEL:-0}"
 
-# --- Rate limit ---
-RATE_FMT=""
-if [ -n "$RATE_PCT" ] && [ "$RATE_PCT" != "null" ] && [ "$RATE_PCT" != "" ]; then
-  RATE_INT=$(printf '%.0f' "$RATE_PCT" 2>/dev/null || echo "0")
-  if [ "$RATE_INT" -gt 75 ] 2>/dev/null; then
-    RATE_FMT="\033[31m5h: ${RATE_INT}%\033[0m"
-  elif [ "$RATE_INT" -ge 50 ] 2>/dev/null; then
-    RATE_FMT="\033[33m5h: ${RATE_INT}%\033[0m"
-  else
-    RATE_FMT="\033[32m5h: ${RATE_INT}%\033[0m"
+# --- Usage color helper ---
+# Args: $1 = integer percentage
+usage_color() {
+  if [ "$1" -gt 75 ] 2>/dev/null; then printf '\033[31m'
+  elif [ "$1" -ge 50 ] 2>/dev/null; then printf '\033[33m'
+  else printf '\033[32m'
   fi
+}
+
+# --- 5-hour rate limit ---
+# Format: "87%↺4pm" (percent + clockwise-arrow + reset time)
+# Width 9 (full with reset) or 5 (compact, percent only)
+HAS_RATE=false
+USAGE5H=""       # 9-char colored field for FULL/MEDIUM/NARROW tiers
+USAGE5H_SHORT="" # 5-char colored field for COMPACT tier (no reset time)
+
+if [ -n "$RATE5H_PCT" ] && [ "$RATE5H_PCT" != "null" ] && [ "$RATE5H_PCT" != "" ]; then
+  HAS_RATE=true
+  PCT5H=$(printf '%.0f' "$RATE5H_PCT" 2>/dev/null || echo "0")
+  COLOR5H=$(usage_color "$PCT5H")
+
+  # Format reset time as 12-hour clock: "4pm", "12am", etc.
+  RESET5H=""
+  if [ -n "$RATE5H_RESET" ] && [ "$RATE5H_RESET" != "null" ] && [ "$RATE5H_RESET" != "" ]; then
+    RESET5H=$(date -r "$RATE5H_RESET" "+%I%p" 2>/dev/null | sed 's/^0//' | tr '[:upper:]' '[:lower:]' || \
+              date -d "@$RATE5H_RESET" "+%I%p" 2>/dev/null | sed 's/^0//' | tr '[:upper:]' '[:lower:]')
+  fi
+
+  if [ -n "$RESET5H" ]; then
+    TEXT5H="${PCT5H}%↺${RESET5H}"   # e.g. "87%↺4pm"
+  else
+    TEXT5H="${PCT5H}%"
+  fi
+  USAGE5H="${COLOR5H}$(printf '%-9s' "$TEXT5H")\033[0m"
+  USAGE5H_SHORT="${COLOR5H}$(printf '%-5s' "${PCT5H}%")\033[0m"
+fi
+
+# --- 7-day rate limit ---
+# Format: "65%↺Fri" (percent + arrow + day-of-week)
+# Width 9 (full with reset) or 5 (narrow, percent only)
+USAGE7D=""       # 9-char colored field for FULL/MEDIUM tiers
+USAGE7D_SHORT="" # 5-char colored field for NARROW tier (no reset day)
+
+if [ -n "$RATE7D_PCT" ] && [ "$RATE7D_PCT" != "null" ] && [ "$RATE7D_PCT" != "" ]; then
+  PCT7D=$(printf '%.0f' "$RATE7D_PCT" 2>/dev/null || echo "0")
+  COLOR7D=$(usage_color "$PCT7D")
+
+  # Format reset as day-of-week: "Fri", "Mon", etc.
+  RESET7D=""
+  if [ -n "$RATE7D_RESET" ] && [ "$RATE7D_RESET" != "null" ] && [ "$RATE7D_RESET" != "" ]; then
+    RESET7D=$(date -r "$RATE7D_RESET" "+%a" 2>/dev/null || date -d "@$RATE7D_RESET" "+%a" 2>/dev/null)
+  fi
+
+  if [ -n "$RESET7D" ]; then
+    TEXT7D="${PCT7D}%↺${RESET7D}"   # e.g. "65%↺Fri"
+  else
+    TEXT7D="${PCT7D}%"
+  fi
+  USAGE7D="${COLOR7D}$(printf '%-9s' "$TEXT7D")\033[0m"
+  USAGE7D_SHORT="${COLOR7D}$(printf '%-5s' "${PCT7D}%")\033[0m"
 fi
 
 # --- Adaptive output ---
-# Header strings are manually padded to match the printf field widths in the value rows,
-# so header and data align even when ANSI color codes are present in the value row.
-if [ "$COLS" -ge 105 ] 2>/dev/null; then
-  # FULL: Context=15, all columns, branch=15, bar=10, rate if available
-  # Widths: 15 │ 10 │ 15 │ 7 │ 7 │ 5 │ 4 │ 9 [│ rate]  = 93 / ~104 with rate
-  if [ -n "$RATE_FMT" ]; then
-    printf '%b\n' "\033[2mContext        │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines     │ Rate\033[0m"
-    printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT") │ ${RATE_FMT}"
+# When rate limits are absent (API-key sessions), usage columns are hidden.
+# Header strings are manually padded to match printf field widths in value rows.
+#
+# Tier visible widths (content + separators):
+#   FULL:    9+9+15+10+15+7+7+5+4+9 = 90 content + 9×3 sep = 117
+#   MEDIUM:  9+9+15+10+12+7+7+5+4   = 78 content + 8×3 sep = 102
+#   NARROW:  9+5+10+10+12+7+7       = 60 content + 6×3 sep = 78
+#   COMPACT: 5+10+10+10+7+7         = 49 content + 5×3 sep = 64
+
+if [ "$COLS" -ge 116 ] 2>/dev/null; then
+  # FULL: all columns, branch×15, full ctx bar
+  if $HAS_RATE; then
+    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
+    printf '%b\n' "${USAGE5H} │ ${USAGE7D} │ ${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
   else
     printf '%b\n' "\033[2mContext        │ Model      │ Branch          │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
     printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-15s' "$BRANCH15") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
   fi
-elif [ "$COLS" -ge 91 ] 2>/dev/null; then
-  # MEDIUM: Context=15, branch=12, bar=10, no rate
-  # Widths: 15 │ 10 │ 12 │ 7 │ 7 │ 5 │ 4 │ 9  = 90
-  printf '%b\n' "\033[2mContext        │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  │ Lines    \033[0m"
-  printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT") │ $(printf '%-9s' "$LINES_FMT")"
-elif [ "$COLS" -ge 75 ] 2>/dev/null; then
-  # NARROW: Context=10, branch=12, bar=5, keeps Cache/API, drops Lines/Rate
-  # Widths: 10 │ 10 │ 12 │ 7 │ 7 │ 5 │ 4  = 71
-  printf '%b\n' "\033[2mContext    │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
-  printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT")"
+elif [ "$COLS" -ge 101 ] 2>/dev/null; then
+  # MEDIUM: no Lines, branch×12, full ctx bar
+  if $HAS_RATE; then
+    printf '%b\n' "\033[2m5h Usage  │ 7d Usage  │ Context       │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
+    printf '%b\n' "${USAGE5H} │ ${USAGE7D} │ ${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT")"
+  else
+    printf '%b\n' "\033[2mContext        │ Model      │ Branch       │ Cost    │ Time    │ Cache │ API  \033[0m"
+    printf '%b\n' "${CTX_FULL} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT") │ $(printf '%-5s' "$CACHE_FMT") │ $(printf '%-4s' "$API_FMT")"
+  fi
+elif [ "$COLS" -ge 78 ] 2>/dev/null; then
+  # NARROW: no Lines/Cache/API, 7d % only (no reset day), narrow ctx bar, branch×12
+  if $HAS_RATE; then
+    printf '%b\n' "\033[2m5h Usage  │ 7d    │ Context   │ Model      │ Branch       │ Cost    │ Time    \033[0m"
+    printf '%b\n' "${USAGE5H} │ ${USAGE7D_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  else
+    printf '%b\n' "\033[2mContext    │ Model      │ Branch       │ Cost    │ Time    \033[0m"
+    printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-12s' "$BRANCH12") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  fi
 else
-  # COMPACT: Context=10, branch=10, bar=5, drops Lines/Cache/API/Rate
-  # Widths: 10 │ 10 │ 10 │ 7 │ 7  = 56
-  printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
-  printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  # COMPACT: 5h % only (no reset), narrow ctx, model, branch×10, cost, time
+  if $HAS_RATE; then
+    printf '%b\n' "\033[2m5h     │ Context   │ Model      │ Branch     │ Cost    │ Time    \033[0m"
+    printf '%b\n' "${USAGE5H_SHORT} │ ${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  else
+    printf '%b\n' "\033[2mContext    │ Model      │ Branch     │ Cost    │ Time    \033[0m"
+    printf '%b\n' "${CTX_NARROW} │ $(printf '%-10s' "$MODEL") │ $(printf '%-10s' "$BRANCH10") │ $(printf '%-7s' "$COST_FMT") │ $(printf '%-7s' "$TIME_FMT")"
+  fi
 fi
