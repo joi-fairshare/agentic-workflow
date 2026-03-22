@@ -1,60 +1,63 @@
 // mcp-bridge/tests/transcript-parser.test.ts
 import { describe, it, expect } from "vitest";
-import { parseTranscriptLines, type TranscriptRecord } from "../src/ingestion/transcript-parser.js";
-
-const validLine = (overrides: Partial<TranscriptRecord> = {}): string =>
-  JSON.stringify({
-    type: "human",
-    uuid: "uuid-1",
-    parentUuid: null,
-    message: { content: "Hello world" },
-    timestamp: "2026-03-20T10:00:00Z",
-    ...overrides,
-  });
+import { parseTranscriptLines } from "../src/ingestion/transcript-parser.js";
 
 describe("parseTranscriptLines", () => {
-  it("parses valid JSONL lines", () => {
+  it("parses valid JSONL transcript records", () => {
     const lines = [
-      validLine({ uuid: "u1", type: "human" }),
-      validLine({ uuid: "u2", type: "assistant", parentUuid: "u1" }),
+      JSON.stringify({ type: "assistant", uuid: "u1", parentUuid: null, message: { content: "Hello" }, timestamp: "2026-01-01T00:00:00Z" }),
+      JSON.stringify({ type: "human", uuid: "u2", parentUuid: "u1", message: { content: "Hi" }, timestamp: "2026-01-01T00:01:00Z" }),
     ];
     const result = parseTranscriptLines(lines);
     expect(result.records).toHaveLength(2);
-    expect(result.records[0].uuid).toBe("u1");
-    expect(result.records[1].parentUuid).toBe("u1");
     expect(result.skipped).toBe(0);
+    expect(result.records[0].content).toBe("Hello");
+    expect(result.records[1].parentUuid).toBe("u1");
   });
 
-  it("skips malformed JSON lines", () => {
-    const lines = [
-      validLine({ uuid: "u1" }),
-      "not valid json {{{",
-      validLine({ uuid: "u2" }),
-    ];
-    const result = parseTranscriptLines(lines);
-    expect(result.records).toHaveLength(2);
-    expect(result.skipped).toBe(1);
-  });
-
-  it("skips lines missing required fields", () => {
-    const lines = [
-      JSON.stringify({ type: "human" }), // missing uuid
-      validLine({ uuid: "u1" }),
-    ];
+  it("skips invalid JSON lines", () => {
+    const lines = ["not-json", JSON.stringify({ type: "assistant", uuid: "u1", parentUuid: null, message: { content: "ok" }, timestamp: "2026-01-01T00:00:00Z" })];
     const result = parseTranscriptLines(lines);
     expect(result.records).toHaveLength(1);
     expect(result.skipped).toBe(1);
   });
 
-  it("extracts text content from message object", () => {
-    const lines = [validLine({ uuid: "u1", message: { content: "Test content" } as never })];
+  it("skips lines that fail Zod validation", () => {
+    const lines = [JSON.stringify({ type: "assistant" })]; // missing required uuid field
     const result = parseTranscriptLines(lines);
-    expect(result.records[0].content).toBe("Test content");
+    expect(result.records).toHaveLength(0);
+    expect(result.skipped).toBe(1);
   });
 
-  it("handles empty input", () => {
-    const result = parseTranscriptLines([]);
-    expect(result.records).toHaveLength(0);
+  it("skips empty lines without incrementing skipped count", () => {
+    const lines = ["", "  ", JSON.stringify({ type: "assistant", uuid: "u1", parentUuid: null, message: { content: "ok" }, timestamp: "2026-01-01T00:00:00Z" })];
+    const result = parseTranscriptLines(lines);
+    expect(result.records).toHaveLength(1);
     expect(result.skipped).toBe(0);
+  });
+
+  it("extracts content from array-type message content", () => {
+    const lines = [
+      JSON.stringify({
+        type: "assistant", uuid: "u1", parentUuid: null,
+        message: { content: [{ type: "text", text: "part1" }, { type: "text", text: "part2" }] },
+        timestamp: "2026-01-01T00:00:00Z",
+      }),
+    ];
+    const result = parseTranscriptLines(lines);
+    expect(result.records[0].content).toBe("part1\npart2");
+  });
+
+  it("returns empty string for missing message field", () => {
+    const lines = [
+      JSON.stringify({
+        type: "assistant", uuid: "u1", parentUuid: null,
+        timestamp: "2026-01-01T00:00:00Z",
+        // message field omitted
+      }),
+    ];
+    const result = parseTranscriptLines(lines);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].content).toBe("");
   });
 });
