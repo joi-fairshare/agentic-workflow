@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Agent, Read, Write, Edit, Glob, Grep
 
 4-phase systematic debugging with automatic scope freeze at the module boundary.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -81,6 +83,8 @@ Create the output directory for this skill:
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/investigations"
 ```
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Parse Input
 

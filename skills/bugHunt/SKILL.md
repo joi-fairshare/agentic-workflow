@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Write, Edit, 
 
 Fix-and-verify loop with atomic commits, regression test generation, and tiered verification.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -81,6 +83,8 @@ Create the output directory for this skill:
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/qa"
 ```
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Parse Arguments
 

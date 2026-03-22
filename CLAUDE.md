@@ -6,8 +6,6 @@ Domain-specific rules are in `.claude/rules/` — they load automatically when w
 
 ## Required Context
 
-Read before making changes:
-
 | Document | Purpose |
 |----------|---------|
 | `planning/ARCHITECTURE.md` | System components and data flow |
@@ -51,22 +49,13 @@ agentic-workflow/
 
 ```bash
 # MCP Bridge
-cd mcp-bridge
-npm run build          # TypeScript → dist/
-npm run dev            # Dev server with tsx
-npm start              # Production server (Fastify on :3100)
-npm test               # Vitest (all tests, in-memory SQLite)
-npm run test:watch     # Vitest watch mode
-npm run test:coverage  # Coverage report
-npm run typecheck      # tsc --noEmit
+cd mcp-bridge && npm test               # Vitest (all tests, in-memory SQLite)
+cd mcp-bridge && npm run test:coverage  # Coverage report
+cd mcp-bridge && npm run build          # TypeScript → dist/
 
 # UI Dashboard
-cd ui
-npm run dev            # Next.js dev server (http://localhost:3000)
-npm run build          # Production build
-npm start              # Production server
-npm test               # Vitest (hooks + lib tests)
-npm run test:coverage  # Coverage report
+cd ui && npm test               # Vitest (hooks + lib tests)
+cd ui && npm run test:coverage  # Coverage report
 
 # Setup (from repo root)
 ./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, create output dir

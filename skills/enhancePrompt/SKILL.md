@@ -6,6 +6,8 @@ disable-model-invocation: true
 allowed-tools: Read, Glob, Grep
 ---
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -78,9 +80,9 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
-<!-- === PREAMBLE END === -->
-
 ---
+
+<!-- === PREAMBLE END === -->
 
 # enhancePrompt
 

@@ -108,7 +108,7 @@ When writing the bootstrap CLAUDE.md template, do not include Skills tables or K
 3. Write the skill's steps after the preamble
 4. Add the skill name to `setup.sh`'s `MANAGED_SKILLS` array
 5. Add a row to the skills table in `_preamble.md` and propagate to all 21 existing SKILL.md files
-6. Update `CLAUDE.md` skills table and count
+6. Update the skill count in the CLAUDE.md tagline (line 3)
 
 ## Symlink Installation
 

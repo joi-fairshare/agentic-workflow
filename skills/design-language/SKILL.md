@@ -6,6 +6,8 @@ disable-model-invocation: true
 allowed-tools: Read, Write, AskUserQuestion
 ---
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -77,6 +79,8 @@ Create the output directory for this repo:
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
+
+<!-- === PREAMBLE END === -->
 
 ## Design Context — Load Design Language
 

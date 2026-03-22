@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Agent, Read, Write, Edit, Glob, Grep
 
 Refreshes project documentation to reflect recent changes. Updates only the sections that are stale — does **not** rewrite entire files.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -83,6 +85,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/releases"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Parse Scope
 

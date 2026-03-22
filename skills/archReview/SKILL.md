@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
 
 Reviews plans or implementations for technical soundness. Produces mandatory mermaid diagrams, edge case analysis, and a scored verdict.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -84,6 +86,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Resolve the Target
 

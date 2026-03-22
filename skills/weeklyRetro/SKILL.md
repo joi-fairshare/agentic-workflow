@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Read, Write, Glob, Grep
 
 Analyzes git history to produce per-person breakdowns, shipping streaks, test health trends, and actionable insights.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -83,6 +85,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/retros"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Parse Arguments
 

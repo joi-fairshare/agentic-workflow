@@ -6,6 +6,8 @@ disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write
 ---
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -76,6 +78,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 # PR Review Orchestrator
 

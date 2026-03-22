@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Glob, Grep, W
 
 Read-only audit that produces a structured bug report with health scores. This skill **never modifies source code** — it is purely diagnostic.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -81,6 +83,8 @@ Create the output directory for this skill:
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/qa"
 ```
+
+<!-- === PREAMBLE END === -->
 
 **IMPORTANT: This skill is read-only. Do NOT modify any source code, test files, or configuration. Only write the output report.**
 

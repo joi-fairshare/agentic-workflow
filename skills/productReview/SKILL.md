@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
 
 Reviews plans through a product/founder lens with four distinct modes. Challenges assumptions, tightens scope, and delivers a verdict.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -84,6 +86,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Parse Arguments and Resolve Plan
 

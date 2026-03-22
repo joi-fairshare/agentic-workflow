@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
 
 Runs a structured brainstorming session through 6 forcing questions, then synthesizes the conversation into a design doc.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -84,6 +86,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Get the Topic
 

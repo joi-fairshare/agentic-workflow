@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Read, Glob, Gr
 
 Syncs your branch, runs tests, audits coverage, pushes, opens a PR, and optionally invokes `/syncDocs`.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -83,6 +85,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/releases"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Pre-flight Checks
 
