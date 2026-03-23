@@ -1,5 +1,6 @@
 node_modules/
 dist/
+coverage/
 *.db
 *.db-shm
 *.db-wal
@@ -9,3 +10,12 @@ dist/
 .review-cache/
 .superpowers/
 .worktrees/
+
+# Serena runtime data (LSP index caches, logs, session state)
+.serena/cache/
+.serena/logs/
+.serena/memory/
+.serena/*.log
+
+# Claude Code machine-specific settings (absolute paths, allow rules)
+.claude/settings.local.json
