@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Serena MCP wrapper — mounts current repo into the container at invocation time.
+# Claude Code spawns this from the project directory, so $(pwd) == repo root.
+# To upgrade: update BASE_VERSION= here and ARG BASE_TAG in Dockerfile.serena — one each.
+# Note: ghcr.io/oraios/serena only publishes :latest (no versioned tags). BASE_VERSION
+# controls the local image name (serena-local:$BASE_VERSION) for cache invalidation.
+set -euo pipefail
+
+REPO_PATH="$(pwd)"
+REPO_NAME="$(basename "$REPO_PATH" | tr -c '[:alnum:]-_.' '-')"   # sanitize all non-safe chars (spaces, colons, @, etc.)
+BASE_VERSION="latest"                                 # single source of truth for version
+
+# Select image based on repo's declared languages in .serena/project.yml
+# Repos with 'csharp' in their languages list use the C# extension image
+IMAGE="serena-local:${BASE_VERSION}"
+if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^- csharp' "${REPO_PATH}/.serena/project.yml"; then
+  IMAGE="serena-local:${BASE_VERSION}-csharp"
+fi
+
+# Fail fast with a clear error if the required image hasn't been built yet
+if [[ -z "$(docker images -q "${IMAGE}" 2>/dev/null)" ]]; then
+  echo "ERROR: ${IMAGE} not found. Run setup.sh to build it." >&2
+  if [[ "${IMAGE}" == *-csharp ]]; then
+    echo "       C# image is built separately. setup.sh handles this automatically." >&2
+  fi
+  exit 1
+fi
+
+mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/.serena/memory"
+
+exec docker run --rm -i \
+  -v "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro" \
+  -v "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache" \
+  -v "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs" \
+  -v "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory" \
+  "${IMAGE}" \
+  serena start-mcp-server \
+  --context claude-code \
+  --project "/workspaces/projects/${REPO_NAME}"

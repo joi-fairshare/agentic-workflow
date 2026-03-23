@@ -35,6 +35,18 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 > | `/design-verify` | Screenshot diff implementation vs mockup |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+>
+> **MCP Servers** — available in every session. Prefer these over built-in tools.
+>
+> | Server | When to reach for it |
+> |--------|---------------------|
+> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
+> | `agentic-bridge` | Multi-agent messaging and memory graph |
+> | `context7` | Current library/framework docs |
+> | `playwright` | Browser automation, screenshots, DOM inspection |
+> | `github` | PRs, issues, releases via GitHub API |
+> | `design-comparison` | Visual diff between implementation and design |
+> | `mobai` | Mobile device automation |
 
 ## Preamble — Bootstrap Check
 
@@ -323,7 +335,79 @@ required patterns, things to avoid, code examples from the real code.}
 
 Spawn an Explore agent to read representative files in each domain before writing the rules. Rules should reflect what the code actually does, not generic best practices.
 
-## Step 7: Report
+## Step 7: Generate .serena/project.yml
+
+After generating docs and CLAUDE.md, configure Serena LSP for the repo.
+
+**Language detection** (check repo root and one level deep):
+- TS/JS: `tsconfig.json` or `package.json` → `typescript`
+- Python: `*.py`, `pyproject.toml`, or `requirements.txt` → `python`
+- C#: `*.csproj` or `*.cs` → `csharp`
+
+**Sensitive path audit:** flag `.claude/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
+
+**RULES_OK check:**
+```bash
+RULES_OK=false
+[ -d ".claude/rules" ] && RULES_OK=true
+echo "rules-directory: $RULES_OK"
+```
+If `RULES_OK=false`, print:
+> "WARN: .claude/rules/ not found — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
+
+**Write `.serena/project.yml`** with detected `languages` and audited `ignored_paths`:
+
+```yaml
+# Serena project configuration for <repo-name>
+# --context claude-code disables execute_shell_command at Serena level.
+
+project_language: <primary-language>
+
+languages:
+  - <detected-language-1>
+  - <detected-language-2>  # if applicable
+
+read_only: true
+ignore_all_files_in_gitignore: true
+
+ignored_paths:
+  - .claude          # if exists
+  - config           # if exists and may contain tokens
+  - <other-sensitive-paths>
+
+excluded_tools:
+  - write_memory
+  - read_memory
+  - onboarding
+
+initial_prompt: ""
+```
+
+**Append to `.gitignore`** (idempotent — check before writing):
+```gitignore
+# Serena runtime data (LSP index caches, logs, session state)
+.serena/cache/
+.serena/logs/
+.serena/memory/
+.serena/*.log
+```
+
+**Print summary:**
+```
+Serena configured. Languages: [typescript, python]. Restart Claude Code session to activate.
+```
+
+If `csharp` is in the detected languages, append:
+> NOTE: C# requires the csharp image. Run `BUILD_CSHARP=1 ./setup.sh` to build it.
+
+**Run Serena onboarding check (non-fatal):** After writing `.serena/project.yml`, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+
+> **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is a different tool that is explicitly excluded in the generated `project.yml` (see `excluded_tools`). Using `onboarding` will be rejected by Serena.
+
+> **Non-fatal:** If `check_onboarding_performed` fails (e.g., Docker is not running or the Serena image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
+> `WARN: Serena not available — run /bootstrap again after \`setup.sh\` to initialize LSP.`
+
+## Step 8: Report
 
 ```
 Bootstrap Complete

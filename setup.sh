@@ -361,6 +361,83 @@ else
   echo "  UI: package.json not found, skipping"
 fi
 
+# --- Serena MCP ---
+echo ""
+echo "=== Serena prerequisites ==="
+command -v docker &>/dev/null || { echo "FATAL: Docker not installed. Install Docker Desktop and re-run setup.sh."; exit 1; }
+
+# Derive version from committed wrapper — single source of truth, no dual-maintenance
+SERENA_VERSION=$(grep '^BASE_VERSION=' "$(dirname "$0")/scripts/serena-docker" \
+  | sed 's/BASE_VERSION="//;s/".*//')
+if [ -z "$SERENA_VERSION" ]; then
+  echo "FATAL: Could not parse BASE_VERSION from scripts/serena-docker"; exit 1
+fi
+
+echo "=== Building Serena base image (TS + Python) ==="
+if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
+  echo "Building serena-local:${SERENA_VERSION} (~5 min)..."
+  docker build \
+    --pull \
+    --progress plain \
+    --build-arg BASE_TAG="${SERENA_VERSION}" \
+    -t "serena-local:${SERENA_VERSION}" \
+    -f "$(dirname "$0")/Dockerfile.serena" \
+    "$(dirname "$0")" \
+    || { echo "FATAL: Base image build failed."; exit 1; }
+  echo "Built serena-local:${SERENA_VERSION}"
+else
+  echo "serena-local:${SERENA_VERSION} already exists, skipping"
+fi
+
+echo "=== Building Serena C# extension image (opt-in) ==="
+# Auto-detect C# projects or honour BUILD_CSHARP=1 env var override
+_build_csharp=0
+if [ "${BUILD_CSHARP:-0}" = "1" ]; then
+  _build_csharp=1
+elif find "$(dirname "$0")" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
+  _build_csharp=1
+fi
+
+if [ "$_build_csharp" = "1" ]; then
+  if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
+    echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
+    docker build \
+      --pull \
+      --progress plain \
+      --build-arg LOCAL_TAG="${SERENA_VERSION}" \
+      -t "serena-local:${SERENA_VERSION}-csharp" \
+      -f "$(dirname "$0")/Dockerfile.serena-csharp" \
+      "$(dirname "$0")" \
+      || { echo "FATAL: C# image build failed."; exit 1; }
+    echo "Built serena-local:${SERENA_VERSION}-csharp"
+  else
+    echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
+  fi
+else
+  echo "=== Skipping C# Serena image (no .csproj/.cs found) ==="
+  echo "To build later, run: BUILD_CSHARP=1 ./setup.sh"
+fi
+
+echo "=== Installing serena-docker wrapper ==="
+mkdir -p "$HOME/.local/bin"
+cp "$(dirname "$0")/scripts/serena-docker" "$HOME/.local/bin/serena-docker"
+chmod +x "$HOME/.local/bin/serena-docker"
+
+if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
+  echo "WARN: ~/.local/bin is not in \$PATH. Add to your shell profile:"
+  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
+echo "=== Registering Serena MCP (global) ==="
+claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
+  2>/dev/null \
+  || echo "WARN: Serena already registered (or claude CLI not found)"
+
+echo "=== Security check ==="
+if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
+  echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
+fi
+
 # --- Claude Code Plugins ---
 echo ""
 echo "Installing Claude Code plugins..."

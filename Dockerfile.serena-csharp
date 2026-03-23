@@ -1,0 +1,30 @@
+# C# language server extension — opt-in for repos with .csproj / .cs files
+# Extends the base serena-local image; NOT included by default
+# Trigger: add 'csharp' to languages: in .serena/project.yml, then run setup.sh
+ARG LOCAL_TAG=latest
+FROM serena-local:${LOCAL_TAG}
+
+# --- C# LSP (csharp-ls via .NET 10) ---
+# Use official dotnet-install.sh — more reliable than apt on Debian trixie
+#
+# Security note: dotnet-install.sh is fetched from Microsoft's official CDN (dot.net/v1/).
+# SHA-256 pinning is impractical here since Microsoft updates this script frequently;
+# a pinned hash would silently break builds on every upstream update.
+# Risk mitigations: HTTPS-only fetch from official source, Docker build isolation
+# (no host filesystem access), script deleted immediately after use, and
+# docker build --pull refreshes the base image layer cache.
+# For stricter supply-chain pinning, migrate to:
+#   FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-stage
+# and COPY the SDK binaries into the final image (multi-stage pattern).
+RUN curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/local/dotnet \
+    && rm /tmp/dotnet-install.sh
+ENV DOTNET_ROOT=/usr/local/dotnet
+ENV PATH="$PATH:/usr/local/dotnet:/root/.dotnet/tools"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libicu-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /root/.dotnet/tools \
+    && dotnet tool install --global csharp-ls \
+    && csharp-ls --version
