@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dockerized Serena LSP integration (`Dockerfile.serena`, `Dockerfile.serena-csharp`, `scripts/serena-docker` wrapper)
+- Per-repo Serena config (`.serena/project.yml`) with TypeScript language settings and sensitive path exclusions
+- `setup.sh` builds Serena Docker images, installs wrapper script, and registers MCP server globally
+- `.claude/rules/mcp-servers.md` documenting when to use each MCP server vs built-in tools
+- `.claude/settings.json` with `disableBypassPermissionsMode` to prevent unsafe permissions bypass
+- `.dockerignore` for Docker builds
+- `.gitignore` entries for Serena runtime data and `settings.local.json`
+- Bootstrap skill Step 7: auto-generates `.serena/project.yml` with language detection
+
+### Changed
+
+- Removed MCP server table from all skill preambles (centralized in `.claude/rules/mcp-servers.md`)
+
+### Fixed
+
+- `project_name` field and bootstrap Step 7 clarifications in `.serena/project.yml`
+- Docker infrastructure: opt-in C# build, removed port exposure, granular volume mounts, `--pull` flag, `.dockerignore`
+- Documented `dotnet-install.sh` trust model and version pinning rationale
+- Miscellaneous docs, `.gitignore`, `project.yml` comment, `settings.local.json` gitignore, architecture docs fixes
+
+## [Unreleased] - 2026-03-22
+
+### Added
+
 - Adaptive statusline (`statusline.sh`) with context-first layout and five width tiers: FULL (>=116), MEDIUM (>=101), NARROW (>=78), COMPACT (>=65), COMPACT-S (<65)
 - Separate Usage (5h/7d rate limits) and Context columns in the statusline display
 - Mid-session terminal resize detection via hooks registered in `settings.json` (`PreToolUse`/`PostToolUse`/`Stop`)

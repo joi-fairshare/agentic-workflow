@@ -5,6 +5,7 @@ A portable Claude Code workflow toolkit: custom skills, configuration archive, r
 ## Prerequisites
 
 - Node.js >= 20
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running (required for Serena LSP)
 - [Claude Code](https://claude.com/claude-code) installed
 - [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (required by review skills)
 - [`jq`](https://jqlang.github.io/jq/) installed (required by the statusline; `brew install jq` on macOS)
@@ -164,14 +165,16 @@ cd ~/repos/agentic-workflow
 ```
 
 The setup script:
-- Checks for `jq` (hard prerequisite — aborts with install instructions if missing)
+- Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
 - Symlinks skills into `~/.claude/skills/`
 - Copies config files (settings, MCP)
 - Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
 - Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
 - Installs and builds the MCP bridge
 - Installs UI dependencies
-- Registers `agentic-bridge` MCP server with Claude Code and Codex
+- Builds Serena Docker images (base TS/Python image; opt-in C# extension)
+- Installs the `serena-docker` wrapper script to `~/.local/bin/`
+- Registers `agentic-bridge` and `serena` MCP servers with Claude Code
 - Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright)
 
 ### Start the bridge + UI
@@ -203,13 +206,13 @@ Both packages enforce 100% coverage on all thresholds (statements, branches, fun
 ```bash
 # MCP Bridge (Vitest, in-memory SQLite)
 cd mcp-bridge
-npm test                  # Run all tests (293 tests)
+npm test                  # Run all tests (341 tests)
 npm run test:watch        # Watch mode
 npm run test:coverage     # Enforce 100% coverage thresholds
 
 # UI (Vitest + happy-dom)
 cd ui
-npm test                  # Run all tests (61 tests)
+npm test                  # Run all tests (67 tests)
 npm run test:coverage     # Enforce 100% coverage thresholds
 ```
 
@@ -219,6 +222,11 @@ Test coverage spans unit tests (controllers, services, DB client, schemas, utili
 
 ```
 agentic-workflow/
+├── .claude/
+│   ├── rules/mcp-servers.md   # MCP server usage rules for Claude Code
+│   └── settings.json          # Claude Code project settings
+├── .serena/
+│   └── project.yml            # Serena LSP per-repo config (TypeScript)
 ├── skills/                    # Claude Code custom skills
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
@@ -226,6 +234,8 @@ agentic-workflow/
 │   └── enhancePrompt/         # Context-aware prompt rewriter
 ├── bootstrap/                 # Repo documentation generator skill
 ├── config/                    # Settings, MCP config archive, statusline script
+├── scripts/
+│   └── serena-docker          # Wrapper script: mounts repo into Serena container
 ├── mcp-bridge/                # MCP bridge application
 │   ├── src/
 │   │   ├── application/       # AppResult<T>, EventBus, services (never throw)
@@ -244,6 +254,8 @@ agentic-workflow/
 │       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
 │       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │       └── lib/               # API client, Mermaid builders, shared types
+├── Dockerfile.serena           # Serena base image (TypeScript + Python LSPs)
+├── Dockerfile.serena-csharp    # Serena C# extension image (opt-in)
 ├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
 ```

@@ -92,6 +92,15 @@ The repo slug is derived from `git remote get-url origin` (fallback: directory n
 
 ```
 agentic-workflow/
+├── .serena/                   # Serena LSP project configuration
+│   └── project.yml            #   Language/framework declarations for LSP indexing
+├── .claude/
+│   └── rules/                 # Claude Code rule files (auto-loaded)
+│       └── mcp-servers.md     #   MCP server usage guide (when to use Serena vs Grep/Read)
+├── scripts/
+│   └── serena-docker          # Build + run wrapper for Dockerized Serena LSP
+├── Dockerfile.serena          # Serena LSP Docker image (Python/TS/Go projects)
+├── Dockerfile.serena-csharp   # Serena LSP Docker image (C# projects, includes .NET SDK)
 ├── skills/                    # Claude Code custom skills (symlinked to ~/.claude/skills/)
 │   ├── review/                # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md           #   skill manifest + 7-step orchestration flow
@@ -300,7 +309,7 @@ npm test               # Vitest (hooks + lib tests)
 npm run test:coverage  # Run with 100% coverage enforcement
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, create output dir
+./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, build Serena Docker image, register MCP servers, create output dir
 ./start.sh             # Start bridge (:3100) + UI (:3000) together
 ```
 
@@ -308,7 +317,7 @@ npm run test:coverage  # Run with 100% coverage enforcement
 
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
-2. `npm test` passes with all tests green (293 bridge + 61 UI)
+2. `npm test` passes with all tests green (341 bridge + 67 UI)
 3. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
 4. No `any` types outside of Fastify integration boundaries
 
