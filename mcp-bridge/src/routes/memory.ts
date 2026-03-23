@@ -6,6 +6,7 @@ import { defineRoute, type ControllerDefinition, type RouteEntry } from "../tran
 import {
   SearchMemorySchema,
   GetNodeSchema,
+  GetNodeBySourceSchema,
   GetNodeEdgesSchema,
   TraverseSchema,
   GetContextSchema,
@@ -18,6 +19,8 @@ import {
   TraversalLogsQuerySchema,
   TraversalLogParamsSchema,
   SendersQuerySchema,
+  GetReposSchema,
+  ListConversationsSchema,
 } from "../transport/schemas/memory-schemas.js";
 
 export function createMemoryRoutes(
@@ -36,6 +39,13 @@ export function createMemoryRoutes(
         summary: "Search memory nodes by query (keyword, semantic, or hybrid)",
         schema: SearchMemorySchema,
         handler: handlers.search,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/node/by-source/:source_type/:source_id",
+        summary: "Get a memory node by source type and source ID",
+        schema: GetNodeBySourceSchema,
+        handler: handlers.getNodeBySource,
       }),
       defineRoute({
         method: "GET",
@@ -127,6 +137,20 @@ export function createMemoryRoutes(
         summary: "List distinct senders for a repo",
         schema: SendersQuerySchema,
         handler: handlers.getSenders,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/repos",
+        summary: "List distinct repo slugs",
+        schema: GetReposSchema,
+        handler: handlers.getRepos,
+      }),
+      defineRoute({
+        method: "GET",
+        path: "/conversations",
+        summary: "List conversation nodes with message counts",
+        schema: ListConversationsSchema,
+        handler: handlers.listConversations,
       }),
     // Each defineRoute() call returns RouteEntry<TSchema> with a distinct TSchema,
     // so the array literal has a union element type that TypeScript cannot

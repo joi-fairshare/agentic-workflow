@@ -87,6 +87,10 @@ export async function getMemoryNode(id: string): Promise<NodeResponse> {
   return get<NodeResponse>(`/memory/node/${encodeURIComponent(id)}`);
 }
 
+export async function getMemoryNodeBySource(sourceType: string, sourceId: string): Promise<NodeResponse> {
+  return get<NodeResponse>(`/memory/node/by-source/${encodeURIComponent(sourceType)}/${encodeURIComponent(sourceId)}`);
+}
+
 export async function getMemoryNodeEdges(id: string): Promise<EdgeResponse[]> {
   return get<EdgeResponse[]>(`/memory/node/${encodeURIComponent(id)}/edges`);
 }
@@ -123,6 +127,36 @@ export async function getMemoryContext(
 
 export async function getMemoryStats(repo: string): Promise<StatsResponse> {
   return get<StatsResponse>(`/memory/stats?repo=${encodeURIComponent(repo)}`);
+}
+
+export async function getRepos(): Promise<string[]> {
+  return get<string[]>("/memory/repos");
+}
+
+export interface MemoryConversation {
+  id: string;
+  title: string;
+  repo: string;
+  source_type: string;
+  source_id: string;
+  message_count: number;
+  created_at: string;
+  meta: string;
+}
+
+export async function fetchMemoryConversations(
+  repo: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ conversations: MemoryConversation[]; total: number }> {
+  const params = new URLSearchParams({
+    repo,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return get<{ conversations: MemoryConversation[]; total: number }>(
+    `/memory/conversations?${params.toString()}`,
+  );
 }
 
 export interface TraversalLog {

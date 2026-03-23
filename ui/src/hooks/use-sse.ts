@@ -24,6 +24,7 @@ export function useSse({ onEvent }: UseSseOptions) {
       "message:created",
       "task:created",
       "task:updated",
+      "memory:session_ingested",
     ];
 
     for (const type of eventTypes) {

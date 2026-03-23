@@ -1,6 +1,7 @@
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -35,11 +36,18 @@ function resultToContent<T>(result: { ok: true; data: T } | { ok: false; error: 
   };
 }
 
+// Resolve paths relative to the package root (parent of dist/) so both
+// the REST server and the MCP stdio server use the same database files
+// regardless of which working directory the process starts in.
+const __filename = fileURLToPath(import.meta.url);
+const PKG_ROOT = join(dirname(__filename), "..");
+
 export async function startMcpServer(dbPath?: string) {
-  const database = createDatabase(dbPath);
+  const resolvedDbPath = dbPath ?? process.env["DB_PATH"] ?? join(PKG_ROOT, "bridge.db");
+  const database = createDatabase(resolvedDbPath);
   const db: DbClient = createDbClient(database);
 
-  const MEMORY_DB_PATH = process.env["MEMORY_DB_PATH"] ?? join(process.cwd(), "memory.db");
+  const MEMORY_DB_PATH = process.env["MEMORY_DB_PATH"] ?? join(PKG_ROOT, "memory.db");
   const memoryRaw = createMemoryDatabase(MEMORY_DB_PATH);
   const mdb: MemoryDbClient = createMemoryDbClient(memoryRaw);
   const embedService: EmbeddingService = createEmbeddingService();

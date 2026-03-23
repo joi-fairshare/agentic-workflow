@@ -4,7 +4,8 @@ export type BridgeEvent =
   | { type: "message:created"; data: { id: string; conversation: string } }
   | { type: "task:created"; data: { id: string; conversation: string } }
   | { type: "task:updated"; data: { id: string; conversation: string; status: string } }
-  | { type: "memory:ingestion_dropped"; data: { reason: string } };
+  | { type: "memory:ingestion_dropped"; data: { reason: string } }
+  | { type: "memory:session_ingested"; data: { id: string; repo: string; sessionId: string } };
 
 export type EventHandler = (event: BridgeEvent) => void;
 

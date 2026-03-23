@@ -3,11 +3,46 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { fetchMessages, fetchTasks } from "@/lib/api";
+import {
+  getMemoryNode,
+  getMemoryNodeBySource,
+  traverseMemory,
+  type NodeResponse,
+} from "@/lib/memory-api";
 import { useSse } from "@/hooks/use-sse";
 import { buildDirectedGraph, buildSequenceDiagram } from "@/lib/diagrams";
 import { VerticalTimeline } from "@/components/vertical-timeline";
 import { DiagramPanel } from "@/components/diagram-panel";
 import type { Message, Task, BridgeEventType } from "@/lib/types";
+
+function nodeToMessage(node: NodeResponse, conversation: string): Message {
+  let kind: Message["kind"] = "reply";
+  try {
+    const meta = JSON.parse(node.meta ?? "{}") as Record<string, unknown>;
+    if (typeof meta.kind === "string" && ["context", "task", "status", "reply"].includes(meta.kind)) {
+      kind = meta.kind as Message["kind"];
+    }
+  } catch { /* ignore */ }
+
+  const sender = node.sender || "unknown";
+  const recipient = sender === "human" || sender === "user"
+    ? "assistant"
+    : sender === "assistant"
+      ? "human"
+      : "system";
+
+  return {
+    id: node.id,
+    conversation,
+    sender,
+    recipient,
+    kind,
+    payload: node.body || node.title,
+    meta_prompt: null,
+    created_at: node.created_at,
+    read_at: null,
+  };
+}
 
 export default function ConversationDetailPage() {
   const params = useParams<{ id: string }>();
@@ -26,6 +61,37 @@ export default function ConversationDetailPage() {
       ]);
       setMessages(msgs);
       setTasks(tsks);
+
+      // If bridge returned nothing, fall back to memory graph
+      if (msgs.length === 0) {
+        try {
+          // Resolve conversation node: try direct UUID, then bridge source lookup
+          let rootId: string | null = null;
+          try {
+            const node = await getMemoryNode(conversationId);
+            rootId = node.id;
+          } catch {
+            const node = await getMemoryNodeBySource("bridge-conversation", conversationId);
+            rootId = node.id;
+          }
+          if (rootId) {
+            const result = await traverseMemory(rootId, {
+              max_depth: 1,
+              direction: "outgoing",
+              max_nodes: 200,
+            });
+            const memMsgs = result.nodes
+              .filter((n) => n.kind === "message")
+              .sort((a, b) => a.created_at.localeCompare(b.created_at))
+              .map((n) => nodeToMessage(n, conversationId));
+            if (memMsgs.length > 0) {
+              setMessages(memMsgs);
+            }
+          }
+        } catch {
+          // Memory also unavailable — leave empty
+        }
+      }
     } finally {
       setLoading(false);
     }

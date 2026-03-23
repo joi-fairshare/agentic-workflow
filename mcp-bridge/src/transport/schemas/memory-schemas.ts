@@ -80,6 +80,20 @@ export const GetNodeSchema = {
 } as const;
 export type GetNodeSchema = typeof GetNodeSchema;
 
+// ── get_node_by_source ────────────────────────────────────
+
+export const NodeBySourceParamsSchema = z.object({
+  source_type: z.string(),
+  source_id: z.string(),
+});
+export type NodeBySourceParams = z.infer<typeof NodeBySourceParamsSchema>;
+
+export const GetNodeBySourceSchema = {
+  params: NodeBySourceParamsSchema,
+  response: NodeResponseSchema,
+} as const;
+export type GetNodeBySourceSchema = typeof GetNodeBySourceSchema;
+
 // ── get_node_edges ─────────────────────────────────────────
 
 export const GetNodeEdgesSchema = {
@@ -164,6 +178,46 @@ export const GetTopicsSchema = {
   response: z.array(NodeResponseSchema),
 } as const;
 export type GetTopicsSchema = typeof GetTopicsSchema;
+
+// ── list_conversations ────────────────────────────────────
+
+export const ListConversationsQuerySchema = z.object({
+  repo: z.string(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
+});
+export type ListConversationsQuery = z.infer<typeof ListConversationsQuerySchema>;
+
+export const ConversationItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  repo: z.string(),
+  source_type: z.string(),
+  source_id: z.string(),
+  message_count: z.number(),
+  created_at: z.string(),
+  meta: z.string(),
+});
+export type ConversationItem = z.infer<typeof ConversationItemSchema>;
+
+export const ListConversationsResponseSchema = z.object({
+  conversations: z.array(ConversationItemSchema),
+  total: z.number(),
+});
+export type ListConversationsResponse = z.infer<typeof ListConversationsResponseSchema>;
+
+export const ListConversationsSchema = {
+  querystring: ListConversationsQuerySchema,
+  response: ListConversationsResponseSchema,
+} as const;
+export type ListConversationsSchema = typeof ListConversationsSchema;
+
+// ── get_repos ──────────────────────────────────────────────
+
+export const GetReposSchema = {
+  response: z.array(z.string()),
+} as const;
+export type GetReposSchema = typeof GetReposSchema;
 
 // ── get_stats ──────────────────────────────────────────────
 

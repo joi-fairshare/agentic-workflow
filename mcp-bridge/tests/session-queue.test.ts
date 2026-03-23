@@ -8,7 +8,6 @@ describe("createSessionQueue", () => {
   it("processes items at the rate limit interval", async () => {
     const processed: string[] = [];
     const queue = createSessionQueue({
-      maxSize: 10,
       rateMs: 100,
       handler: async (job) => { processed.push(job.sessionId); },
     });
@@ -26,21 +25,17 @@ describe("createSessionQueue", () => {
     queue.stop();
   });
 
-  it("drops oldest when queue is full and calls onDrop", () => {
-    const dropped: string[] = [];
+  it("accepts all items without dropping", () => {
     const queue = createSessionQueue({
-      maxSize: 2,
       rateMs: 1000,
       handler: async () => {},
-      onDrop: (job) => { dropped.push(job.sessionId); },
     });
 
-    queue.enqueue({ sessionId: "s1", filePath: "/f1", repo: "r", pass: "summary" });
-    queue.enqueue({ sessionId: "s2", filePath: "/f2", repo: "r", pass: "summary" });
-    queue.enqueue({ sessionId: "s3", filePath: "/f3", repo: "r", pass: "summary" });
+    for (let i = 0; i < 500; i++) {
+      queue.enqueue({ sessionId: `s${i}`, filePath: `/f${i}`, repo: "r", pass: "summary" });
+    }
 
-    expect(dropped).toEqual(["s1"]);
-    expect(queue.depth()).toBe(2);
+    expect(queue.depth()).toBe(500);
 
     queue.stop();
   });
@@ -48,7 +43,6 @@ describe("createSessionQueue", () => {
   it("preserves pass field on jobs", async () => {
     let capturedPass: string | undefined;
     const queue = createSessionQueue({
-      maxSize: 10,
       rateMs: 50,
       handler: async (job) => { capturedPass = job.pass; },
     });
@@ -63,7 +57,6 @@ describe("createSessionQueue", () => {
   it("calls onError when handler throws", async () => {
     const errors: string[] = [];
     const queue = createSessionQueue({
-      maxSize: 10,
       rateMs: 50,
       handler: async () => { throw new Error("fail"); },
       onError: (err) => { errors.push(err.message); },
@@ -76,9 +69,27 @@ describe("createSessionQueue", () => {
     queue.stop();
   });
 
-  it("stop() clears the interval", () => {
+  it("stops the interval when queue drains", async () => {
+    const processed: string[] = [];
     const queue = createSessionQueue({
-      maxSize: 10,
+      rateMs: 50,
+      handler: async (job) => { processed.push(job.sessionId); },
+    });
+
+    queue.enqueue({ sessionId: "s1", filePath: "/f1", repo: "r", pass: "summary" });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(processed).toHaveLength(1);
+    expect(queue.depth()).toBe(0);
+
+    // Advancing further should not cause issues (interval cleared)
+    await vi.advanceTimersByTimeAsync(200);
+    expect(processed).toHaveLength(1);
+
+    queue.stop();
+  });
+
+  it("stop() prevents further processing", () => {
+    const queue = createSessionQueue({
       rateMs: 50,
       handler: async () => {},
     });

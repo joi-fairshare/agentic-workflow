@@ -97,6 +97,29 @@ describe("POST /memory/link", () => {
   });
 });
 
+describe("GET /memory/node/by-source/:source_type/:source_id", () => {
+  it("returns 200 with node when found by source", async () => {
+    const node = mdb.insertNode({ repo: "test", kind: "conversation", title: "Conv abc", body: "", meta: "{}", source_id: "abc-123", source_type: "bridge-conversation" });
+    const res = await app.inject({
+      method: "GET",
+      url: "/memory/node/by-source/bridge-conversation/abc-123",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.id).toBe(node.id);
+    expect(body.data.source_id).toBe("abc-123");
+  });
+
+  it("returns 404 when no node matches source", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/memory/node/by-source/bridge-conversation/nonexistent",
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
 describe("GET /memory/node/:id/edges", () => {
   it("returns edges for a node", async () => {
     const n1 = mdb.insertNode({ repo: "test", kind: "topic", title: "A", body: "", meta: "{}", source_id: "s1", source_type: "manual" });
@@ -109,6 +132,32 @@ describe("GET /memory/node/:id/edges", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toHaveLength(1);
+  });
+});
+
+describe("GET /memory/repos", () => {
+  it("returns empty array for empty db", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/memory/repos",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual([]);
+  });
+
+  it("returns distinct repo slugs", async () => {
+    mdb.insertNode({ repo: "alpha", kind: "topic", title: "A", body: "", meta: "{}", source_id: "s1", source_type: "manual" });
+    mdb.insertNode({ repo: "beta", kind: "topic", title: "B", body: "", meta: "{}", source_id: "s2", source_type: "manual" });
+    mdb.insertNode({ repo: "alpha", kind: "decision", title: "C", body: "", meta: "{}", source_id: "s3", source_type: "manual" });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/memory/repos",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.data).toEqual(["alpha", "beta"]);
   });
 });
 

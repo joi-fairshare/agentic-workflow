@@ -4,7 +4,9 @@ import type { Message } from "./types";
 export function buildDirectedGraph(messages: Message[]): string {
   const edges = new Map<string, Set<string>>();
   for (const msg of messages) {
-    const key = `${msg.sender}:::${msg.recipient}`;
+    const from = msg.sender || "unknown";
+    const to = msg.recipient || "unknown";
+    const key = `${from}:::${to}`;
     const existing = edges.get(key);
     if (existing) {
       existing.add(msg.kind);
@@ -35,7 +37,7 @@ export function buildSequenceDiagram(messages: Message[]): string {
   // Declare participants in order of first appearance
   const seen = new Set<string>();
   for (const msg of messages) {
-    for (const agent of [msg.sender, msg.recipient]) {
+    for (const agent of [msg.sender || "unknown", msg.recipient || "unknown"]) {
       if (!seen.has(agent)) {
         seen.add(agent);
         const safeId = agent.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -45,12 +47,16 @@ export function buildSequenceDiagram(messages: Message[]): string {
   }
 
   for (const msg of messages) {
-    const synopsis =
+    const raw =
       msg.payload.length > 40
-        ? msg.payload.substring(0, 40).replace(/"/g, "'") + "..."
-        : msg.payload.replace(/"/g, "'");
-    const fromId = msg.sender.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const toId = msg.recipient.replace(/[^a-zA-Z0-9_-]/g, "_");
+        ? msg.payload.substring(0, 40) + "..."
+        : msg.payload;
+    // Mermaid sequence diagram message text must not contain characters
+    // that act as syntax delimiters: colons, semicolons, hashes, quotes,
+    // newlines, and angle brackets can all trigger parse errors.
+    const synopsis = raw.replace(/[":;<>#{}|\\]/g, "'").replace(/[\n\r]+/g, " ");
+    const fromId = (msg.sender || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const toId = (msg.recipient || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
     lines.push(`    ${fromId}->>${toId}: ${msg.kind} — ${synopsis}`);
   }
   return lines.join("\n");

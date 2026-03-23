@@ -1,20 +1,18 @@
 // mcp-bridge/src/ingestion/queue.ts
 
-export interface BoundedQueueOptions<T> {
-  maxSize: number;
+export interface AsyncQueueOptions<T> {
   handler: (item: T) => Promise<void>;
-  onDrop?: (item: T) => void;
   onError?: (error: unknown) => void;
 }
 
-export interface BoundedQueue<T> {
+export interface AsyncQueue<T> {
   enqueue(item: T): void;
   depth(): number;
   stop(): void;
 }
 
-export function createBoundedQueue<T>(options: BoundedQueueOptions<T>): BoundedQueue<T> {
-  const { maxSize, handler, onDrop, onError } = options;
+export function createAsyncQueue<T>(options: AsyncQueueOptions<T>): AsyncQueue<T> {
+  const { handler, onError } = options;
   const buffer: T[] = [];
   let processing = false;
   let stopped = false;
@@ -38,12 +36,6 @@ export function createBoundedQueue<T>(options: BoundedQueueOptions<T>): BoundedQ
   return {
     enqueue(item) {
       if (stopped) return;
-
-      if (buffer.length >= maxSize) {
-        const dropped = buffer.shift()!;
-        onDrop?.(dropped);
-      }
-
       buffer.push(item);
 
       if (!processing) {

@@ -4,6 +4,7 @@ import { useParams, useSelectedLayoutSegment } from "next/navigation";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMessages, fetchTasks } from "@/lib/api";
+import { getMemoryNode, getMemoryNodeEdges, type NodeResponse, type EdgeResponse } from "@/lib/memory-api";
 import { useSse } from "@/hooks/use-sse";
 import { CopyButton } from "@/components/copy-button";
 import type { Message, Task, BridgeEventType } from "@/lib/types";
@@ -47,6 +48,10 @@ export default function ConversationLayout({
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
 
+  // Memory fallback state
+  const [memoryNode, setMemoryNode] = useState<NodeResponse | null>(null);
+  const [memoryEdges, setMemoryEdges] = useState<EdgeResponse[]>([]);
+
   const load = useCallback(async () => {
     try {
       const [msgs, tsks] = await Promise.all([
@@ -55,8 +60,32 @@ export default function ConversationLayout({
       ]);
       setMessages(msgs);
       setTasks(tsks);
+
+      // If bridge has no data, fall back to memory graph
+      if (msgs.length === 0 && tsks.length === 0) {
+        try {
+          const [node, edges] = await Promise.all([
+            getMemoryNode(conversationId),
+            getMemoryNodeEdges(conversationId),
+          ]);
+          setMemoryNode(node);
+          setMemoryEdges(edges);
+        } catch {
+          // Not in memory either — that's fine
+        }
+      }
     } catch {
-      // ignore
+      // Bridge unavailable — try memory directly
+      try {
+        const [node, edges] = await Promise.all([
+          getMemoryNode(conversationId),
+          getMemoryNodeEdges(conversationId),
+        ]);
+        setMemoryNode(node);
+        setMemoryEdges(edges);
+      } catch {
+        // ignore
+      }
     }
   }, [conversationId]);
 
@@ -70,9 +99,24 @@ export default function ConversationLayout({
     },
   });
 
+  // Derive display values from bridge or memory data
+  const title = memoryNode?.title || conversationId;
+  const messageCount = messages.length > 0
+    ? messages.length
+    : memoryEdges.filter((e) => e.kind === "contains").length;
+  const taskCount = tasks.length;
   const agents = useMemo(
-    () => new Set(messages.flatMap((m) => [m.sender, m.recipient])),
-    [messages],
+    () => {
+      if (messages.length > 0) {
+        return new Set(messages.flatMap((m) => [m.sender, m.recipient]));
+      }
+      // For memory conversations, parse sender from meta if available
+      if (memoryNode?.sender) {
+        return new Set([memoryNode.sender]);
+      }
+      return new Set<string>();
+    },
+    [messages, memoryNode],
   );
 
   return (
@@ -116,15 +160,19 @@ export default function ConversationLayout({
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-lg font-bold font-mono tracking-tight">
-            {conversationId}
+          <div className="text-lg font-bold tracking-tight truncate" title={conversationId}>
+            {title}
           </div>
           <div className="flex items-center gap-[var(--s2)] text-sm text-text-secondary mt-0.5">
-            <span>{messages.length} messages</span>
+            <span>{messageCount} messages</span>
             <span className="w-1 h-1 rounded-full bg-text-tertiary" />
-            <span>{tasks.length} tasks</span>
-            <span className="w-1 h-1 rounded-full bg-text-tertiary" />
-            <span>{agents.size} agents</span>
+            <span>{taskCount} tasks</span>
+            {agents.size > 0 && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-text-tertiary" />
+                <span>{agents.size} agents</span>
+              </>
+            )}
           </div>
         </div>
         <CopyButton text={conversationId} />

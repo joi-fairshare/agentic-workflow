@@ -107,9 +107,9 @@ export function NodeDetailPanel({
     return (
       <div
         style={{
-          width: 320,
+          flex: 1,
+          minHeight: 0,
           background: "#1A1A1C",
-          borderLeft: "1px solid rgba(255,255,255,0.08)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -148,9 +148,9 @@ export function NodeDetailPanel({
   return (
     <div
       style={{
-        width: 320,
+        flex: 1,
+        minHeight: 0,
         background: "#1A1A1C",
-        borderLeft: "1px solid rgba(255,255,255,0.08)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",

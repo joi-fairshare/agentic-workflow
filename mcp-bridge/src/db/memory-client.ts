@@ -120,8 +120,13 @@ export interface MemoryDbClient {
   getEmbedding(nodeId: string): Float32Array | undefined;
   searchKNN(query: Float32Array, limit: number, repo?: string, sender?: string): Array<{ node_id: string; distance: number }>;
 
+  // Conversations
+  getConversationNodes(repo: string, limit: number, offset: number): NodeRow[];
+  countConversationNodes(repo: string): number;
+
   // Stats
   getStats(repo: string): MemoryStats;
+  getDistinctRepos(): string[];
 
   // Traversal logs
   insertTraversalLog(input: InsertTraversalLogInput): TraversalLogRow;
@@ -207,11 +212,41 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
       LIMIT @limit
     `),
 
+    searchFTSAllRepos: db.prepare(`
+      SELECT nodes.*, rank
+      FROM nodes_fts
+      JOIN nodes ON nodes.rowid = nodes_fts.rowid
+      WHERE nodes_fts MATCH @query
+      ORDER BY rank
+      LIMIT @limit
+    `),
+
+    searchFTSAllReposBySender: db.prepare(`
+      SELECT nodes.*, rank
+      FROM nodes_fts
+      JOIN nodes ON nodes.rowid = nodes_fts.rowid
+      WHERE nodes_fts MATCH @query AND nodes.sender = @sender
+      ORDER BY rank
+      LIMIT @limit
+    `),
+
     getDistinctSenders: db.prepare(`
       SELECT DISTINCT sender FROM nodes
       WHERE repo = @repo AND sender IS NOT NULL
       ORDER BY sender ASC
     `),
+
+    getConversationNodes: db.prepare(
+      "SELECT * FROM nodes WHERE repo = @repo AND kind = 'conversation' ORDER BY created_at DESC LIMIT @limit OFFSET @offset"
+    ),
+
+    countConversationNodes: db.prepare(
+      "SELECT COUNT(*) as count FROM nodes WHERE repo = @repo AND kind = 'conversation'"
+    ),
+
+    getDistinctRepos: db.prepare(
+      "SELECT DISTINCT repo FROM nodes ORDER BY repo ASC"
+    ),
 
     nodeCount: db.prepare("SELECT COUNT(*) as count FROM nodes WHERE repo = @repo"),
     edgeCount: db.prepare("SELECT COUNT(*) as count FROM edges WHERE repo = @repo"),
@@ -345,6 +380,13 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
         .join(" ");
       if (!sanitized) return [];
       try {
+        if (!repo) {
+          // Empty repo → search across all repos
+          if (sender !== undefined) {
+            return stmts.searchFTSAllReposBySender.all({ query: sanitized, limit, sender }) as FTSResult[];
+          }
+          return stmts.searchFTSAllRepos.all({ query: sanitized, limit }) as FTSResult[];
+        }
         if (sender !== undefined) {
           return stmts.searchFTSBySender.all({ query: sanitized, repo, limit, sender }) as FTSResult[];
         }
@@ -359,6 +401,20 @@ export function createMemoryDbClient(db: Database.Database): MemoryDbClient {
     getDistinctSenders(repo) {
       const rows = stmts.getDistinctSenders.all({ repo }) as Array<{ sender: string }>;
       return rows.map((r) => r.sender);
+    },
+
+    getConversationNodes(repo, limit, offset) {
+      return stmts.getConversationNodes.all({ repo, limit, offset }) as NodeRow[];
+    },
+
+    countConversationNodes(repo) {
+      const row = stmts.countConversationNodes.get({ repo }) as { count: number };
+      return row.count;
+    },
+
+    getDistinctRepos() {
+      const rows = stmts.getDistinctRepos.all() as Array<{ repo: string }>;
+      return rows.map((r) => r.repo);
     },
 
     getStats(repo) {

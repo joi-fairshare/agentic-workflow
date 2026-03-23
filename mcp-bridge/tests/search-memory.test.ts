@@ -202,4 +202,19 @@ describe("searchMemory", () => {
       expect(r.kind).toBe("decision");
     }
   });
+
+  it("returns results when repo is empty string and nodes exist with repo='default'", async () => {
+    mdb.insertNode({ repo: "default", kind: "conversation", title: "Conversation abc123", body: "", meta: "{}", source_id: "abc123", source_type: "bridge-conversation" });
+
+    const result = await searchMemory(mdb, embedService, {
+      query: "abc123",
+      repo: "",
+      mode: "keyword",
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data[0].title).toContain("abc123");
+  });
 });

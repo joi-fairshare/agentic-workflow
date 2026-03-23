@@ -24,9 +24,13 @@ import type {
   ExpandNodeSchema,
   CreateLinkSchema,
   CreateNodeSchema,
+  GetNodeBySourceSchema,
   TraversalLogsQuerySchema,
   TraversalLogParamsSchema,
   SendersQuerySchema,
+  GetReposSchema,
+  ListConversationsSchema,
+  ListConversationsResponse,
   TraversalLogResponse,
   NodeResponse,
   EdgeResponse,
@@ -79,6 +83,16 @@ export function createMemoryController(
       const node = mdb.getNode(req.params.id);
       if (!node) {
         return appErr({ code: "NOT_FOUND", message: `Node ${req.params.id} not found`, statusHint: 404 });
+      }
+      return { ok: true, data: node };
+    },
+
+    async getNodeBySource(
+      req: ApiRequest<GetNodeBySourceSchema>,
+    ): Promise<ApiResponse<NodeResponse>> {
+      const node = mdb.getNodeBySource(req.params.source_type, req.params.source_id);
+      if (!node) {
+        return appErr({ code: "NOT_FOUND", message: `No node with source_type=${req.params.source_type} source_id=${req.params.source_id}`, statusHint: 404 });
       }
       return { ok: true, data: node };
     },
@@ -470,6 +484,35 @@ export function createMemoryController(
     ): Promise<ApiResponse<string[]>> {
       const senders = mdb.getDistinctSenders(req.query.repo);
       return { ok: true, data: senders };
+    },
+
+    async getRepos(): Promise<ApiResponse<string[]>> {
+      const repos = mdb.getDistinctRepos();
+      return { ok: true, data: repos };
+    },
+
+    async listConversations(
+      req: ApiRequest<ListConversationsSchema>,
+    ): Promise<ApiResponse<ListConversationsResponse>> {
+      const { repo, limit, offset } = req.query;
+      const nodes = mdb.getConversationNodes(repo, limit, offset);
+      const total = mdb.countConversationNodes(repo);
+
+      const conversations = nodes.map((n) => {
+        const childEdges = mdb.getEdgesFrom(n.id).filter((e) => e.kind === "contains");
+        return {
+          id: n.id,
+          title: n.title,
+          repo: n.repo,
+          source_type: n.source_type,
+          source_id: n.source_id,
+          message_count: childEdges.length,
+          created_at: n.created_at,
+          meta: n.meta,
+        };
+      });
+
+      return { ok: true, data: { conversations, total } };
     },
   };
 }

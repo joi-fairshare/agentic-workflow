@@ -6,10 +6,8 @@ export interface SessionJob {
 }
 
 export interface SessionQueueConfig {
-  maxSize: number;
   rateMs: number;
   handler: (job: SessionJob) => Promise<void>;
-  onDrop?: (job: SessionJob) => void;
   onError?: (err: Error, job: SessionJob) => void;
 }
 
@@ -20,7 +18,7 @@ export interface SessionQueue {
 }
 
 export function createSessionQueue(config: SessionQueueConfig): SessionQueue {
-  const { maxSize, rateMs, handler, onDrop, onError } = config;
+  const { rateMs, handler, onError } = config;
   const buffer: SessionJob[] = [];
   let stopped = false;
   let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -38,6 +36,11 @@ export function createSessionQueue(config: SessionQueueConfig): SessionQueue {
       })
       .finally(() => {
         processing = false;
+        // Stop the interval when the queue is drained
+        if (buffer.length === 0 && intervalId !== null) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
       });
   }
 
@@ -50,12 +53,6 @@ export function createSessionQueue(config: SessionQueueConfig): SessionQueue {
   return {
     enqueue(job) {
       if (stopped) return;
-
-      if (buffer.length >= maxSize) {
-        const dropped = buffer.shift()!;
-        onDrop?.(dropped);
-      }
-
       buffer.push(job);
       startInterval();
     },

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  searchMemory,
+  getMemoryNodeBySource,
   traverseMemory,
   getMemoryNode,
   getMemoryNodeEdges,
+  expandNode,
   type NodeResponse,
   type EdgeResponse,
 } from "@/lib/memory-api";
@@ -17,9 +18,9 @@ import { useGraphLayout } from "@/hooks/use-graph-layout";
 import { ConversationNodeList } from "./conversation-node-list";
 
 function getRepo(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined") return "default";
   const params = new URLSearchParams(window.location.search);
-  return params.get("repo") ?? "";
+  return params.get("repo") || "default";
 }
 
 function filterBySender(
@@ -73,6 +74,9 @@ export function ConversationGraphPage({
 
   // Highlighted context node IDs
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
+
+  // Right panel tab
+  const [rightTab, setRightTab] = useState<"detail" | "context">("detail");
 
   // Toolbar state
   const [depth, setDepth] = useState(2);
@@ -166,33 +170,24 @@ export function ConversationGraphPage({
     setRawNodes([]);
     setRawEdges([]);
 
-    // Search using the conversationId as query to find its memory node
-    searchMemory(conversationId, repo || "", "keyword", ["conversation"])
-      .then((results) => {
-        if (results.length > 0) {
-          const nodeId = results[0].node_id;
-          setRootNodeId(nodeId);
-          return doTraverse(nodeId);
-        } else {
-          // Fallback: try broader search without kind filter
-          return searchMemory(conversationId, repo || "", "keyword").then(
-            (allResults) => {
-              if (allResults.length > 0) {
-                const nodeId = allResults[0].node_id;
-                setRootNodeId(nodeId);
-                return doTraverse(nodeId);
-              } else {
-                setRootError(
-                  "No memory node found for this conversation. The conversation may not have been ingested yet.",
-                );
-              }
-            },
-          );
-        }
+    // Try to resolve the conversation node:
+    // 1. Direct node ID lookup (memory conversations pass the node UUID)
+    // 2. Bridge conversation source lookup (bridge conversations pass the conversation string)
+    getMemoryNode(conversationId)
+      .then((node) => {
+        setRootNodeId(node.id);
+        return doTraverse(node.id);
       })
+      .catch(() =>
+        getMemoryNodeBySource("bridge-conversation", conversationId)
+          .then((node) => {
+            setRootNodeId(node.id);
+            return doTraverse(node.id);
+          })
+      )
       .catch(() => {
         setRootError(
-          "Failed to search memory. Check that the bridge is running.",
+          "No memory node found for this conversation. The conversation may not have been ingested yet.",
         );
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,7 +243,8 @@ export function ConversationGraphPage({
     <div
       style={{
         display: "flex",
-        height: "calc(100vh - 220px)",
+        height: "calc(100vh - 360px)",
+        minHeight: 400,
         background: "#0D0D0F",
         overflow: "hidden",
         borderRadius: 8,
@@ -409,7 +405,7 @@ export function ConversationGraphPage({
         </div>
       </div>
 
-      {/* Right column — detail + context */}
+      {/* Right column — tabbed: detail / context */}
       <div
         style={{
           width: 320,
@@ -418,39 +414,67 @@ export function ConversationGraphPage({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          background: "#1A1A1C",
         }}
       >
-        {/* Node detail panel */}
+        {/* Tab bar */}
         <div
           style={{
-            flex: 1,
-            overflow: "hidden",
             display: "flex",
-            flexDirection: "column",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            flexShrink: 0,
           }}
         >
-          <NodeDetailPanel
-            node={selectedNode}
-            edges={selectedNodeEdges}
-            onExpandClick={(nodeId) => doTraverse(nodeId)}
-          />
+          {(["detail", "context"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setRightTab(tab)}
+              style={{
+                flex: 1,
+                padding: "10px 0",
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                cursor: "pointer",
+                background: "transparent",
+                border: "none",
+                borderBottom: rightTab === tab
+                  ? "2px solid #7C6AF5"
+                  : "2px solid transparent",
+                color: rightTab === tab
+                  ? "rgba(255,255,255,0.87)"
+                  : "rgba(255,255,255,0.38)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              {tab === "detail" ? "Node Detail" : "Context"}
+            </button>
+          ))}
         </div>
 
-        {/* Context builder panel */}
-        <div
-          style={{
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            maxHeight: "45%",
-          }}
-        >
-          <ContextBuilderPanel
-            repo={repo}
-            query={selectedNode?.title}
-            onHighlightNodes={setHighlightedNodeIds}
-          />
+        {/* Tab content — full height */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {rightTab === "detail" ? (
+            <NodeDetailPanel
+              node={selectedNode}
+              edges={selectedNodeEdges}
+              onExpandClick={async (nodeId) => {
+                try {
+                  await expandNode(nodeId);
+                } catch {
+                  // expand may fail if file not found — still re-traverse
+                }
+                if (rootNodeId) doTraverse(rootNodeId);
+              }}
+            />
+          ) : (
+            <ContextBuilderPanel
+              repo={repo}
+              query={selectedNode?.title}
+              onHighlightNodes={setHighlightedNodeIds}
+            />
+          )}
         </div>
       </div>
     </div>

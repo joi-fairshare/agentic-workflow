@@ -29,7 +29,7 @@ export function useGraphLayout(
     const layoutEdges = rawEdges.filter((e) => !CYCLE_EDGE_KINDS.has(e.kind));
 
     // Build dagre graph
-    const g = new Graph();
+    const g = new Graph({ multigraph: true });
     g.setGraph({
       rankdir: "TB",
       nodesep: 60,

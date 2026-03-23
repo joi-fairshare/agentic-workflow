@@ -190,8 +190,36 @@ export function createClaudeCodeWatcher(config: ClaudeCodeWatcherConfig): Claude
     async scanOnce() {
       const files = scanDirectory(watchDir);
 
+      // Sort by mtime newest-first so recent sessions are processed first
+      files.sort((a, b) => {
+        try {
+          return statSync(b).mtimeMs - statSync(a).mtimeMs;
+        } catch {
+          return 0;
+        }
+      });
+
+      let enqueued = 0;
+      let skippedExisting = 0;
+
       for (const filePath of files) {
-        enqueueIfNew(filePath, "summary");
+        const sessionId = sessionIdFromPath(filePath);
+        const existing = mdb.getNodeBySource("claude-code-session", sessionId);
+        if (existing) {
+          skippedExisting++;
+          continue;
+        }
+
+        const lines = readLines(filePath);
+        const repo = deriveRepo(filePath, lines);
+        queue.enqueue({ sessionId, filePath, repo, pass: "summary" });
+        enqueued++;
+      }
+
+      if (files.length > 0) {
+        console.log(
+          `[claude-code-watcher] Scanned ${files.length} sessions: ${enqueued} queued, ${skippedExisting} already ingested`,
+        );
       }
     },
   };

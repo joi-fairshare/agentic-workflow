@@ -1,6 +1,6 @@
 // mcp-bridge/tests/queue.test.ts
-import { describe, it, expect, vi } from "vitest";
-import { createBoundedQueue } from "../src/ingestion/queue.js";
+import { describe, it, expect } from "vitest";
+import { createAsyncQueue } from "../src/ingestion/queue.js";
 
 /**
  * Poll until the predicate returns true or the timeout (default 2000ms) expires.
@@ -16,11 +16,10 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<vo
   }
 }
 
-describe("createBoundedQueue", () => {
-  it("processes enqueued items", async () => {
+describe("createAsyncQueue", () => {
+  it("processes enqueued items in order", async () => {
     const processed: number[] = [];
-    const q = createBoundedQueue<number>({
-      maxSize: 10,
+    const q = createAsyncQueue<number>({
       handler: async (item) => { processed.push(item); },
     });
 
@@ -28,14 +27,12 @@ describe("createBoundedQueue", () => {
     q.enqueue(2);
     await waitUntil(() => processed.length >= 2);
 
-    expect(processed).toContain(1);
-    expect(processed).toContain(2);
+    expect(processed).toEqual([1, 2]);
     q.stop();
   });
 
   it("reports queue depth", () => {
-    const q = createBoundedQueue<number>({
-      maxSize: 10,
+    const q = createAsyncQueue<number>({
       handler: async () => { await new Promise((r) => setTimeout(r, 1000)); },
     });
 
@@ -45,33 +42,26 @@ describe("createBoundedQueue", () => {
     q.stop();
   });
 
-  it("drops oldest item when maxSize exceeded", async () => {
-    const dropped: number[] = [];
+  it("accepts all items without dropping", async () => {
     const processed: number[] = [];
-    const q = createBoundedQueue<number>({
-      maxSize: 2,
-      handler: async (item) => {
-        await new Promise((r) => setTimeout(r, 100));
-        processed.push(item);
-      },
-      onDrop: (item) => { dropped.push(item); },
+    const q = createAsyncQueue<number>({
+      handler: async (item) => { processed.push(item); },
     });
 
-    q.enqueue(1);
-    q.enqueue(2);
-    q.enqueue(3);
-    q.enqueue(4);
+    for (let i = 0; i < 1000; i++) {
+      q.enqueue(i);
+    }
 
-    await waitUntil(() => dropped.length > 0);
-
-    expect(dropped.length).toBeGreaterThan(0);
+    await waitUntil(() => processed.length >= 1000);
+    expect(processed).toHaveLength(1000);
+    expect(processed[0]).toBe(0);
+    expect(processed[999]).toBe(999);
     q.stop();
   });
 
   it("calls onError when handler throws", async () => {
     const errors: Error[] = [];
-    const q = createBoundedQueue<number>({
-      maxSize: 10,
+    const q = createAsyncQueue<number>({
       handler: async () => { throw new Error("boom"); },
       onError: (e) => { errors.push(e as Error); },
     });
@@ -86,8 +76,7 @@ describe("createBoundedQueue", () => {
 
   it("no-ops enqueue after stop", async () => {
     const processed: number[] = [];
-    const q = createBoundedQueue<number>({
-      maxSize: 10,
+    const q = createAsyncQueue<number>({
       handler: async (item) => { processed.push(item); },
     });
 
