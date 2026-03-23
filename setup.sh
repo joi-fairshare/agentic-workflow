@@ -228,14 +228,13 @@ done
 
 # Merge safety hooks into existing settings.json
 if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
-  # Add all three Bash hooks as a single consolidated PreToolUse entry (idempotent)
-  if ! jq -e '.hooks.PreToolUse[]? | select(.matcher == "Bash" and (.hooks | map(.command) | contains(["~/.claude/hooks/block-destructive.sh"])))' "$SETTINGS_FILE" &>/dev/null; then
-    HOOK_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"}]}'
-    jq --argjson entry "$HOOK_ENTRY" '.hooks.PreToolUse += [$entry]' \
-      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    echo "  hooks.PreToolUse: all Bash safety hooks added"
-  fi
+  # Replace any existing Bash matcher entry with the canonical one (fully idempotent, handles version drift)
+  HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"}]}'
+  jq --argjson entry "$HOOK_BASH_ENTRY" \
+    '.hooks.PreToolUse = ([.hooks.PreToolUse[]? | select(.matcher != "Bash")] + [$entry])' \
+    "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+    && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+  echo "  hooks.PreToolUse: Bash safety hooks installed (idempotent replace)"
 
   # Add git-context SessionStart hook if not already present
   if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("git-context"))' "$SETTINGS_FILE" &>/dev/null; then
