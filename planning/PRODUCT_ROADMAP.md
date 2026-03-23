@@ -42,7 +42,7 @@ Expand from 5 to 14 skills covering the entire development lifecycle, add a cent
 | `/bugHunt` | QA | Fix-and-verify loop with 3 tiers, atomic commits, regression tests |
 | `/bugReport` | QA | Read-only health audit with weighted health scores |
 | `/shipRelease` | Release | Sync, test, coverage audit, push, open PR, auto-invoke /syncDocs |
-| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md |
+| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/ |
 | `/weeklyRetro` | Retrospective | Per-person breakdowns, shipping streaks, test health, insights |
 | `/officeHours` | Planning | YC-style brainstorming with 6 forcing questions → design doc |
 | `/productReview` | Planning | Founder/product lens review with 4 modes (mvp/growth/scale/pivot) |
@@ -66,7 +66,7 @@ Every skill includes a shared preamble that lists all 14 skills, points to the c
 
 - `setup.sh` — symlinks all 14 skills, creates `~/.agentic-workflow/` base directory
 - `/bootstrap` — references full 14-skill inventory, suggests pipeline skills as next steps
-- `CLAUDE.md` — documents all 14 skills, centralized output pattern, skill pipeline flow
+- `CLAUDE.md` + `.claude/rules/` — trimmed CLAUDE.md (navigation only) + glob-scoped rule files for domain-specific guidance
 - `ARCHITECTURE.md` — updated directory tree, mermaid diagram, component descriptions, key rules
 
 ### Success Criteria
@@ -79,7 +79,7 @@ Every skill includes a shared preamble that lists all 14 skills, points to the c
 - [x] Verbose camelCase naming throughout
 - [x] `setup.sh` updated with all new skill symlinks and output directory creation
 - [x] `/bootstrap` references full 14-skill inventory
-- [x] `CLAUDE.md` reflects complete architecture with all skills and output directory
+- [x] `CLAUDE.md` + `.claude/rules/` reflect complete architecture with all skills and output directory
 - [x] `ARCHITECTURE.md` has updated directory tree, mermaid diagram, and key rules
 
 ### Timeline

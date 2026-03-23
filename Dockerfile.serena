@@ -1,0 +1,14 @@
+# Serena base image — TypeScript + Python language servers
+# Base: python:3.11-slim (Debian trixie/13) + Node.js 22 + uv + rust-analyzer
+# C# repos use Dockerfile.serena-csharp (extends this image)
+ARG BASE_TAG=latest
+FROM ghcr.io/oraios/serena:${BASE_TAG}
+
+# --- TypeScript / JavaScript LSP ---
+# Node.js 22 is already in PATH via nvm (/root/.nvm/versions/node/v22.18.0/bin/)
+RUN npm install -g typescript-language-server typescript \
+    && uv tool install pyright
+
+# --- Verify both LSPs are on PATH ---
+RUN typescript-language-server --version \
+    && (pyright-langserver --version 2>/dev/null || pyright --version)
