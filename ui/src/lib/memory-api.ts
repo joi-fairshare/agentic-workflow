@@ -31,6 +31,7 @@ export interface NodeResponse {
   source_type: string;
   created_at: string;
   updated_at: string;
+  sender?: string;
 }
 
 export interface EdgeResponse {
@@ -56,6 +57,7 @@ export interface ContextSection {
   content: string;
   relevance: number;
   token_estimate: number;
+  node_ids: string[];
 }
 
 export interface ContextResponse {
@@ -83,6 +85,10 @@ export async function searchMemory(
 
 export async function getMemoryNode(id: string): Promise<NodeResponse> {
   return get<NodeResponse>(`/memory/node/${encodeURIComponent(id)}`);
+}
+
+export async function getMemoryNodeBySource(sourceType: string, sourceId: string): Promise<NodeResponse> {
+  return get<NodeResponse>(`/memory/node/by-source/${encodeURIComponent(sourceType)}/${encodeURIComponent(sourceId)}`);
 }
 
 export async function getMemoryNodeEdges(id: string): Promise<EdgeResponse[]> {
@@ -121,4 +127,79 @@ export async function getMemoryContext(
 
 export async function getMemoryStats(repo: string): Promise<StatsResponse> {
   return get<StatsResponse>(`/memory/stats?repo=${encodeURIComponent(repo)}`);
+}
+
+export async function getRepos(): Promise<string[]> {
+  return get<string[]>("/memory/repos");
+}
+
+export interface MemoryConversation {
+  id: string;
+  title: string;
+  repo: string;
+  source_type: string;
+  source_id: string;
+  message_count: number;
+  created_at: string;
+  meta: string;
+}
+
+export async function fetchMemoryConversations(
+  repo: string,
+  limit = 20,
+  offset = 0,
+): Promise<{ conversations: MemoryConversation[]; total: number }> {
+  const params = new URLSearchParams({
+    repo,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return get<{ conversations: MemoryConversation[]; total: number }>(
+    `/memory/conversations?${params.toString()}`,
+  );
+}
+
+export interface TraversalLog {
+  id: string;
+  repo: string;
+  agent: string;
+  operation: string;
+  start_node: string | null;
+  params: Record<string, unknown>;
+  steps: Array<{
+    node_id: string;
+    parent_id: string | null;
+    edge_id: string | null;
+    edge_kind: string | null;
+  }>;
+  created_at: string;
+}
+
+export interface ExpandResult {
+  nodes_created: number;
+  edges_created: number;
+  nodes: NodeResponse[];
+  edges: EdgeResponse[];
+}
+
+export async function getTraversalLogs(repo: string, limit = 20): Promise<TraversalLog[]> {
+  const params = new URLSearchParams({ repo, limit: String(limit) });
+  return get<TraversalLog[]>(`/memory/traversals?${params.toString()}`);
+}
+
+export async function getTraversalLog(id: string): Promise<TraversalLog> {
+  return get<TraversalLog>(`/memory/traversals/${encodeURIComponent(id)}`);
+}
+
+export async function expandNode(id: string): Promise<ExpandResult> {
+  const res = await fetch(`${API_BASE}/memory/node/${encodeURIComponent(id)}/expand`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  const json = await res.json();
+  if (json && typeof json === "object" && "ok" in json) {
+    if (!json.ok) throw new Error(json.error?.message ?? "Unknown error");
+    return json.data as ExpandResult;
+  }
+  return json as ExpandResult;
 }

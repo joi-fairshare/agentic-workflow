@@ -5,18 +5,27 @@ import { ok, err } from "../result.js";
 
 // ── Types ────────────────────────────────────────────────────
 
+export interface BFSStep {
+  node_id: string;
+  parent_id: string | null;
+  edge_id: string | null;
+  edge_kind: string | null;
+}
+
 export interface TraverseInput {
   node_id: string;
   direction?: "outgoing" | "incoming" | "both";
   edge_kinds?: string[];
   max_depth?: number;
   max_nodes?: number;
+  sender?: string;
 }
 
 export interface TraverseResult {
   nodes: NodeRow[];
   edges: EdgeRow[];
   root: string;
+  steps: BFSStep[];
 }
 
 // ── Service ──────────────────────────────────────────────────
@@ -31,6 +40,7 @@ export function traverseMemory(
     edge_kinds,
     max_depth = 3,
     max_nodes = 50,
+    sender,
   } = input;
 
   const root = mdb.getNode(node_id);
@@ -40,6 +50,7 @@ export function traverseMemory(
   const visited = new Set<string>([node_id]);
   const collectedNodes: NodeRow[] = [root];
   const collectedEdges: EdgeRow[] = [];
+  const steps: BFSStep[] = [{ node_id, parent_id: null, edge_id: null, edge_kind: null }];
 
   // BFS queue: [nodeId, depth].
   // Array.shift() is O(n) per dequeue; at the current max_nodes=50 bound the
@@ -75,9 +86,17 @@ export function traverseMemory(
       /* v8 ignore next */
       if (!neighborNode) continue;
 
+      // Apply sender filter: skip non-root nodes whose sender doesn't match.
+      // Nodes with sender=null (structural nodes like conversations) are always included.
+      if (sender !== undefined && neighborNode.sender !== null && neighborNode.sender !== sender) {
+        visited.add(neighborId);
+        continue;
+      }
+
       visited.add(neighborId);
       collectedNodes.push(neighborNode);
       collectedEdges.push(edge);
+      steps.push({ node_id: neighborId, parent_id: currentId, edge_id: edge.id, edge_kind: edge.kind });
 
       if (collectedNodes.length >= max_nodes) break;
 
@@ -89,5 +108,6 @@ export function traverseMemory(
     nodes: collectedNodes,
     edges: collectedEdges,
     root: node_id,
+    steps,
   });
 }

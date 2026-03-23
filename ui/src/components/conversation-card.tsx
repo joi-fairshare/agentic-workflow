@@ -3,11 +3,13 @@ import type { ConversationSummary } from "@/lib/types";
 
 interface ConversationCardProps {
   conversation: ConversationSummary;
+  title?: string;
 }
 
-export function ConversationCard({ conversation: conv }: ConversationCardProps) {
+export function ConversationCard({ conversation: conv, title }: ConversationCardProps) {
   const time = new Date(conv.last_activity);
   const relative = formatRelativeTime(time);
+  const displayTitle = title ?? `${conv.conversation.slice(0, 8)}...${conv.conversation.slice(-4)}`;
 
   return (
     <Link
@@ -24,8 +26,8 @@ export function ConversationCard({ conversation: conv }: ConversationCardProps) 
       {/* Body */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-[var(--s2)]">
-          <span className="font-mono text-sm font-medium text-text-primary truncate">
-            {conv.conversation.slice(0, 8)}...{conv.conversation.slice(-4)}
+          <span className="text-sm font-medium text-text-primary truncate">
+            {displayTitle}
           </span>
         </div>
         <div className="text-xs text-text-secondary mt-0.5 truncate sm:hidden">

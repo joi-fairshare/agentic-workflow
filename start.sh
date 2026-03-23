@@ -5,11 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE_DIR="$SCRIPT_DIR/mcp-bridge"
 UI_DIR="$SCRIPT_DIR/ui"
 
-# Ensure bridge is built
-if [ ! -f "$BRIDGE_DIR/dist/index.js" ]; then
-  echo "Building MCP bridge..."
-  (cd "$BRIDGE_DIR" && npm run build)
-fi
+# Always rebuild bridge to pick up code changes
+echo "Building MCP bridge..."
+(cd "$BRIDGE_DIR" && npm run build)
 
 cleanup() {
   echo ""

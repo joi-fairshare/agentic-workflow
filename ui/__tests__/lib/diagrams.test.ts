@@ -78,6 +78,30 @@ describe("buildSequenceDiagram", () => {
     expect(result).toContain("say 'hello'");
   });
 
+  it("escapes colons in payload to prevent Mermaid parse errors", () => {
+    const result = buildSequenceDiagram([
+      makeMessage({ payload: "Architecture: Hybrid search is solid" }),
+    ]);
+    expect(result).not.toContain("Architecture:");
+    expect(result).toContain("Architecture'");
+  });
+
+  it("escapes semicolons and angle brackets in payload", () => {
+    const result = buildSequenceDiagram([
+      makeMessage({ payload: "if (x < 10) { foo; }" }),
+    ]);
+    expect(result).not.toContain(";");
+    expect(result).not.toContain("<");
+    expect(result).not.toContain("{");
+  });
+
+  it("replaces newlines with spaces in payload", () => {
+    const result = buildSequenceDiagram([
+      makeMessage({ payload: "line one\nline two" }),
+    ]);
+    expect(result).toContain("line one line two");
+  });
+
   it("declares each participant only once", () => {
     const msgs = [
       makeMessage({ sender: "alice", recipient: "bob" }),

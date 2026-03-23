@@ -56,6 +56,17 @@ describe("searchMemory", () => {
     expect(result.data[0].kind).toBe("decision");
   });
 
+  it("filters search results by sender when provided", async () => {
+    mdb.insertNode({ repo: "r", kind: "message", title: "hello from human", body: "", meta: "{}", source_id: "1", source_type: "t", sender: "human" });
+    mdb.insertNode({ repo: "r", kind: "message", title: "hello from assistant", body: "", meta: "{}", source_id: "2", source_type: "t", sender: "assistant" });
+
+    const result = await searchMemory(mdb, embedService, { query: "hello", repo: "r", mode: "keyword", limit: 10, sender: "human" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].title).toContain("human");
+  });
+
   it("falls back to keyword-only when embedding call fails in hybrid mode", async () => {
     const failEmbed = createEmbeddingService({
       embedFn: async () => { throw new Error("model crash"); },
@@ -190,5 +201,20 @@ describe("searchMemory", () => {
     for (const r of result.data) {
       expect(r.kind).toBe("decision");
     }
+  });
+
+  it("returns results when repo is empty string and nodes exist with repo='default'", async () => {
+    mdb.insertNode({ repo: "default", kind: "conversation", title: "Conversation abc123", body: "", meta: "{}", source_id: "abc123", source_type: "bridge-conversation" });
+
+    const result = await searchMemory(mdb, embedService, {
+      query: "abc123",
+      repo: "",
+      mode: "keyword",
+      limit: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.data[0].title).toContain("abc123");
   });
 });

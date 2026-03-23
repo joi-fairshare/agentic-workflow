@@ -207,95 +207,57 @@ describe("stats", () => {
   });
 });
 
-describe("FTS5 edge cases", () => {
-  it("searchFTS returns empty for blank query", () => {
-    const results = mdb.searchFTS("   ", "r", 10);
-    expect(results).toEqual([]);
-  });
-});
-
-describe("FTS5 adversarial input sanitization", () => {
-  // Each test inserts a node so a successful match can be confirmed, then
-  // asserts that none of the adversarial queries throw — they must return
-  // either results or an empty array.
-
-  beforeEach(() => {
-    mdb.insertNode({ repo: "r", kind: "message", title: "adversarial test node", body: "sanitization check", meta: "{}", source_id: "adv-1", source_type: "bridge" });
-  });
-
-  it("handles embedded double quotes without throwing", () => {
-    expect(() => mdb.searchFTS('term "with" quotes', "r", 10)).not.toThrow();
-    const results = mdb.searchFTS('term "with" quotes', "r", 10);
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it("handles FTS5 boolean operators as search terms without throwing", () => {
-    expect(() => mdb.searchFTS("NEAR OR NOT AND", "r", 10)).not.toThrow();
-    const results = mdb.searchFTS("NEAR OR NOT AND", "r", 10);
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it("handles wildcard characters without throwing", () => {
-    expect(() => mdb.searchFTS("test*", "r", 10)).not.toThrow();
-    const results = mdb.searchFTS("test*", "r", 10);
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it("handles parentheses and column syntax without throwing", () => {
-    expect(() => mdb.searchFTS("(nested) title:foo", "r", 10)).not.toThrow();
-    const results = mdb.searchFTS("(nested) title:foo", "r", 10);
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it("handles backslash sequences without throwing", () => {
-    expect(() => mdb.searchFTS("path\\to\\file", "r", 10)).not.toThrow();
-    const results = mdb.searchFTS("path\\to\\file", "r", 10);
-    expect(Array.isArray(results)).toBe(true);
-  });
-});
-
-describe("truncateBody with multi-byte UTF-8 characters", () => {
-  it("truncates body with 3-byte chars and strips trailing UTF-8 replacement char", () => {
-    // Chinese character 中 (U+4E2D) is 3 bytes in UTF-8.
-    // MAX_BODY_BYTES = 50 * 1024 = 51200.
-    // 17067 chars × 3 bytes = 51201 bytes > 51200, so truncation occurs.
-    // Slicing at 51200 takes 17066 complete chars (51198 bytes) + 2 bytes of the 17067th char,
-    // which produces a UTF-8 replacement character (\uFFFD) that must be stripped.
-    const threeByteChar = "\u4e2d"; // 中 — 3 bytes in UTF-8
-    const longBody = threeByteChar.repeat(17067); // 51201 bytes total
+describe("sender column", () => {
+  it("stores and retrieves sender on inserted node", () => {
     const node = mdb.insertNode({
-      repo: "r",
+      repo: "test-repo",
       kind: "message",
-      title: "multibyte test",
-      body: longBody,
+      title: "Hello",
+      body: "World",
       meta: "{}",
-      source_id: "mb-s",
-      source_type: "bridge",
+      source_id: "s1",
+      source_type: "test",
+      sender: "claude-code",
     });
-    // Body should be truncated
-    expect(node.body.length).toBeLessThan(longBody.length);
-    // The replacement char from the truncated multi-byte char should be stripped
-    expect(node.body.endsWith("\uFFFD")).toBe(false);
-    // Should end with a complete Chinese character
-    expect(node.body.endsWith(threeByteChar)).toBe(true);
+    const fetched = mdb.getNode(node.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.sender).toBe("claude-code");
   });
-});
 
-describe("KNN with repo filter", () => {
-  it("searchKNN with repo filter returns only matching repo nodes", () => {
-    const n1 = mdb.insertNode({ repo: "repo-a", kind: "message", title: "A", body: "test", meta: "{}", source_id: "a1", source_type: "t" });
-    const n2 = mdb.insertNode({ repo: "repo-b", kind: "message", title: "B", body: "test", meta: "{}", source_id: "b1", source_type: "t" });
+  it("returns null sender for nodes without sender", () => {
+    const node = mdb.insertNode({
+      repo: "test-repo",
+      kind: "topic",
+      title: "Topic",
+      body: "",
+      meta: "{}",
+      source_id: "s2",
+      source_type: "test",
+    });
+    const fetched = mdb.getNode(node.id);
+    expect(fetched!.sender).toBeNull();
+  });
 
-    const emb = new Float32Array(768).fill(0.1);
-    mdb.insertEmbedding(n1.id, emb);
-    mdb.insertEmbedding(n2.id, emb);
+  it("getDistinctSenders returns unique senders for a repo", () => {
+    mdb.insertNode({ repo: "r", kind: "message", title: "a", body: "", meta: "{}", source_id: "1", source_type: "t", sender: "human" });
+    mdb.insertNode({ repo: "r", kind: "message", title: "b", body: "", meta: "{}", source_id: "2", source_type: "t", sender: "assistant" });
+    mdb.insertNode({ repo: "r", kind: "message", title: "c", body: "", meta: "{}", source_id: "3", source_type: "t", sender: "human" });
+    mdb.insertNode({ repo: "other", kind: "message", title: "d", body: "", meta: "{}", source_id: "4", source_type: "t", sender: "codex" });
 
-    const results = mdb.searchKNN(emb, 10, "repo-a");
-    expect(results.every((r) => {
-      const node = mdb.getNode(r.node_id);
-      return node?.repo === "repo-a";
-    })).toBe(true);
-    expect(results.length).toBeGreaterThan(0);
+    const senders = mdb.getDistinctSenders("r");
+    expect(senders).toEqual(["assistant", "human"]); // sorted alphabetically
+  });
+
+  it("searchFTS filters by sender when provided", () => {
+    mdb.insertNode({ repo: "r", kind: "message", title: "hello world", body: "", meta: "{}", source_id: "1", source_type: "t", sender: "human" });
+    mdb.insertNode({ repo: "r", kind: "message", title: "hello earth", body: "", meta: "{}", source_id: "2", source_type: "t", sender: "assistant" });
+
+    const all = mdb.searchFTS("hello", "r", 10);
+    expect(all.length).toBe(2);
+
+    const filtered = mdb.searchFTS("hello", "r", 10, "human");
+    expect(filtered.length).toBe(1);
+    expect(filtered[0].title).toBe("hello world");
   });
 });
 

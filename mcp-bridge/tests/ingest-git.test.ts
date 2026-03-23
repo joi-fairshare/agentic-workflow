@@ -71,10 +71,12 @@ describe("ingestGitMetadata", () => {
     expect(commit1).toBeDefined();
     expect(commit1!.kind).toBe("artifact");
     expect(commit1!.title).toContain("feat: add login");
+    expect(commit1!.sender).toBe("Alice");
 
     const commit2 = mdb.getNodeBySource("git", "def5678");
     expect(commit2).toBeDefined();
     expect(commit2!.kind).toBe("artifact");
+    expect(commit2!.sender).toBe("Bob");
   });
 
   it("creates references edges when a message body contains a commit SHA", async () => {

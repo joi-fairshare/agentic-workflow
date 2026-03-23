@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk } from "next/font/google";
 import Link from "next/link";
+import { NavHeader } from "@/components/nav-header";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <span className="text-lg font-semibold tracking-tight">Bridge UI</span>
           </Link>
+          <NavHeader />
           <div className="flex items-center gap-[var(--s2)]">
             <div className="w-2 h-2 rounded-full bg-reply shadow-[0_0_8px_var(--color-reply-border)]" />
             <span className="text-xs font-medium tracking-wide text-text-secondary">Connected to :3100</span>

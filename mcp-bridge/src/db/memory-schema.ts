@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS nodes (
   meta         TEXT NOT NULL DEFAULT '{}',
   source_id    TEXT NOT NULL,
   source_type  TEXT NOT NULL,
+  sender       TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_repo      ON nodes(repo);
-CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo, kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo        ON nodes(repo);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind   ON nodes(repo, kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_repo_sender ON nodes(repo, sender);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_source ON nodes(source_type, source_id);
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -97,6 +99,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS node_embeddings USING vec0(
   node_id TEXT PRIMARY KEY,
   embedding float[768]
 );
+
+CREATE TABLE IF NOT EXISTS traversal_logs (
+  id TEXT PRIMARY KEY,
+  repo TEXT NOT NULL,
+  agent TEXT NOT NULL DEFAULT 'anonymous',
+  operation TEXT NOT NULL CHECK(operation IN ('traverse', 'context')),
+  start_node TEXT,
+  params TEXT NOT NULL,
+  steps TEXT NOT NULL,
+  scores TEXT,
+  token_allocation TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (start_node) REFERENCES nodes(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_traversal_logs_repo_created ON traversal_logs(repo, created_at DESC);
 `;
 
 // ── Factory ──────────────────────────────────────────────────────────

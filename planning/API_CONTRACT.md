@@ -600,3 +600,899 @@ On error (task not found), returns an error text block: `"Error [NOT_FOUND]: Tas
 ### Side Effects
 
 Same as `POST /tasks/report` -- inserts a status message and optionally updates the referenced task in a transaction.
+
+---
+
+## Memory Endpoints
+
+All memory endpoints operate against a separate SQLite database (`memory.db`). They share the same `{ ok, data }` / `{ ok, error }` envelope as the bridge endpoints.
+
+### Schema Types
+
+**Node kinds:** `message`, `conversation`, `topic`, `decision`, `artifact`, `task`
+
+**Edge kinds:** `contains`, `spawned`, `assigned_in`, `reply_to`, `led_to`, `discussed_in`, `decided_in`, `implemented_by`, `references`, `related_to`
+
+**NodeResponse** (returned by all node-fetching endpoints):
+
+```jsonc
+{
+  "id": "uuid",
+  "repo": "string",                           // Repository slug
+  "kind": "message|conversation|topic|...",
+  "title": "string",
+  "body": "string",
+  "meta": "{}",                               // JSON string with source-specific metadata
+  "source_id": "string",
+  "source_type": "string",
+  "sender": "string|null",                    // Originating agent identifier, if known
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601"
+}
+```
+
+**EdgeResponse** (returned by all edge-fetching endpoints):
+
+```jsonc
+{
+  "id": "uuid",
+  "repo": "string",
+  "from_node": "uuid",
+  "to_node": "uuid",
+  "kind": "contains|related_to|...",
+  "weight": 1.0,
+  "meta": "{}",                               // JSON string (may include a note field)
+  "auto": 0,                                  // 1 = auto-created, 0 = manual
+  "created_at": "ISO-8601"
+}
+```
+
+---
+
+## GET /memory/search
+
+Search memory nodes by query string using keyword, semantic, or hybrid mode.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `query` | string | Yes | -- | Search query text |
+| `repo` | string | Yes | -- | Repository slug to scope the search |
+| `mode` | string | No | One of: `"semantic"`, `"keyword"`, `"hybrid"` (default `"hybrid"`) | Search algorithm |
+| `kinds` | string | No | Comma-separated node kinds | Filter results to specific node kinds |
+| `limit` | number | No | Integer, min 1, max 100, default 20 | Maximum number of results to return |
+| `sender` | string | No | -- | Filter results to nodes from a specific sender |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": [
+    {
+      "node_id": "uuid",
+      "kind": "message|conversation|topic|...",
+      "title": "string",
+      "body": "string",
+      "score": 0.87,
+      "match_type": "keyword|semantic|hybrid"
+    }
+    // ... ordered by descending score
+  ]
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameters failed Zod validation |
+| 503 | `EMBEDDING_NOT_READY` | Semantic or hybrid mode requested but embedding model has not yet initialised. Retry or use `mode=keyword`. |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/node/:id
+
+Get a single memory node by its ID.
+
+### Request
+
+**Path Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `id` | string | Yes | -- | Node identifier |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "id": "uuid",
+    "repo": "string",
+    "kind": "message|conversation|topic|decision|artifact|task",
+    "title": "string",
+    "body": "string",
+    "meta": "{}",
+    "source_id": "string",
+    "source_type": "string",
+    "sender": "string|null",
+    "created_at": "ISO-8601",
+    "updated_at": "ISO-8601"
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 404 | `NOT_FOUND` | No node exists with the given ID. Message: `"Node <id> not found"` |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/node/:id/edges
+
+Get all edges connected to a memory node (both outgoing and incoming), deduplicated by edge ID.
+
+### Request
+
+**Path Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `id` | string | Yes | -- | Node identifier |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "uuid",
+      "repo": "string",
+      "from_node": "uuid",
+      "to_node": "uuid",
+      "kind": "contains|related_to|...",
+      "weight": 1.0,
+      "meta": "{}",
+      "auto": 1,
+      "created_at": "ISO-8601"
+    }
+    // ... includes both edges where this node is source and edges where it is target
+  ]
+}
+```
+
+Returns an empty array if no edges exist for the node.
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/traverse/:id
+
+BFS-traverse the memory graph starting from a given node, returning all reachable nodes and edges within depth and size limits. Also records a traversal log entry.
+
+### Request
+
+**Path Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `id` | string | Yes | -- | Starting node identifier |
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `direction` | string | No | One of: `"outgoing"`, `"incoming"`, `"both"` (default `"both"`) | Edge traversal direction |
+| `edge_kinds` | string | No | Comma-separated edge kinds | Restrict traversal to specific edge kinds |
+| `max_depth` | number | No | Integer, min 1, max 10, default 3 | Maximum BFS depth |
+| `max_nodes` | number | No | Integer, min 1, max 200, default 50 | Maximum nodes to return |
+| `agent` | string | No | Max 64 chars, alphanumeric + `_-`, default `"anonymous"` | Agent identifier for traversal log |
+| `sender` | string | No | -- | Filter traversed nodes to a specific sender |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "root": "uuid",                // Starting node ID
+    "nodes": [ /* NodeResponse[] */ ],
+    "edges": [ /* EdgeResponse[] */ ]
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameters failed Zod validation |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+- Inserts one row into the `traversal_logs` table recording the operation, agent, start node, parameters, and the ordered list of steps visited. Log failure is non-fatal and does not affect the response.
+
+---
+
+## GET /memory/context
+
+Assemble token-budgeted context from memory for a query or starting node. Sections are ordered by relevance and capped to the specified token budget. Also records a context traversal log entry.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `query` | string | No | -- | Search query to find relevant context |
+| `node_id` | string | No | -- | Specific node to anchor context assembly |
+| `repo` | string | Yes | -- | Repository slug |
+| `max_tokens` | number | No | Integer, min 1, max 32000, default 8000 | Token budget for the assembled context |
+| `agent` | string | No | Max 64 chars, alphanumeric + `_-`, default `"anonymous"` | Agent identifier for traversal log |
+
+At least one of `query` or `node_id` should be provided for meaningful results.
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "summary": "string",           // Brief summary of the assembled context
+    "token_estimate": 1234,        // Total estimated token count across all sections
+    "sections": [
+      {
+        "heading": "string",
+        "content": "string",
+        "token_estimate": 256,     // Estimated tokens for this section
+        "relevance": 0.91,         // Relevance score (higher is more relevant)
+        "node_ids": ["uuid", ...]  // IDs of the nodes contributing to this section
+      }
+      // ... ordered by relevance DESC, capped by max_tokens
+    ]
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameters failed Zod validation |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+- Inserts one row into the `traversal_logs` table recording the operation, agent, parameters, and each node included in the assembled context. Log failure is non-fatal and does not affect the response.
+
+---
+
+## GET /memory/topics
+
+Get all topic nodes for a repository.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": [
+    /* NodeResponse[] — all nodes with kind = "topic" for the given repo */
+  ]
+}
+```
+
+Returns an empty array if no topic nodes exist for the repo.
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameter `repo` is missing |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/stats
+
+Get node and edge counts for a repository.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "node_count": 142,
+    "edge_count": 317
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameter `repo` is missing |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## POST /memory/ingest
+
+Ingest a conversation or document into the memory graph. Supports three source formats: `generic` (inline JSON), `transcript` (JSONL file), and `claude-code` (Claude Code JSONL summary file). The `bridge` and `git` sources are not supported via REST.
+
+### Request
+
+**Body** (JSON):
+
+| Field | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+| `source` | string | Yes | One of: `"generic"`, `"transcript"`, `"claude-code"` | Ingestion source format (`bridge` and `git` are rejected) |
+| `session_id` | string | No | -- | Session identifier for idempotency. Required for all supported sources. |
+| `title` | string | No | -- | Human-readable session title (falls back to `session_id`) |
+| `path` | string | No | -- | Absolute file path. Required for `transcript` and `claude-code` sources. |
+| `content` | string | No | -- | Inline JSON array of messages. Required for `generic` source. |
+| `agent` | string | No | Max 64 chars, alphanumeric + `_-`, default `"anonymous"` | Agent identifier |
+
+**Source-specific requirements:**
+
+- `generic`: `session_id` and `content` are required. `content` must be a valid JSON array of `{ role, content, timestamp? }` objects.
+- `transcript`: `session_id` and `path` are required. File must be a JSONL Claude transcript.
+- `claude-code`: `session_id` and `path` are required. File must be a JSONL Claude Code summary file.
+
+### Response (201)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "conversation_id": "string",   // Session ID echoed back
+    "messages_ingested": 48,
+    "edges_created": 51,
+    "skipped": 2                   // Messages skipped (e.g. duplicates or filtered)
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Request body failed Zod validation, or required source-specific fields are missing |
+| 400 | `VALIDATION` | `content` is not a valid JSON array (generic source) |
+| 400 | `UNSUPPORTED_SOURCE` | `source` is `"bridge"` or `"git"`, which are not supported via REST |
+| 400 | `IO_ERROR` | File at `path` could not be read |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+- Inserts node rows (conversation, message, and optionally topic/decision nodes) into `memory.db`.
+- Inserts edge rows linking nodes together.
+- Updates `ingestion_cursors` rows to track progress for idempotency on re-runs.
+- Secret filter is applied to all content before storage.
+
+---
+
+## POST /memory/node/:id/expand
+
+Expand a summary-only Claude Code turn node into full detail nodes by re-reading its source file. The turn node's metadata must contain a `file_path`, or the file path must be discoverable via a `contains` edge to a parent conversation node.
+
+### Request
+
+**Path Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `id` | string | Yes | -- | Turn node identifier to expand |
+
+No request body.
+
+### Response (201)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "nodes_created": 5,
+    "edges_created": 5,
+    "nodes": [ /* NodeResponse[] — the newly created child nodes */ ],
+    "edges": [ /* EdgeResponse[] — edges from this turn node to the child nodes */ ]
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 404 | `NOT_FOUND` | No node exists with the given ID. Message: `"Node <id> not found"` |
+| 400 | `VALIDATION` | Node metadata does not contain a resolvable `file_path` |
+| 400 | `IO_ERROR` | File at the resolved path could not be read |
+| 500 | `INTERNAL_ERROR` | Node metadata JSON could not be parsed |
+
+### Side Effects
+
+- Inserts new child node rows into `memory.db`.
+- Inserts `contains` edge rows from the turn node to each new child node.
+- Secret filter is applied to all content before storage.
+
+---
+
+## POST /memory/link
+
+Create a manual edge between two existing memory nodes. Both nodes must exist and belong to the same repo (the repo is derived from the source node).
+
+### Request
+
+**Body** (JSON):
+
+| Field | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `from_node` | string | Yes | -- | Source node ID |
+| `to_node` | string | Yes | -- | Target node ID |
+| `kind` | string | Yes | One of the edge kinds: `contains`, `spawned`, `assigned_in`, `reply_to`, `led_to`, `discussed_in`, `decided_in`, `implemented_by`, `references`, `related_to` | Edge kind |
+| `note` | string | No | -- | Optional human-readable note stored in edge metadata |
+
+### Response (201)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "id": "uuid",
+    "repo": "string",
+    "from_node": "uuid",
+    "to_node": "uuid",
+    "kind": "related_to",
+    "weight": 1.0,
+    "meta": "{}",                  // Contains { "note": "..." } if note was provided
+    "auto": 0,                     // Always 0 (manual edge)
+    "created_at": "ISO-8601"
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Request body failed Zod validation |
+| 404 | `NOT_FOUND` | Source or target node does not exist. Message: `"Node <id> not found"` |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+- Inserts one row into the `edges` table with `auto = 0`.
+- The insert is wrapped in a SQLite transaction.
+- Secret filter is applied to the `note` field before storage.
+
+---
+
+## POST /memory/node
+
+Create a new `topic` or `decision` node and optionally link it to an existing node.
+
+### Request
+
+**Body** (JSON):
+
+| Field | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+| `kind` | string | Yes | One of: `"topic"`, `"decision"` | Node kind |
+| `title` | string | Yes | -- | Node title |
+| `body` | string | No | -- | Node body content |
+| `related_to` | string | No | -- | UUID of an existing node to link via a `related_to` edge |
+
+### Response (201)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "id": "uuid",
+    "repo": "string",
+    "kind": "topic|decision",
+    "title": "string",
+    "body": "string",
+    "meta": "{}",
+    "source_id": "uuid",           // Auto-generated UUID
+    "source_type": "manual",
+    "sender": null,
+    "created_at": "ISO-8601",
+    "updated_at": "ISO-8601"
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Request body failed Zod validation |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+- Inserts one row into the `nodes` table with `source_type = "manual"`.
+- If `related_to` is provided and the referenced node exists, also inserts one `related_to` edge row.
+- Both inserts are wrapped in a single SQLite transaction.
+- Secret filter is applied to `title` and `body` before storage.
+
+---
+
+## GET /memory/traversals
+
+List recent traversal logs for a repository, ordered by creation time descending.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+| `limit` | number | No | Integer, min 1, max 100, default 20 | Number of logs to return |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "uuid",
+      "repo": "string",
+      "agent": "string",
+      "operation": "traverse|context",
+      "start_node": "uuid|null",
+      "params": { /* arbitrary key-value pairs recorded at traversal time */ },
+      "steps": [
+        {
+          "node_id": "uuid",
+          "parent_id": "uuid|null",
+          "edge_id": "uuid|null",
+          "edge_kind": "string|null"
+        }
+        // ... one entry per node visited in BFS order
+      ],
+      "scores": { /* node_id → score, present on context operations */ },
+      "token_allocation": { /* section heading → tokens, present on context operations */ },
+      "created_at": "ISO-8601"
+    }
+    // ... ordered by created_at DESC
+  ]
+}
+```
+
+Returns an empty array if no logs exist.
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameters failed Zod validation |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/traversals/:id
+
+Get a single traversal log by its ID.
+
+### Request
+
+**Path Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `id` | string | Yes | -- | Traversal log identifier |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "id": "uuid",
+    "repo": "string",
+    "agent": "string",
+    "operation": "traverse|context",
+    "start_node": "uuid|null",
+    "params": { /* ... */ },
+    "steps": [ /* TraversalLogStep[] */ ],
+    "scores": { /* optional */ },
+    "token_allocation": { /* optional */ },
+    "created_at": "ISO-8601"
+  }
+}
+```
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 404 | `NOT_FOUND` | No traversal log exists with the given ID. Message: `"Traversal log <id> not found"` |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## GET /memory/senders
+
+List all distinct sender values present on nodes for a repository.
+
+### Request
+
+**Query Parameters:**
+
+| Param | Type | Required | Validation | Description |
+|---|---|---|---|---|
+| `repo` | string | Yes | -- | Repository slug |
+
+### Response (200)
+
+```jsonc
+{
+  "ok": true,
+  "data": ["claude-code", "user", "assistant"]   // Sorted array of distinct sender strings
+}
+```
+
+Returns an empty array if no nodes have a sender value for the repo.
+
+### Error Cases
+
+| HTTP Status | Code | Meaning |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Query parameter `repo` is missing |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## MCP Tool: search_memory
+
+Search conversation memory using hybrid FTS5 + vector search. Exposed over MCP stdio transport.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | Yes | Search query text |
+| `repo` | string | Yes | Repository slug filter |
+| `mode` | enum | No | One of: `"semantic"`, `"keyword"`, `"hybrid"` (default `"hybrid"`) |
+| `kinds` | string[] | No | Array of node kinds to include |
+| `limit` | number | No | Max results (default 20) |
+
+### Response
+
+On success, returns a JSON text block containing an array of `SearchResult` objects (`node_id`, `kind`, `title`, `body`, `score`, `match_type`).
+
+On error, returns an error text block: `"Error [<CODE>]: <message>"` with `isError: true`.
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## MCP Tool: traverse_memory
+
+BFS-traverse the memory graph from a starting node. Exposed over MCP stdio transport.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `node_id` | string | Yes | Starting node UUID |
+| `direction` | enum | No | One of: `"outgoing"`, `"incoming"`, `"both"` |
+| `edge_kinds` | string[] | No | Edge kinds to follow |
+| `max_depth` | number | No | Maximum traversal depth |
+| `max_nodes` | number | No | Maximum nodes to return |
+
+### Response
+
+On success, returns a JSON text block containing `{ root, nodes, edges }`. Does not record a traversal log (unlike the REST endpoint).
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## MCP Tool: get_context
+
+Assemble token-budgeted context from memory for an agent query. Exposed over MCP stdio transport.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | No | Search query to find relevant context |
+| `node_id` | string | No | Specific node to start from |
+| `repo` | string | Yes | Repository slug |
+| `max_tokens` | number | No | Token budget for assembled context (default 8000) |
+
+### Response
+
+On success, returns a JSON text block containing `{ summary, sections, token_estimate }`. Does not record a traversal log (unlike the REST endpoint).
+
+### Side Effects
+
+None. Read-only.
+
+---
+
+## MCP Tool: create_memory_link
+
+Create an edge between two memory nodes. Exposed over MCP stdio transport.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `from_node` | string | Yes | Source node UUID |
+| `to_node` | string | Yes | Target node UUID |
+| `kind` | enum | Yes | Edge kind (e.g. `related_to`, `references`, `led_to`) |
+| `note` | string | No | Optional note stored in edge meta |
+
+### Response
+
+On success, returns a JSON text block containing the full `EdgeResponse` object.
+
+On error, returns an error text block: `"Error [NOT_FOUND]: Node <id> not found"` with `isError: true`.
+
+### Side Effects
+
+- Inserts one edge row into `memory.db` with `auto = 0`.
+- Secret filter is applied to the `note` field before storage.
+
+---
+
+## MCP Tool: create_memory_node
+
+Create a topic or decision node in memory. Exposed over MCP stdio transport.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `repo` | string | Yes | Repository slug |
+| `kind` | enum | Yes | One of: `"topic"`, `"decision"` |
+| `title` | string | Yes | Node title |
+| `body` | string | No | Node body content |
+| `related_to` | string | No | UUID of an existing node to link with a `related_to` edge |
+
+### Response
+
+On success, returns a JSON text block containing the full `NodeResponse` object.
+
+### Side Effects
+
+- Inserts one node row into `memory.db` with `source_type = "manual"`.
+- If `related_to` is provided and the node exists, also inserts one `related_to` edge row.
+- Secret filter is applied to `title` and `body` before storage.
+
+---
+
+## MCP Tool: ingest_conversation
+
+Ingest a conversation into the memory graph for long-term preservation. Exposed over MCP stdio transport. Supports the same source formats as `POST /memory/ingest` except `bridge` and `git`.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `repo` | string | Yes | Repository slug |
+| `source` | enum | Yes | One of: `"claude-code"`, `"transcript"`, `"generic"` |
+| `session_id` | string | Yes | Unique session ID for idempotency |
+| `title` | string | No | Conversation title (falls back to `session_id`) |
+| `content` | string | No | Inline JSON array of messages. Required for `generic` source. |
+| `path` | string | No | Absolute file path. Required for `transcript` and `claude-code` sources. |
+| `agent` | string | No | Agent identifier |
+
+### Response
+
+On success, returns a JSON text block containing `{ conversation_id, messages_ingested, edges_created, skipped }`.
+
+On error, returns an error text block: `"Error [<CODE>]: <message>"` with `isError: true`. Error codes match those of `POST /memory/ingest`.
+
+### Side Effects
+
+Same as `POST /memory/ingest` — inserts nodes and edges into `memory.db`, updates ingestion cursors, applies secret filtering.
+
+---
+
+## Schema Changes
+
+The following fields were added to existing response shapes as part of the memory system introduction.
+
+### `sender` on NodeResponse
+
+All `NodeResponse` objects now include a `sender` field (type: `string | null`). This carries the originating agent identifier when a node was created from a bridge message ingestion. It is `null` for nodes created via other ingestion paths or manually.
+
+### `node_ids` on ContextSection
+
+Each `ContextSection` returned by `GET /memory/context` now includes a `node_ids` field (type: `string[]`). This array lists the IDs of the memory nodes that contributed content to that section, enabling callers to trace context back to its source nodes.
+
+### `steps` on TraversalLogResponse
+
+`TraversalLogResponse` (returned by `GET /memory/traversals` and `GET /memory/traversals/:id`) includes a `steps` field (type: `TraversalLogStep[]`). Each step records one node visited during a traverse or context operation:
+
+```jsonc
+{
+  "node_id": "uuid",
+  "parent_id": "uuid|null",   // Node from which this node was reached
+  "edge_id": "uuid|null",     // Edge traversed to reach this node
+  "edge_kind": "string|null"  // Kind of the traversed edge
+}
+```
+
+### `agent` parameter on traverse and context endpoints
+
+`GET /memory/traverse/:id` and `GET /memory/context` both accept an `agent` query parameter (max 64 chars, alphanumeric + `_-`, default `"anonymous"`). This value is recorded in the `traversal_logs` table to identify which agent performed the operation. It has no effect on the returned data.

@@ -34,6 +34,7 @@ describe("ingestBridgeMessage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.kind).toBe("message");
+    expect(result.data.sender).toBe("claude");
 
     const convNode = mdb.getNodeBySource("bridge-conversation", conv);
     expect(convNode).toBeDefined();
@@ -89,6 +90,7 @@ describe("ingestBridgeTask", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.kind).toBe("task");
+    expect(result.data.sender).toBe("codex");
 
     const convNode = mdb.getNodeBySource("bridge-conversation", conv);
     expect(convNode).toBeDefined();

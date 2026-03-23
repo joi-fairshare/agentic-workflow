@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { searchMemory, getMemoryNode, getMemoryNodeEdges, traverseMemory, getMemoryContext, getMemoryStats } from "@/lib/memory-api";
+import { searchMemory, getMemoryNode, getMemoryNodeBySource, getMemoryNodeEdges, traverseMemory, getMemoryContext, getMemoryStats, getRepos } from "@/lib/memory-api";
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -88,6 +88,22 @@ describe("getMemoryNode", () => {
   });
 });
 
+describe("getMemoryNodeBySource", () => {
+  it("builds correct URL with encoded params", async () => {
+    mockFetch.mockResolvedValueOnce(mockOkResponse({ id: "n1" }));
+    await getMemoryNodeBySource("bridge-conversation", "abc-123");
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("/memory/node/by-source/bridge-conversation/abc-123");
+  });
+
+  it("URI-encodes source_id", async () => {
+    mockFetch.mockResolvedValueOnce(mockOkResponse({ id: "n1" }));
+    await getMemoryNodeBySource("bridge-conversation", "id/with/slashes");
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("id%2Fwith%2Fslashes");
+  });
+});
+
 describe("getMemoryNodeEdges", () => {
   it("fetches edges for a node", async () => {
     mockFetch.mockResolvedValueOnce(mockOkResponse([]));
@@ -145,5 +161,15 @@ describe("getMemoryStats", () => {
     await getMemoryStats("my repo");
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain("repo=my%20repo");
+  });
+});
+
+describe("getRepos", () => {
+  it("fetches from /memory/repos", async () => {
+    mockFetch.mockResolvedValueOnce(mockOkResponse(["default", "my-repo"]));
+    const result = await getRepos();
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("/memory/repos");
+    expect(result).toEqual(["default", "my-repo"]);
   });
 });

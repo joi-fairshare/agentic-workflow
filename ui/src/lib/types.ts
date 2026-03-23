@@ -42,4 +42,4 @@ export interface ApiErr {
 
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
 
-export type BridgeEventType = "message:created" | "task:created" | "task:updated" | "connected";
+export type BridgeEventType = "message:created" | "task:created" | "task:updated" | "connected" | "memory:session_ingested";
