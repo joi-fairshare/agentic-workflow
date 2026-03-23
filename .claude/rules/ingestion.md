@@ -1,5 +1,8 @@
 ---
 globs: ["mcp-bridge/src/ingestion/**", "mcp-bridge/src/application/services/ingest-*.ts", "mcp-bridge/src/application/services/extract-*.ts", "mcp-bridge/src/application/services/infer-*.ts"]
+# Note: these globs intentionally overlap with bridge-services.md (mcp-bridge/src/application/**).
+# Both rule files load when editing ingestion services — bridge-services.md covers AppResult/EventBus
+# patterns, this file covers ingestion-specific infrastructure (queues, embeddings, secret filtering).
 ---
 
 # Ingestion Rules
