@@ -3,7 +3,7 @@ name: verify-ios
 description: "XcodeBuildMCP-based iOS simulator verification. Default: snapshot_ui (view hierarchy structured check). --visual: screenshot for pixel inspection. Auto mode infers screens from Swift file changes in git diff."
 argument-hint: "[--visual] [criteria or 'auto']"
 disable-model-invocation: true
-allowed-tools: Bash(git *), Read, Glob, AskUserQuestion
+allowed-tools: Bash(git *), Bash(source *), Read, Glob, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -131,7 +131,22 @@ If no simulator is booted:
 3. If the app bundle ID can't be determined, ask via AskUserQuestion: "No running simulator found. Please start your app in the iOS Simulator and retry, or provide the app bundle ID:"
 4. Wait for the simulator to boot (check `list_sims` again)
 
-## Step 3: Build Verification Plan
+## Step 3: Acquire Simulator Lock
+
+Source the shared lockfile script and acquire the lock before interacting with the simulator:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
+LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"
+acquire_lock
+```
+
+If the lock cannot be acquired (timeout), report:
+> "Another iOS simulator session is in progress. Wait for it to finish or remove `~/.agentic-workflow/.ios-sim.lock` if stale."
+
+**Important:** Always release the lock when done, even on errors. If any step fails, jump to Step 7 to release the lock before exiting.
+
+## Step 4: Build Verification Plan
 
 ### Explicit Mode
 
@@ -170,7 +185,7 @@ Build a verification plan with 3–8 checks. Present to user:
 
 Wait for confirmation before executing.
 
-## Step 4: Execute Verification
+## Step 5: Execute Verification
 
 ### Default Mode (UI Hierarchy — `snapshot_ui`)
 
@@ -199,7 +214,7 @@ Screenshot naming:
 verification/{timestamp}-{check-number}-{slug}-ios.png
 ```
 
-## Step 5: Report Results
+## Step 6: Report Results
 
 Generate a structured report:
 
@@ -232,9 +247,18 @@ Write report to:
 ~/.agentic-workflow/$REPO_SLUG/verification/{timestamp}-ios-report.md
 ```
 
+## Step 7: Release Simulator Lock
+
+Always release the lock, regardless of success or failure:
+
+```bash
+release_lock
+```
+
 ## Rules
 
 - **UI hierarchy by default** — `snapshot_ui` is faster and catches structural issues. Only use `screenshot` with `--visual`.
 - **Never modify code** — read-only verification. Report issues, don't fix them.
 - **In auto mode, always confirm the plan** before executing.
 - **If simulator isn't running**, ask the user rather than attempting to build the project from scratch.
+- **Always release the simulator lock** — even if verification fails partway through. A leaked lock blocks all future verification sessions.
