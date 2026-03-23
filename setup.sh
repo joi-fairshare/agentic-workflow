@@ -470,10 +470,21 @@ elif find "$(dirname "$0")" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null
 fi
 
 if [ "$_build_swift" = "1" ]; then
+  # Ensure socat is available on the host — required for the host-side LSP bridge process
   if ! command -v socat &>/dev/null; then
-    echo "WARN: 'socat' not found — Swift LSP bridge requires socat. Install with: brew install socat"
-    echo "      Skipping Swift image build. Re-run setup.sh after installing socat."
-  else
+    if command -v brew &>/dev/null; then
+      echo "Installing socat (required for Swift LSP bridge)..."
+      brew install socat
+    else
+      echo "WARN: 'socat' not found and Homebrew is not available."
+      echo "      Install socat manually, then re-run setup.sh:"
+      echo "        brew install socat   (macOS with Homebrew)"
+      echo "        apt-get install socat (Debian/Ubuntu)"
+      echo "      Skipping Swift image build."
+      _build_swift=0
+    fi
+  fi
+  if [ "$_build_swift" = "1" ]; then
     if ! docker image inspect "serena-local:${SERENA_VERSION}-swift" &>/dev/null; then
       echo "Building serena-local:${SERENA_VERSION}-swift (socat + sourcekit-lsp shim)..."
       docker build \
