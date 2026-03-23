@@ -10,6 +10,7 @@ coverage/
 .review-cache/
 .superpowers/
 .worktrees/
+.claude/worktrees/
 
 # Serena runtime data (LSP index caches, logs, session state)
 .serena/cache/
