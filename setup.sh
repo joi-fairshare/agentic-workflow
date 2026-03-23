@@ -374,6 +374,7 @@ echo "=== Building Serena base image (TS + Python) ==="
 if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
   echo "Building serena-local:${SERENA_VERSION} (~5 min)..."
   docker build \
+    --pull \
     --progress plain \
     --build-arg BASE_TAG="${SERENA_VERSION}" \
     -t "serena-local:${SERENA_VERSION}" \
@@ -386,18 +387,32 @@ else
 fi
 
 echo "=== Building Serena C# extension image (opt-in) ==="
-if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
-  echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
-  docker build \
-    --progress plain \
-    --build-arg LOCAL_TAG="${SERENA_VERSION}" \
-    -t "serena-local:${SERENA_VERSION}-csharp" \
-    -f "$(dirname "$0")/Dockerfile.serena-csharp" \
-    "$(dirname "$0")" \
-    || { echo "FATAL: C# image build failed."; exit 1; }
-  echo "Built serena-local:${SERENA_VERSION}-csharp"
+# Auto-detect C# projects or honour BUILD_CSHARP=1 env var override
+_build_csharp=0
+if [ "${BUILD_CSHARP:-0}" = "1" ]; then
+  _build_csharp=1
+elif find "$(dirname "$0")" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
+  _build_csharp=1
+fi
+
+if [ "$_build_csharp" = "1" ]; then
+  if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
+    echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
+    docker build \
+      --pull \
+      --progress plain \
+      --build-arg LOCAL_TAG="${SERENA_VERSION}" \
+      -t "serena-local:${SERENA_VERSION}-csharp" \
+      -f "$(dirname "$0")/Dockerfile.serena-csharp" \
+      "$(dirname "$0")" \
+      || { echo "FATAL: C# image build failed."; exit 1; }
+    echo "Built serena-local:${SERENA_VERSION}-csharp"
+  else
+    echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
+  fi
 else
-  echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
+  echo "=== Skipping C# Serena image (no .csproj/.cs found) ==="
+  echo "To build later, run: BUILD_CSHARP=1 ./setup.sh"
 fi
 
 echo "=== Installing serena-docker wrapper ==="

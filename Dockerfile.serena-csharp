@@ -4,7 +4,7 @@
 ARG LOCAL_TAG=latest
 FROM serena-local:${LOCAL_TAG}
 
-# --- C# LSP (csharp-ls via .NET 8) ---
+# --- C# LSP (csharp-ls via .NET 10) ---
 # Use official dotnet-install.sh — more reliable than apt on Debian trixie
 RUN curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && chmod +x /tmp/dotnet-install.sh \

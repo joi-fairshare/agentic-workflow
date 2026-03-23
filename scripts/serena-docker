@@ -26,10 +26,13 @@ if [[ -z "$(docker images -q "${IMAGE}" 2>/dev/null)" ]]; then
   exit 1
 fi
 
+mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/.serena/memory"
+
 exec docker run --rm -i \
-  -p 24282:24282 \
   -v "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro" \
-  -v "${REPO_PATH}/.serena:/workspaces/projects/${REPO_NAME}/.serena" \
+  -v "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache" \
+  -v "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs" \
+  -v "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory" \
   "${IMAGE}" \
   serena start-mcp-server \
   --context claude-code \
