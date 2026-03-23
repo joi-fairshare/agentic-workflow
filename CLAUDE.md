@@ -45,7 +45,7 @@ agentic-workflow/
 ├── .serena/       # Serena LSP project configuration
 ├── scripts/       # Utility scripts (serena-docker wrapper)
 ├── start.sh       # Start bridge + UI together
-└── setup.sh       # One-command setup: skills, statusline, config, bridge, Serena, UI
+└── setup.sh       # One-command setup: skills, statusline, hooks, config, bridge, Serena, UI
 ```
 
 ## Commands

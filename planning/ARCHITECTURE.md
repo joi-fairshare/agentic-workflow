@@ -157,9 +157,14 @@ agentic-workflow/
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
 ├── config/                              # Claude Code configuration archive
-│   ├── settings.json                    #   model, plugins, permissions, statusLine command, Stop/PreToolUse hooks
+│   ├── settings.json                    #   model, plugins, permissions, statusLine command, PreToolUse + SessionStart hook registrations
 │   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
-│   └── mcp.json                         #   MCP server registrations (mobai)
+│   ├── mcp.json                         #   MCP server registrations (mobai)
+│   └── hooks/                           #   Safety hook scripts installed to ~/.claude/hooks/
+│       ├── block-destructive.sh         #     PreToolUse — blocks rm -rf, git reset --hard, git push --force, etc.
+│       ├── block-push-main.sh           #     PreToolUse — blocks git push to main/master
+│       ├── detect-secrets.sh            #     PreToolUse — blocks AWS keys, GitHub tokens, Bearer tokens
+│       └── git-context.sh              #     SessionStart — injects current branch, recent commits, working tree status
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
@@ -318,6 +323,7 @@ agentic-workflow/
 │   │   ├── bridge-transport.md          #   Typed router, controller factories, Zod schema conventions
 │   │   ├── database.md                  #   DbClient, MemoryDbClient, schema reference, idempotency
 │   │   ├── design.md                    #   Design pipeline, artifact formats, design principles
+│   │   ├── hooks.md                     #   Hook protocols, PreToolUse/SessionStart patterns, adding new hooks
 │   │   ├── ingestion.md                 #   AsyncQueue, EmbeddingService, SecretFilter, ingestion services
 │   │   ├── mcp-servers.md               #   MCP server usage guide (Serena vs Grep/Read decision table)
 │   │   ├── skills.md                    #   Skill structure, preamble format, repo slug, output dirs
@@ -326,7 +332,7 @@ agentic-workflow/
 │   └── settings.json                    #   disableBypassPermissionsMode, enabledMcpjsonServers
 ├── .dockerignore                        # Excludes node_modules, dist, *.db from Docker build context
 ├── start.sh                             # Start bridge (:3100) + UI (:3000) together
-├── setup.sh                             # One-command installer: skills, config, statusline, Serena Docker images, MCP registration
+├── setup.sh                             # One-command installer: skills, config, statusline, hooks, Serena Docker images, MCP registration
 ├── .gitignore                           # Ignores node_modules, dist, *.db, .env, .review-cache
 └── README.md                            # Project overview, setup instructions, env vars
 ```

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-23
+
+### Added
+
+- `config/hooks/` directory with four shell hooks: `block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, and `git-context.sh`
+- `config/settings.json` updated with consolidated PreToolUse (Bash matcher) and SessionStart hook registrations
+- `.claude/rules/hooks.md` documenting PreToolUse vs SessionStart protocols, hook file inventory, and steps for adding new hooks
+- `setup.sh` installs hooks to `~/.claude/hooks/` using an idempotent replace strategy (copy, not symlink)
+
+### Fixed
+
+- Bearer token charset and `printf` portability corrected in hook scripts
+- `setup.sh` hook installation uses idempotent replace strategy instead of append, preventing duplicate entries on re-runs
+- Comments added to `setup.sh` explaining `set -e` omission rationale and non-git cwd behaviour
+
 ## [Unreleased] - 2026-03-22
 
 ### Added

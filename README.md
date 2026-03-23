@@ -40,7 +40,7 @@ Extracted from `~/.claude/` for replication on any machine.
 | `/design-refine` | Dispatch Impeccable refinement commands |
 | `/design-verify` | Screenshot diff implementation vs mockup |
 
-**Config files:** `config/settings.json`, `config/mcp.json`, `config/statusline.sh`
+**Config files:** `config/settings.json`, `config/mcp.json`, `config/statusline.sh`, `config/hooks/`
 
 ### 2. Statusline
 
@@ -169,6 +169,7 @@ The setup script:
 - Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
 - Symlinks skills into `~/.claude/skills/`
 - Copies config files (settings, MCP)
+- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `git-context.sh`) to `~/.claude/hooks/`
 - Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
 - Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
 - Installs and builds the MCP bridge
@@ -242,7 +243,7 @@ agentic-workflow/
 │   ├── addressReview/         # Review fix implementer
 │   └── enhancePrompt/         # Context-aware prompt rewriter
 ├── bootstrap/                 # Repo documentation generator skill
-├── config/                    # Settings, MCP config archive, statusline script
+├── config/                    # Settings, MCP config, statusline script, and safety hooks
 ├── scripts/
 │   └── serena-docker          # Wrapper script: mounts repo into Serena container
 ├── mcp-bridge/                # MCP bridge application
