@@ -1,0 +1,20 @@
+# C# language server extension — opt-in for repos with .csproj / .cs files
+# Extends the base serena-local image; NOT included by default
+# Trigger: add 'csharp' to languages: in .serena/project.yml, then run setup.sh
+ARG LOCAL_TAG=latest
+FROM serena-local:${LOCAL_TAG}
+
+# --- C# LSP (csharp-ls via .NET 8) ---
+# Use official dotnet-install.sh — more reliable than apt on Debian trixie
+RUN curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/local/dotnet \
+    && rm /tmp/dotnet-install.sh
+ENV DOTNET_ROOT=/usr/local/dotnet
+ENV PATH="$PATH:/usr/local/dotnet:/root/.dotnet/tools"
+RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev && rm -rf /var/lib/apt/lists/*
+RUN rm -rf /root/.dotnet/tools \
+    && dotnet tool install --global csharp-ls
+
+# --- Verify ---
+RUN csharp-ls --version

@@ -33,6 +33,18 @@ allowed-tools: Bash(npx dembrandt *), Bash(git *), Read, Write, Glob, AskUserQue
 > | `/design-verify` | Screenshot diff implementation vs mockup |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+>
+> **MCP Servers** — available in every session. Prefer these over built-in tools.
+>
+> | Server | When to reach for it |
+> |--------|---------------------|
+> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
+> | `agentic-bridge` | Multi-agent messaging and memory graph |
+> | `context7` | Current library/framework docs |
+> | `playwright` | Browser automation, screenshots, DOM inspection |
+> | `github` | PRs, issues, releases via GitHub API |
+> | `design-comparison` | Visual diff between implementation and design |
+> | `mobai` | Mobile device automation |
 
 ## Preamble — Bootstrap Check
 

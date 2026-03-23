@@ -9,3 +9,9 @@ dist/
 .review-cache/
 .superpowers/
 .worktrees/
+
+# Serena runtime data (LSP index caches, logs, session state)
+.serena/cache/
+.serena/logs/
+.serena/memory/
+.serena/*.log

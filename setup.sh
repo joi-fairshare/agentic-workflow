@@ -361,6 +361,66 @@ else
   echo "  UI: package.json not found, skipping"
 fi
 
+# --- Serena MCP ---
+echo ""
+echo "=== Serena prerequisites ==="
+command -v docker &>/dev/null || { echo "FATAL: Docker not installed. Install Docker Desktop and re-run setup.sh."; exit 1; }
+
+# Derive version from committed wrapper — single source of truth, no dual-maintenance
+SERENA_VERSION=$(grep '^BASE_VERSION=' "$(dirname "$0")/scripts/serena-docker" \
+  | sed 's/BASE_VERSION="//;s/".*//')
+
+echo "=== Building Serena base image (TS + Python) ==="
+if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
+  echo "Building serena-local:${SERENA_VERSION} (~5 min)..."
+  docker build \
+    --progress plain \
+    --build-arg BASE_TAG="${SERENA_VERSION}" \
+    -t "serena-local:${SERENA_VERSION}" \
+    -f "$(dirname "$0")/Dockerfile.serena" \
+    "$(dirname "$0")" \
+    || { echo "FATAL: Base image build failed."; exit 1; }
+  echo "Built serena-local:${SERENA_VERSION}"
+else
+  echo "serena-local:${SERENA_VERSION} already exists, skipping"
+fi
+
+echo "=== Building Serena C# extension image (opt-in) ==="
+if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
+  echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
+  docker build \
+    --progress plain \
+    --build-arg LOCAL_TAG="${SERENA_VERSION}" \
+    -t "serena-local:${SERENA_VERSION}-csharp" \
+    -f "$(dirname "$0")/Dockerfile.serena-csharp" \
+    "$(dirname "$0")" \
+    || { echo "FATAL: C# image build failed."; exit 1; }
+  echo "Built serena-local:${SERENA_VERSION}-csharp"
+else
+  echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
+fi
+
+echo "=== Installing serena-docker wrapper ==="
+mkdir -p "$HOME/.local/bin"
+cp "$(dirname "$0")/scripts/serena-docker" "$HOME/.local/bin/serena-docker"
+chmod +x "$HOME/.local/bin/serena-docker"
+
+if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
+  echo "WARN: ~/.local/bin is not in \$PATH. Add to your shell profile:"
+  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
+echo "=== Registering Serena MCP (global) ==="
+claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
+  2>/dev/null \
+  || echo "WARN: Serena already registered (or claude CLI not found)"
+
+echo "=== Security check ==="
+if grep -q 'Users/thor/\*\*' "$HOME/.claude/settings.local.json" 2>/dev/null; then
+  echo "WARN: Broad Read(//Users/thor/**) rule detected in settings.local.json"
+  echo "      Narrow to repos/**, .claude/**, .agentic-workflow/** — see plan"
+fi
+
 # --- Claude Code Plugins ---
 echo ""
 echo "Installing Claude Code plugins..."
