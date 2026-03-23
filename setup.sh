@@ -211,6 +211,66 @@ if [ -f "$SETTINGS_FILE" ]; then
   fi
 fi
 
+# --- Safety Hooks ---
+echo ""
+echo "Installing safety hooks..."
+
+HOOKS_DIR="$CLAUDE_DIR/hooks"
+mkdir -p "$HOOKS_DIR"
+
+for hook_file in "$SCRIPT_DIR/config/hooks/"*.sh; do
+  [ -f "$hook_file" ] || continue
+  hook_name="$(basename "$hook_file")"
+  cp "$hook_file" "$HOOKS_DIR/$hook_name"
+  chmod +x "$HOOKS_DIR/$hook_name"
+  echo "  $hook_name: installed"
+done
+
+# Merge safety hooks into existing settings.json
+if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
+  # Add block-destructive PreToolUse hook if not already present
+  if ! jq -e '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("block-destructive"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"}]}'
+    jq --argjson entry "$HOOK_ENTRY" '.hooks.PreToolUse += [$entry]' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  hooks.PreToolUse: block-destructive added"
+  fi
+
+  # Add block-push-main PreToolUse hook if not already present
+  if ! jq -e '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("block-push-main"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-push-main.sh"}]}'
+    jq --argjson entry "$HOOK_ENTRY" '.hooks.PreToolUse += [$entry]' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  hooks.PreToolUse: block-push-main added"
+  fi
+
+  # Add detect-secrets PreToolUse hook if not already present
+  if ! jq -e '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("detect-secrets"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"}]}'
+    jq --argjson entry "$HOOK_ENTRY" '.hooks.PreToolUse += [$entry]' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  hooks.PreToolUse: detect-secrets added"
+  fi
+
+  # Add git-context SessionStart hook if not already present
+  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("git-context"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}]'
+    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
+      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    else
+      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    fi
+    echo "  hooks.SessionStart: git-context added"
+  fi
+fi
+
 # --- Shell Integration (terminal width sync for statusline) ---
 echo ""
 echo "Installing shell integration..."

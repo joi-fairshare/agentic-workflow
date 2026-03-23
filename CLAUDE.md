@@ -121,9 +121,14 @@ agentic-workflow/
 │   ├── _preamble.md           # Shared preamble reference (not a skill)
 │   └── _design-preamble.md    # Shared design context preamble (not a skill)
 ├── bootstrap/                 # /bootstrap — repo documentation generator
-├── config/                    # Settings, MCP config, and statusline script
-│   ├── settings.json          #   Claude Code settings (statusLine + Stop/PreToolUse hooks)
-│   └── statusline.sh          #   Adaptive statusline — 5 width tiers (installed to ~/.claude/)
+├── config/                    # Settings, MCP config, statusline script, and safety hooks
+│   ├── settings.json          #   Claude Code settings (statusLine + Stop/PreToolUse/SessionStart hooks)
+│   ├── statusline.sh          #   Adaptive statusline — 5 width tiers (installed to ~/.claude/)
+│   └── hooks/                 #   PreToolUse + SessionStart hook scripts (installed to ~/.claude/hooks/)
+│       ├── block-destructive.sh  #   Blocks rm -rf, git reset --hard, git push --force, git checkout ., git clean -f
+│       ├── block-push-main.sh    #   Blocks git push to main/master (explicit or implicit via current branch)
+│       ├── detect-secrets.sh     #   Blocks AWS keys, GitHub tokens, Bearer tokens, secret assignments
+│       └── git-context.sh        #   SessionStart: injects branch, recent commits, working tree status
 ├── mcp-bridge/                # MCP bridge application
 │   ├── src/
 │   │   ├── application/       # AppResult<T> pattern, service functions (never throw)
@@ -268,6 +273,26 @@ Run `/design-language` to define brand context.
                           /design-evolve (anytime)
 ```
 
+
+## Hooks
+
+Safety hooks run automatically via Claude Code's hook system. All hooks are installed to `~/.claude/hooks/` by `setup.sh`.
+
+### PreToolUse Hooks (matcher: `Bash`)
+
+| Hook | Blocks | Suggestion |
+|------|--------|------------|
+| `block-destructive.sh` | `rm -rf`, `git reset --hard`, `git push --force` (not `--force-with-lease`), `git checkout .`, `git clean -f` | Use safer alternatives (trash, stash, etc.) |
+| `block-push-main.sh` | `git push` to main/master (explicit ref or implicit via current branch) | Create a feature branch and open a PR |
+| `detect-secrets.sh` | AWS keys (`AKIA...`), GitHub tokens (`ghp_/gho_/ghs_`), Bearer tokens in curl, secret env var assignments (>20 chars) | Use `.env` files, secrets manager, or `gh auth login` |
+
+### SessionStart Hooks
+
+| Hook | Outputs |
+|------|---------|
+| `git-context.sh` | Current branch, last 5 commits, working tree status |
+
+Hook protocol: scripts read JSON from stdin (`{"tool_name": "...", "tool_input": {...}}`), exit 0 to allow, exit 2 to deny with message on stdout.
 
 ## Code Style
 

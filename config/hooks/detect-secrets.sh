@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# PreToolUse hook: Aggressive secret detection in bash commands
+# Exit 2 = deny, Exit 0 = allow.
+
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+[ -z "$COMMAND" ] && exit 0
+
+# AWS access keys (AKIA followed by 16 uppercase alphanumeric chars)
+if echo "$COMMAND" | grep -qE 'AKIA[0-9A-Z]{16}'; then
+  echo "BLOCKED: Detected what appears to be an AWS access key (AKIA...)."
+  echo "Suggestion: Store AWS credentials in ~/.aws/credentials or use environment variables from .env files."
+  exit 2
+fi
+
+# GitHub tokens (ghp_, gho_, ghs_ prefixes)
+if echo "$COMMAND" | grep -qE 'gh[pos]_[A-Za-z0-9_]{36,}'; then
+  echo "BLOCKED: Detected what appears to be a GitHub token."
+  echo "Suggestion: Use 'gh auth login' or store tokens in .env files, not in commands."
+  exit 2
+fi
+
+# Bearer tokens in curl headers
+if echo "$COMMAND" | grep -qE 'curl\s+.*(-H|--header)\s+.*[Bb]earer\s+[A-Za-z0-9._/-]{20,}'; then
+  echo "BLOCKED: Detected a Bearer token in a curl command."
+  echo "Suggestion: Store tokens in environment variables and reference them as \$TOKEN."
+  exit 2
+fi
+
+# Secret assignments with high-entropy values (>20 chars)
+if echo "$COMMAND" | grep -qE "(export\s+)?(API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY|ACCESS_KEY|SECRET_KEY)\s*=\s*['\"]?[A-Za-z0-9+/=_.,-]{20,}"; then
+  echo "BLOCKED: Detected a secret being assigned in a command."
+  echo "Suggestion: Store secrets in .env files or a secrets manager, not inline in commands."
+  exit 2
+fi
+
+exit 0
