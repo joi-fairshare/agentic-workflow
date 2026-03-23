@@ -24,7 +24,7 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # Canonical list of skills managed by this toolkit
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app)
 
 echo "=== Agentic Workflow Setup ==="
 echo ""

@@ -30,7 +30,7 @@ Read before making changes:
 | Test | Vitest (in-memory SQLite; happy-dom for UI hooks) |
 | Build | tsc (ESM, Node16 module resolution) |
 
-## Skills (21)
+## Skills (22)
 
 All skills are slash commands invoked inside Claude Code sessions. They are installed by symlinking into `~/.claude/skills/`.
 
@@ -57,6 +57,7 @@ All skills are slash commands invoked inside Claude Code sessions. They are inst
 | `/design-implement` | Generate production code from mockup | — |
 | `/design-refine` | Dispatch Impeccable refinement commands | — |
 | `/design-verify` | Screenshot diff implementation vs mockup | `design/` |
+| `/verify-app` | Playwright browser verification of running app | `verification/` |
 
 ### Skill Pipeline
 
@@ -66,6 +67,7 @@ officeHours → productReview / archReview
                                        ^
                               design-evolve (anytime)
     → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
+    verify-app (anytime — standalone verification of running app)
 ```
 
 Skills are designed to flow into each other. Each skill writes outputs that downstream skills auto-discover.
@@ -82,7 +84,8 @@ All skill outputs are written to `~/.agentic-workflow/<repo-slug>/` with subdire
 ├── qa/               # /bugHunt and /bugReport reports
 ├── plans/            # /officeHours, /productReview, /archReview design docs
 ├── releases/         # /shipRelease and /syncDocs reports
-└── retros/           # /weeklyRetro retrospectives
+├── retros/           # /weeklyRetro retrospectives
+└── verification/     # /verify-app reports and screenshots
 ```
 
 The repo slug is derived from `git remote get-url origin` (fallback: directory name).
@@ -118,6 +121,9 @@ agentic-workflow/
 │   ├── design-implement/      # /design-implement — generate production code
 │   ├── design-refine/         # /design-refine — dispatch Impeccable commands
 │   ├── design-verify/         # /design-verify — screenshot diff verification
+│   ├── verify-app/            # /verify-app — Playwright browser verification
+│   │   ├── SKILL.md           #   skill manifest + 7-step verification flow
+│   │   └── browser-lock.sh    #   PID-based lockfile with exponential backoff
 │   ├── _preamble.md           # Shared preamble reference (not a skill)
 │   └── _design-preamble.md    # Shared design context preamble (not a skill)
 ├── bootstrap/                 # /bootstrap — repo documentation generator

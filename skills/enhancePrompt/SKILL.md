@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Read, Glob, Grep
 ---
 
-> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 22 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -31,6 +31,7 @@ allowed-tools: Read, Glob, Grep
 > | `/design-implement` | Generate production code from mockup |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
 > | `/design-verify` | Screenshot diff implementation vs mockup |
+> | `/verify-app` | Playwright browser verification of running app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 

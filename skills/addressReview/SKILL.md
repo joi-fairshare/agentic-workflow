@@ -6,7 +6,7 @@ disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
 ---
 
-> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 22 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -31,6 +31,7 @@ allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
 > | `/design-implement` | Generate production code from mockup |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
 > | `/design-verify` | Screenshot diff implementation vs mockup |
+> | `/verify-app` | Playwright browser verification of running app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 
@@ -48,7 +49,7 @@ fi
 echo "repo-slug: $REPO_SLUG"
 
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 

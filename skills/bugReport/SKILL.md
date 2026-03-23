@@ -10,7 +10,7 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Glob, Grep, W
 
 Read-only audit that produces a structured bug report with health scores. This skill **never modifies source code** — it is purely diagnostic.
 
-> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 22 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -35,6 +35,7 @@ Read-only audit that produces a structured bug report with health scores. This s
 > | `/design-implement` | Generate production code from mockup |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
 > | `/design-verify` | Screenshot diff implementation vs mockup |
+> | `/verify-app` | Playwright browser verification of running app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 
@@ -54,7 +55,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
