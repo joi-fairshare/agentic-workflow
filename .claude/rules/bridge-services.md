@@ -81,7 +81,9 @@ server.tool("tool_name", "description", ZodSchema.shape, async (args) => {
 - Tools define Zod schemas for all parameters (no coercion in tool body)
 - Tools never throw — services return AppResult, `resultToContent()` converts
 - 5 bridge tools: `send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`
-- 5 memory tools: `search_memory`, `traverse_memory`, `get_context`, `create_memory_node`, `create_memory_link`
+- 6 memory tools: `search_memory`, `traverse_memory`, `get_context`, `create_memory_node`, `create_memory_link`, `ingest_conversation`
+
+`ingest_conversation` accepts a conversation payload (messages array + metadata) and runs it through the generic ingestion pipeline. It's the MCP surface for `ingestGeneric`.
 
 ## Server & Route Registration (server.ts)
 

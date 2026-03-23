@@ -11,8 +11,14 @@ This project uses App Router (not Pages). All pages live in `ui/src/app/`:
 | Route | File | Purpose |
 |-------|------|---------|
 | `/` | `app/page.tsx` | Conversation list with pagination |
-| `/conversation/[id]` | `app/conversation/[id]/page.tsx` | Message timeline, tasks, diagrams |
-| `/memory` | `app/memory/page.tsx` | Memory graph explorer |
+| `/conversation/[id]` | `app/conversation/[id]/layout.tsx` | Shared layout with Timeline/Graph tab nav |
+| `/conversation/[id]` | `app/conversation/[id]/page.tsx` | Timeline tab: messages, tasks, diagrams |
+| `/conversation/[id]/graph` | `app/conversation/[id]/graph/page.tsx` | Graph tab: React Flow DAG of memory nodes |
+| `/memory` | `app/memory/page.tsx` | Memory Explorer shell (delegates to components) |
+
+`app/conversation/[id]/layout.tsx` renders the `NavHeader` and the Timeline/Graph tab switcher. Both tabs share the same conversation data fetched in the layout.
+
+The `NavHeader` component (`components/nav-header.tsx`) provides top-level navigation between Conversations and Memory Explorer. Include it in root layout — it's already wired into `app/layout.tsx`.
 
 Use `Link` from `next/link` for navigation. Use server components where no interactivity is needed. Mark client components with `"use client"` at the top of the file.
 
@@ -111,6 +117,49 @@ const {
 - `setTokenBudget` updates the budget before calling `assembleContext` — the budget is captured in the `assembleContext` callback via `useCallback([tokenBudget])`
 - `clearContext()` resets both `context` and `error` — call it when navigating away or switching repos
 - The hook does **not** auto-fetch on mount; `assembleContext(query, repo)` must be called explicitly
+
+## React Flow Graph System
+
+The graph visualization uses [React Flow](https://reactflow.dev/) with a Dagre hierarchical layout (`@dagrejs/dagre`). Key components:
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `GraphCanvas` | `components/graph/graph-canvas.tsx` | React Flow wrapper, calls `useGraphLayout` |
+| `GraphToolbar` | `components/graph/graph-toolbar.tsx` | Depth/direction/edge-kind/sender filters |
+| `NodeDetailPanel` | `components/graph/node-detail-panel.tsx` | Selected node metadata + edges |
+| `ContextBuilderPanel` | `components/graph/context-builder-panel.tsx` | Token-budgeted context assembly UI |
+| `GraphMinimap` | `components/graph/graph-minimap.tsx` | React Flow minimap overlay |
+| `PathReplay` | `components/graph/path-replay.tsx` | Play/pause/step/speed controls for traversal replay |
+| `node-types/` | `components/graph/node-types/` | 6 typed node renderers (message, conversation, topic, decision, task, artifact) |
+
+**Layout hook**: `useGraphLayout(nodes, edges)` — applies Dagre layout and returns positioned React Flow nodes. Handles cycle-prone edge kinds by routing them outside Dagre. Call `useMemo` around the input arrays to prevent layout thrashing.
+
+**Edge styles**: `components/graph/edge-styles.ts` exports `EDGE_COLOR_MAP` and `EDGE_DASH_MAP` — 10 edge kinds each have a distinct color and dash pattern. Use these constants in node type renderers and the toolbar legend.
+
+**Conversation graph page**: `components/conversation-graph/conversation-graph-page.tsx` — wraps the graph canvas with a `ConversationNodeList` sidebar for click-to-focus navigation.
+
+**Memory Explorer**: Three-column layout (`components/memory-explorer/`):
+- `MemorySearchPanel` — left column: search input, results list, mode selector
+- `GraphCanvas` — center: React Flow graph of traversal results
+- `TraversalLogPanel` — right column: recent traversal logs from `GET /memory/traversal-logs`
+
+## Graph Hooks
+
+```typescript
+// Dagre layout for React Flow
+import { useGraphLayout } from "../hooks/use-graph-layout.js";
+const { nodes: layoutNodes, edges: layoutEdges } = useGraphLayout(rawNodes, rawEdges);
+
+// Traversal path replay
+import { usePathReplay } from "../hooks/use-path-replay.js";
+const { step, isPlaying, play, pause, stepForward, stepBack, setSpeed } = usePathReplay(traversalSteps);
+
+// Traversal log fetching
+import { useTraversalLogs } from "../hooks/use-traversal-logs.js";
+const { logs, loading, error } = useTraversalLogs(repo, limit);
+```
+
+`usePathReplay` manages a cursor over `TraversalStep[]` and exposes playback controls. Speed is a multiplier (0.5×, 1×, 2×, 4×). The hook does not auto-start — call `play()` explicitly.
 
 ## Diagram Generation (lib/diagrams.ts)
 
