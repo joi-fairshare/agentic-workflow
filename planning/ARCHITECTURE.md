@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with four independent components: 21 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication with a built-in conversation memory and retrieval system, a Next.js 15 conversation dashboard UI, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. A separate memory database (memory.db) stores a knowledge graph of nodes and edges, supporting hybrid search (FTS5 + sqlite-vec KNN) and token-budgeted context assembly for agent retrieval. The UI connects to the bridge REST API and receives real-time updates via SSE, and includes a Memory Explorer page for searching, traversing, and visualizing the knowledge graph.
+Agentic Workflow is a portable Claude Code toolkit with four independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication with a built-in conversation memory and retrieval system, a Next.js 15 conversation dashboard UI, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. A separate memory database (memory.db) stores a knowledge graph of nodes and edges, supporting hybrid search (FTS5 + sqlite-vec KNN) and token-budgeted context assembly for agent retrieval. The UI connects to the bridge REST API and receives real-time updates via SSE, and includes a Memory Explorer page for searching, traversing, and visualizing the knowledge graph.
 
 ```mermaid
 graph TD
@@ -104,7 +104,7 @@ Skills are designed to flow into each other in a natural development lifecycle:
 
 ```
 officeHours → productReview / archReview
-    → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
+    → design-analyze [web|ios] → design-language → design-mockup [web|ios] → design-implement [web|ios] → design-refine → design-verify [web|ios]
     → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
 ```
 
@@ -114,7 +114,7 @@ Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream 
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills (21)
+├── skills/                              # Claude Code custom slash-command skills (34)
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -159,7 +159,7 @@ agentic-workflow/
 ├── config/                              # Claude Code configuration archive
 │   ├── settings.json                    #   model, plugins, permissions, statusLine command, PreToolUse + SessionStart hook registrations
 │   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
-│   ├── mcp.json                         #   MCP server registrations (mobai)
+│   ├── mcp.json                         #   MCP server registrations (xcodebuildmcp)
 │   └── hooks/                           #   Safety hook scripts installed to ~/.claude/hooks/
 │       ├── block-destructive.sh         #     PreToolUse — blocks rm -rf, git reset --hard, git push --force, etc.
 │       ├── block-push-main.sh           #     PreToolUse — blocks git push to main/master
@@ -589,7 +589,7 @@ A Next.js 15 App Router application that provides a visual interface for bridge 
 Archived Claude Code configuration for replication across machines:
 
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
-- **config/mcp.json** — Registers the `mobai` MCP server (`npx -y mobai-mcp`).
+- **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@latest mcp`) for iOS Simulator control.
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
 - **`.claude/rules/`** — Nine glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `mcp-servers.md`, `skills.md`, `testing.md`, `ui.md`.
 
@@ -599,7 +599,7 @@ Archived Claude Code configuration for replication across machines:
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 21 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 

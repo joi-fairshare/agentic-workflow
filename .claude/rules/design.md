@@ -9,9 +9,9 @@ globs: ["design-tokens.json", ".impeccable.md", "planning/DESIGN_SYSTEM.md", "sk
 The design system is built and evolved through a 7-skill pipeline:
 
 ```
-/design-analyze → /design-language → /design-mockup → /design-implement → /design-refine → /design-verify
-                                    ^
-                           /design-evolve (anytime, merges new reference)
+/design-analyze [web|ios] → /design-language → /design-mockup [web|ios] → /design-implement [web|ios] → /design-refine → /design-verify [web|ios]
+                                               ^
+                                      /design-evolve [web|ios] (anytime, merges new reference)
 ```
 
 Each skill writes artifacts that downstream skills auto-discover. Never skip steps — implementing without a mockup baseline makes `/design-verify` impossible.

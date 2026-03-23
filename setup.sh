@@ -24,7 +24,7 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # Canonical list of skills managed by this toolkit
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
 
 echo "=== Agentic Workflow Setup ==="
 echo ""
@@ -519,6 +519,11 @@ claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
   2>/dev/null \
   || echo "WARN: Serena already registered (or claude CLI not found)"
 
+echo "=== Registering XcodeBuildMCP (global) ==="
+claude mcp add --scope user xcodebuildmcp -- npx -y xcodebuildmcp@latest mcp \
+  2>/dev/null \
+  || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
+
 echo "=== Security check ==="
 if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
   echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
@@ -628,15 +633,17 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (21):"
+echo "Skills installed (34):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
 echo "  Release:          shipRelease, syncDocs"
 echo "  Retrospective:    weeklyRetro"
 echo "  Planning:         officeHours, productReview, archReview"
-echo "  Design:           design-analyze, design-language, design-evolve,"
-echo "                    design-mockup, design-implement, design-refine, design-verify"
+echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
+echo "                    design-mockup [web|ios], design-implement [web|ios],"
+echo "                    design-refine, design-verify [web|ios]"
+echo "  Verification:     verify-app, verify-web, verify-ios"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"
