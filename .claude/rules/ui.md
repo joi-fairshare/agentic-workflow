@@ -92,6 +92,26 @@ const results = await searchMemory(query, repo, "hybrid", ["message", "decision"
 
 All wrappers throw on non-2xx responses with the error message from the response body.
 
+## Context Assembly Hook (useContextAssembler)
+
+`useContextAssembler` manages the `tokenBudget` state alongside async context assembly. It differs from search/traverse hooks in that it exposes explicit state for the budget and a `clearContext()` teardown:
+
+```typescript
+const {
+  context,           // ContextResponse | null
+  contextLoading,    // boolean
+  tokenBudget,       // number (default 4000)
+  setTokenBudget,    // (budget: number) => void
+  assembleContext,   // (query: string, repo: string) => Promise<void>
+  clearContext,      // () => void
+  error,             // string | null
+} = useContextAssembler();
+```
+
+- `setTokenBudget` updates the budget before calling `assembleContext` — the budget is captured in the `assembleContext` callback via `useCallback([tokenBudget])`
+- `clearContext()` resets both `context` and `error` — call it when navigating away or switching repos
+- The hook does **not** auto-fetch on mount; `assembleContext(query, repo)` must be called explicitly
+
 ## Diagram Generation (lib/diagrams.ts)
 
 Convert message arrays to Mermaid DSL for rendering:

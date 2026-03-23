@@ -83,7 +83,7 @@ Creates a memory node for a bridge message, links it to the conversation node (c
 
 ```typescript
 const result = await ingestBridgeMessage(mdb, secretFilter, repo, messageRow);
-// Returns AppResult<MemoryNode>
+// Returns AppResult<NodeRow>
 ```
 
 ### backfillBridge

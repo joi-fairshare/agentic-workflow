@@ -10,7 +10,7 @@ globs: ["**/*.test.ts", "**/*.spec.ts", "**/vitest.config.ts"]
 
 **UI tests** — Vitest with `happy-dom` environment, `@` path alias pointing to `src/`, global `MockEventSource` defined in `ui/__tests__/setup.ts`. Tests cover `hooks/**/*.ts` and `lib/**/*.ts` only; `types.ts` is excluded.
 
-**Coverage policy:** 100% thresholds are enforced in both `mcp-bridge` and `ui` (`vitest.config.ts` thresholds: lines/functions/branches/statements). `/* v8 ignore */` annotations are allowed only for genuinely untestable infrastructure code (model download paths in `embedding.ts`, FTS5 internal error handlers, degenerate math branches in `infer-topics.ts`). Never use them to hide testable business logic.
+**Coverage policy:** Coverage thresholds are not enforced at the `vitest.config.ts` level — neither `mcp-bridge` nor `ui` have a `thresholds` key configured. `/* v8 ignore */` annotations are allowed for genuinely untestable infrastructure code (model download paths in `embedding.ts`, FTS5 internal error handlers, degenerate math branches in `infer-topics.ts`). Never use them to hide testable business logic.
 
 ## Shared Test Helpers
 

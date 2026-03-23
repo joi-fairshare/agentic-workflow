@@ -77,22 +77,28 @@ Separate DDL applied via `createMemoryDatabase()`. Key tables:
 - **edges** — `id` (UUID PK), `repo`, `from_node` (FK→nodes), `to_node` (FK→nodes), `kind`, `weight` (REAL), `meta` (JSON), `auto` (0|1), `created_at`
   - EDGE_KINDS: `contains | spawned | assigned_in | reply_to | led_to | discussed_in | decided_in | implemented_by | references | related_to`
 - **nodes_fts** — FTS5 external-content table indexing `title` + `body`. Kept in sync via triggers (`nodes_ai`, `nodes_ad`, `nodes_au`). Never write to this table directly.
-- **node_embeddings** — sqlite-vec virtual table (`vec0`), columns `node_id` + `embedding float[768]`. Written via `mdb.upsertEmbedding(nodeId, vector)`.
+- **node_embeddings** — sqlite-vec virtual table (`vec0`), columns `node_id` + `embedding float[768]`. Written via `mdb.insertEmbedding(nodeId, embedding)`.
 - **ingestion_cursors** — `(id, repo)` composite PK, tracks position in external data sources for idempotent re-runs.
 
 ## MemoryDbClient Interface
 
+Return types use `NodeRow`, `EdgeRow`, and `FTSResult` (exported from `memory-client.ts`). The types `MemoryNode` and `MemoryEdge` do not exist — do not import them.
+
 Key methods:
-- `insertNode(node)` → `MemoryNode`
-- `getNode(id)` → `MemoryNode | undefined`
-- `getNodeBySource(sourceType, sourceId)` → `MemoryNode | undefined` — use for idempotency checks
-- `updateNode(id, patch)`
-- `deleteNode(id)`
-- `insertEdge(edge)` → `MemoryEdge`
+- `insertNode(input)` → `NodeRow`
+- `getNode(id)` → `NodeRow | undefined`
+- `getNodeBySource(source_type, source_id)` → `NodeRow | undefined` — use for idempotency checks
+- `getNodesByRepo(repo, limit, offset)` → `NodeRow[]`
+- `getNodesByRepoAndKind(repo, kind)` → `NodeRow[]`
+- `deleteNodesBySourceType(source_type, repo): void` — cascades to edges and embeddings via `ON DELETE CASCADE`
+- `insertEdge(input)` → `EdgeRow`
 - `getEdgesFrom(nodeId)` → `EdgeRow[]` — outgoing edges where `from_node = nodeId`
 - `getEdgesTo(nodeId)` → `EdgeRow[]` — incoming edges where `to_node = nodeId`
-- `searchFTS(query, repo, limit)` → ranked `MemoryNode[]`
-- `searchKNN(embedding, limit, repo)` → nearest `MemoryNode[]`
+- `upsertCursor(id, repo, cursor): void` / `getCursor(id, repo): string | undefined` — ingestion position tracking
+- `searchFTS(query, repo, limit)` → `FTSResult[]` — `FTSResult` extends `NodeRow` with `rank: number`
+- `searchKNN(query: Float32Array, limit: number, repo?: string)` → `Array<{ node_id: string; distance: number }>` — caller must do a separate `getNode()` lookup for full row data
+- `insertEmbedding(nodeId, embedding: Float32Array): void` / `getEmbedding(nodeId): Float32Array | undefined`
+- `getStats(repo)` → `MemoryStats` — `{ node_count: number; edge_count: number }`
 - `transaction<T>(fn: () => T): T`
 
 ## Idempotency Pattern

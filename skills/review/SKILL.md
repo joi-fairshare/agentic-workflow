@@ -67,11 +67,14 @@ echo "rules-directory: $RULES_OK"
 
 Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
 
-If any check fails, ask the user via AskUserQuestion:
+If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
 If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
 If **no**: warn that some features may not work, then continue.
+
+If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
+> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
 
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"

@@ -96,6 +96,8 @@ The server factory `createServer(controllers)` never starts listening — that's
 
 ## Memory Services
 
-The memory services (`search-memory.ts`, `traverse-memory.ts`, `assemble-context.ts`) take both `MemoryDbClient` and `EmbeddingService`. The embedding service may be in a degraded state — always check `embedService.isDegraded()` and fall back to keyword search if true.
+`searchMemory` and `assembleContext` take both `MemoryDbClient` and `EmbeddingService`. `traverseMemory` takes only `MemoryDbClient` — do not pass `EmbeddingService` to it.
+
+The embedding service may be in a degraded state — always check `embedService.isDegraded()` and fall back to keyword search if true (in services that use it).
 
 Hybrid search uses Reciprocal Rank Fusion (RRF) to merge FTS5 and KNN result lists. The `searchMemory` service accepts `mode: "keyword" | "semantic" | "hybrid"`.
