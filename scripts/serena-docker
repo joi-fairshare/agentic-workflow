@@ -7,13 +7,13 @@
 set -euo pipefail
 
 REPO_PATH="$(pwd)"
-REPO_NAME="$(basename "$REPO_PATH" | tr ' ' '-')"   # sanitize spaces in repo names
+REPO_NAME="$(basename "$REPO_PATH" | tr -c '[:alnum:]-_.' '-')"   # sanitize all non-safe chars (spaces, colons, @, etc.)
 BASE_VERSION="latest"                                 # single source of truth for version
 
 # Select image based on repo's declared languages in .serena/project.yml
 # Repos with 'csharp' in their languages list use the C# extension image
 IMAGE="serena-local:${BASE_VERSION}"
-if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -q 'csharp' "${REPO_PATH}/.serena/project.yml"; then
+if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^- csharp' "${REPO_PATH}/.serena/project.yml"; then
   IMAGE="serena-local:${BASE_VERSION}-csharp"
 fi
 

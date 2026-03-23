@@ -15,3 +15,6 @@ dist/
 .serena/logs/
 .serena/memory/
 .serena/*.log
+
+# Claude Code machine-specific settings (absolute paths, allow rules)
+.claude/settings.local.json

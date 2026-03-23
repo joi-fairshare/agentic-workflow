@@ -39,6 +39,10 @@ read_only: true
 # Honour .gitignore — excludes dist/, node_modules/, *.db, etc.
 ignore_all_files_in_gitignore: true
 
+# NOTE: ignored_paths controls LSP indexing and pattern search only.
+# Serena's read_file tool is NOT constrained by ignored_paths.
+# These paths won't appear in symbol searches but can still be read directly.
+#
 # Paths excluded from LSP indexing:
 #   .claude/          — settings.local.json contains allow rules and sensitive config
 #   config/           — MCP server configs, may contain tokens

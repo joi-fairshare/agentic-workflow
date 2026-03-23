@@ -369,6 +369,9 @@ command -v docker &>/dev/null || { echo "FATAL: Docker not installed. Install Do
 # Derive version from committed wrapper — single source of truth, no dual-maintenance
 SERENA_VERSION=$(grep '^BASE_VERSION=' "$(dirname "$0")/scripts/serena-docker" \
   | sed 's/BASE_VERSION="//;s/".*//')
+if [ -z "$SERENA_VERSION" ]; then
+  echo "FATAL: Could not parse BASE_VERSION from scripts/serena-docker"; exit 1
+fi
 
 echo "=== Building Serena base image (TS + Python) ==="
 if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
@@ -431,9 +434,8 @@ claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
   || echo "WARN: Serena already registered (or claude CLI not found)"
 
 echo "=== Security check ==="
-if grep -q 'Users/thor/\*\*' "$HOME/.claude/settings.local.json" 2>/dev/null; then
-  echo "WARN: Broad Read(//Users/thor/**) rule detected in settings.local.json"
-  echo "      Narrow to repos/**, .claude/**, .agentic-workflow/** — see plan"
+if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
+  echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
 fi
 
 # --- Claude Code Plugins ---

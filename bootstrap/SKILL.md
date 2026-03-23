@@ -360,7 +360,7 @@ Serena configured. Languages: [typescript, python]. Restart Claude Code session 
 ```
 
 If `csharp` is in the detected languages, append:
-> NOTE: C# requires the csharp image. Run `./setup.sh` from agentic-workflow if `serena-local:v0.1.4-csharp` hasn't been built yet.
+> NOTE: C# requires the csharp image. Run `BUILD_CSHARP=1 ./setup.sh` to build it.
 
 **Run Serena onboarding check (non-fatal):** After writing `.serena/project.yml`, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
 

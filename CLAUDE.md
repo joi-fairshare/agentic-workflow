@@ -26,6 +26,7 @@ Read before making changes:
 | Vector search | sqlite-vec (KNN over node embeddings) |
 | Embeddings | @xenova/transformers (768-dim, lazy-loaded) |
 | MCP | @modelcontextprotocol/sdk (stdio transport) |
+| LSP (Serena) | Docker (Dockerized Serena MCP server via `scripts/serena-docker`) |
 | Validation | Zod 3 |
 | Test | Vitest (in-memory SQLite; happy-dom for UI hooks) |
 | Build | tsc (ESM, Node16 module resolution) |

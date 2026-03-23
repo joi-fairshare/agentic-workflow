@@ -29,3 +29,7 @@ All servers are registered globally via `claude mcp add --scope user`.
 
 Serena requires `.serena/project.yml` in the repo root. Run `/bootstrap` on any repo that
 lacks it — the skill detects languages and writes the config automatically.
+
+## Claude Code Settings
+
+`disableBypassPermissionsMode: "disable"` in `.claude/settings.json` prevents `--dangerously-skip-permissions` mode. This value is a string `"disable"` (not a boolean) per Claude Code 1.x settings schema.

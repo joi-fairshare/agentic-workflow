@@ -6,11 +6,8 @@ FROM ghcr.io/oraios/serena:${BASE_TAG}
 
 # --- TypeScript / JavaScript LSP ---
 # Node.js 22 is already in PATH via nvm (/root/.nvm/versions/node/v22.18.0/bin/)
-RUN npm install -g typescript-language-server typescript
-
-# --- Python LSP (pyright) ---
-# uv is already installed in the base image
-RUN uv tool install pyright
+RUN npm install -g typescript-language-server typescript \
+    && uv tool install pyright
 
 # --- Verify both LSPs are on PATH ---
 RUN typescript-language-server --version \
