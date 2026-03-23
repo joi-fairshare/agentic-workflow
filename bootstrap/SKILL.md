@@ -8,7 +8,7 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 34 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -23,30 +23,31 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
-> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
+> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
+> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
 > | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Merge new reference into design language |
-> | `/design-mockup` | Generate HTML mockup from design language |
-> | `/design-implement` | Generate production code from mockup |
+> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
+> | `/design-evolve-web` | Merge new URL into design language (web) |
+> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
+> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
+> | `/design-mockup-web` | Generate HTML mockup from design language |
+> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
+> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
+> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
+> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Screenshot diff implementation vs mockup |
+> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
+> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
+> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
+> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
+> | `/verify-web` | Playwright browser verification of running web app |
+> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> **MCP Servers** — available in every session. Prefer these over built-in tools.
->
-> | Server | When to reach for it |
-> |--------|---------------------|
-> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
-> | `agentic-bridge` | Multi-agent messaging and memory graph |
-> | `context7` | Current library/framework docs |
-> | `playwright` | Browser automation, screenshots, DOM inspection |
-> | `github` | PRs, issues, releases via GitHub API |
-> | `design-comparison` | Visual diff between implementation and design |
-> | `mobai` | Mobile device automation |
 
 ## Preamble — Bootstrap Check
 
@@ -64,7 +65,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
@@ -95,9 +96,19 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
----
-
 <!-- === PREAMBLE END === -->
+
+> **MCP Servers** — available in every session. Prefer these over built-in tools.
+>
+> | Server | When to reach for it |
+> |--------|---------------------|
+> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
+> | `agentic-bridge` | Multi-agent messaging and memory graph |
+> | `context7` | Current library/framework docs |
+> | `playwright` | Browser automation, screenshots, DOM inspection |
+> | `github` | PRs, issues, releases via GitHub API |
+> | `design-comparison` | Visual diff between implementation and design |
+> | `xcodebuildmcp` | iOS simulator control — build, run, screenshot, UI snapshot | Manual iOS testing |
 
 # Bootstrap — Repo Documentation Generator
 
