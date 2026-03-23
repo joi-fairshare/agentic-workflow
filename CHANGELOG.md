@@ -9,14 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Glob-scoped rule files in `.claude/rules/` replacing the monolithic `CLAUDE.md` (rules: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `mcp-servers.md`, `skills.md`, `testing.md`, `ui.md`)
+- Dockerized Serena LSP integration (`Dockerfile.serena`, `Dockerfile.serena-csharp`, `scripts/serena-docker` wrapper)
+- Per-repo Serena config (`.serena/project.yml`) with TypeScript language settings and sensitive path exclusions
+- Bootstrap skill Step 7: auto-generates `.serena/project.yml` with language detection
+- `setup.sh` builds Serena Docker images, installs wrapper script, and registers MCP server globally
+- `.claude/settings.json` with `disableBypassPermissionsMode` to prevent unsafe permissions bypass
+- `.dockerignore` for Docker builds
+- `.gitignore` entries for Serena runtime data, `settings.local.json`, and `coverage/`
 - Adaptive statusline (`statusline.sh`) with context-first layout and five width tiers: FULL (>=116), MEDIUM (>=101), NARROW (>=78), COMPACT (>=65), COMPACT-S (<65)
 - Separate Usage (5h/7d rate limits) and Context columns in the statusline display
 - Mid-session terminal resize detection via hooks registered in `settings.json` (`PreToolUse`/`PostToolUse`/`Stop`)
 - Statusline installation integrated into `setup.sh`
 - `statusLine` config block added to `settings.json`
 
+### Changed
+
+- `CLAUDE.md` trimmed to under 80 lines — now a navigation document with a pointer to `.claude/rules/`; skill count and add-skill steps corrected
+- Updated bootstrap skill (`bootstrap/SKILL.md`) to generate `.claude/rules/` directories and route `RULES_OK` audits correctly; hardened `RULES_OK` check to require non-empty `.claude/rules/` directory
+- Replaced stale `@xenova/transformers` package reference with `@huggingface/transformers` across documentation
+- Removed MCP server table from all skill preambles (centralized in `.claude/rules/mcp-servers.md`)
+- Removed all `/* v8 ignore */` annotations from source files — coverage must be earned through real tests
+- Dropped 100% coverage threshold enforcement from vitest.config.ts in both packages
+- Updated TESTING.md, ARCHITECTURE.md, and CLAUDE.md to document prohibition on v8 ignore annotations
+
 ### Fixed
 
+- Corrected inaccurate rule file content found during multiple review passes
+- `project_name` field and bootstrap Step 7 clarifications in `.serena/project.yml`
+- Docker infrastructure: opt-in C# build, removed port exposure, granular volume mounts, `--pull` flag, `.dockerignore`
+- Documented `dotnet-install.sh` trust model and version pinning rationale
 - Added COMPACT-S tier for terminals narrower than 65 columns to prevent field overflow
 - Added 50 ms sleep in `statusline.sh` before reading terminal width to resolve SIGWINCH race condition
 - Added 50 ms sleep after SIGWINCH in the Stop hook to close the resize race
@@ -34,14 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `setup.sh` guards the `statusLine` key with `jq has("statusLine")` and uses `grep -qF` for exact source-line matching
 - `config/statusline.sh` type-guards `resets_at` timestamps: applies `floor | tostring` only when the value is a JSON number, passes strings through as-is
 - `config/statusline.sh` removes `tput cols` from the width fallback; `COLS` now derives from `${COLUMNS:-}` only (tput is unreliable in Claude Code subprocesses)
-
-## [Unreleased] - 2026-03-22
-
-### Changed
-
-- Removed all `/* v8 ignore */` annotations from source files — coverage must be earned through real tests
-- Dropped 100% coverage threshold enforcement from vitest.config.ts in both packages
-- Updated TESTING.md, ARCHITECTURE.md, and CLAUDE.md to document prohibition on v8 ignore annotations
 
 ## [Unreleased] - 2026-03-21
 

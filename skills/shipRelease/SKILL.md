@@ -10,6 +10,8 @@ allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Read, Glob, Gr
 
 Syncs your branch, runs tests, audits coverage, pushes, opens a PR, and optionally invokes `/syncDocs`.
 
+<!-- === PREAMBLE START === -->
+
 > **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
@@ -61,15 +63,24 @@ done
 BRIDGE_OK=false
 [ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
 
+RULES_OK=false
+[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
+
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-built: $BRIDGE_OK"
+echo "rules-directory: $RULES_OK"
 ```
 
-If either check fails, ask the user via AskUserQuestion:
+Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+
+If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
 If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
 If **no**: warn that some features may not work, then continue.
+
+If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
+> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
 
 Create the output directory for this repo:
 ```bash
@@ -77,6 +88,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/releases"
 ```
 
 ---
+
+<!-- === PREAMBLE END === -->
 
 ## Step 1: Pre-flight Checks
 
