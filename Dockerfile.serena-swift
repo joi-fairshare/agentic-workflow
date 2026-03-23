@@ -1,0 +1,31 @@
+# Swift language server extension — opt-in for repos with swift in .serena/project.yml
+# Extends the base serena-local image; NOT included by default.
+# Trigger: add '- swift' to languages: in .serena/project.yml, then run setup.sh.
+#
+# Architecture: sourcekit-lsp is a macOS binary (/usr/bin/sourcekit-lsp) — it cannot
+# run inside this Linux container. The host machine exposes sourcekit-lsp through a
+# Unix domain socket. This image installs socat and a shim that connects Serena's LSP
+# calls through that socket.
+#
+# Host setup (handled automatically by scripts/serena-docker):
+#   socat UNIX-LISTEN:/tmp/serena-swift-<repo>.sock,fork EXEC:/usr/bin/sourcekit-lsp
+#
+# Container shim (/usr/local/bin/sourcekit-lsp):
+#   exec socat - UNIX-CONNECT:/tmp/sourcekit-lsp.sock
+#
+# Zero-trust parity: the socket is a narrow JSON-RPC pipe. The container gains no
+# new capabilities beyond Swift symbol resolution. execute_shell_command remains
+# excluded; all project files remain read-only.
+ARG LOCAL_TAG=latest
+FROM serena-local:${LOCAL_TAG}
+
+# --- socat: bridges container stdin/stdout to the host Unix domain socket ---
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends socat \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- sourcekit-lsp shim: Serena invokes this as if it were the real LSP binary ---
+# Connects to the socket the host created at /tmp/sourcekit-lsp.sock
+RUN printf '#!/bin/sh\nexec socat - UNIX-CONNECT:/tmp/sourcekit-lsp.sock\n' \
+      > /usr/local/bin/sourcekit-lsp \
+    && chmod +x /usr/local/bin/sourcekit-lsp
