@@ -101,3 +101,44 @@ The server factory `createServer(controllers)` never starts listening — that's
 The embedding service may be in a degraded state — always check `embedService.isDegraded()` and fall back to keyword search if true (in services that use it).
 
 Hybrid search uses Reciprocal Rank Fusion (RRF) to merge FTS5 and KNN result lists. The `searchMemory` service accepts `mode: "keyword" | "semantic" | "hybrid"`.
+
+### traverseMemory return shape
+
+`traverseMemory` returns `AppResult<TraverseResult>`:
+
+```typescript
+interface BFSStep {
+  node_id: string;
+  parent_id: string | null;
+  edge_id: string | null;
+  edge_kind: string | null;
+}
+
+interface TraverseResult {
+  nodes: NodeRow[];
+  edges: EdgeRow[];
+  root: string;      // starting node ID
+  steps: BFSStep[];  // BFS traversal trace (ordered visit sequence)
+}
+```
+
+`TraverseInput.sender` (optional) filters non-root nodes: only nodes whose `sender` matches are included. Structural nodes (`sender = null`) are always included regardless of the filter.
+
+### assembleContext return shape
+
+`assembleContext` returns `AppResult<AssembleContextResult>`:
+
+```typescript
+interface ContextSection {
+  heading: string;
+  content: string;
+  relevance: number;
+  node_ids: string[];  // source node IDs for this section
+}
+
+interface AssembleContextResult {
+  summary: string;
+  sections: ContextSection[];
+  token_estimate: number;  // rough estimate: text length / 4
+}
+```

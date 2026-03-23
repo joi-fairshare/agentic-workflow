@@ -92,7 +92,10 @@ Key methods:
 - `getNodeBySource(source_type, source_id)` → `NodeRow | undefined` — use for idempotency checks
 - `getNodesByRepo(repo, limit, offset)` → `NodeRow[]`
 - `getNodesByRepoAndKind(repo, kind)` → `NodeRow[]`
+- `getConversationNodes(repo, limit, offset)` → `NodeRow[]` — nodes of kind `conversation`
+- `countConversationNodes(repo)` → `number`
 - `deleteNodesBySourceType(source_type, repo): void` — cascades to edges and embeddings via `ON DELETE CASCADE`
+- `updateNodeMeta(id, meta: string): void` — overwrites the `meta` JSON column for a node
 - `insertEdge(input)` → `EdgeRow`
 - `getEdgesFrom(nodeId)` → `EdgeRow[]` — outgoing edges where `from_node = nodeId`
 - `getEdgesTo(nodeId)` → `EdgeRow[]` — incoming edges where `to_node = nodeId`
@@ -100,6 +103,7 @@ Key methods:
 - `searchFTS(query, repo, limit, sender?)` → `FTSResult[]` — `FTSResult` extends `NodeRow` with `rank: number`. Pass `sender` to filter by originating agent.
 - `searchKNN(query: Float32Array, limit: number, repo?: string, sender?: string)` → `Array<{ node_id: string; distance: number }>` — caller must do a separate `getNode()` lookup for full row data
 - `getDistinctSenders(repo)` → `string[]` — distinct non-null sender values for the repo
+- `getDistinctRepos()` → `string[]` — all repos that have at least one node
 - `insertEmbedding(nodeId, embedding: Float32Array): void` / `getEmbedding(nodeId): Float32Array | undefined`
 - `getStats(repo)` → `MemoryStats` — `{ node_count: number; edge_count: number }`
 - `insertTraversalLog(input: InsertTraversalLogInput)` → `TraversalLogRow`
