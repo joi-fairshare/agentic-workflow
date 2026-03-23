@@ -1,5 +1,5 @@
 ---
-globs: ["**/*.test.ts", "**/*.spec.ts", "**/vitest.config.ts"]
+globs: ["**/*.test.ts", "**/*.spec.ts", "**/vitest.config.ts", "mcp-bridge/tests/helpers.ts"]
 ---
 
 # Testing Rules
@@ -20,8 +20,8 @@ Always use the shared factory functions from `tests/helpers.ts`:
 // Bridge tests
 import { createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
 
-const { db, rawDb } = createTestBridgeDb();        // in-memory with pragmas applied
-const { mdb, rawMdb } = createTestMemoryDb();      // loads sqlite-vec extension, applies memory schema
+const { db, raw } = createTestBridgeDb();          // in-memory with pragmas applied
+const { mdb, raw } = createTestMemoryDb();         // loads sqlite-vec extension, applies memory schema
 const embedService = createMockEmbeddingService(); // returns zero-filled Float32Arrays
 ```
 
@@ -101,7 +101,7 @@ FTS5 and KNN tests require a real `createTestMemoryDb()` with sqlite-vec loaded.
 
 ## Test Count Baseline
 
-- Bridge: 293 tests across 33 test files
-- UI: 61 tests
+- Bridge: 341 tests across 39 test files
+- UI: 67 tests
 
 Any PR that reduces these counts needs explicit justification.

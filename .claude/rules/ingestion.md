@@ -4,20 +4,18 @@ globs: ["mcp-bridge/src/ingestion/**", "mcp-bridge/src/application/services/inge
 
 # Ingestion Rules
 
-## BoundedQueue<T> — Backpressure-Aware Async Processing
+## AsyncQueue<T> — Unbounded Async Processing
 
-Use `createBoundedQueue<T>()` to decouple event emission from async processing. Never block the EventBus callback with await.
+Use `createAsyncQueue<T>()` to decouple event emission from async processing. Never block the EventBus callback with await.
 
 ```typescript
-import { createBoundedQueue } from "../ingestion/queue.js";
+import { createAsyncQueue } from "../ingestion/queue.js";
 
-const queue = createBoundedQueue<{ id: string; conversation: string }>({
-  maxSize: 500,
+const queue = createAsyncQueue<{ id: string; conversation: string }>({
   handler: async (item) => {
     const msg = db.getMessage(item.id);
     if (msg) await ingestBridgeMessage(mdb, secretFilter, repo, msg);
   },
-  onDrop: (item) => bus.emit({ type: "memory:ingestion_dropped", data: item }),
   onError: (err) => logger.error("ingestion error", err),
 });
 
@@ -28,7 +26,7 @@ bus.subscribe((event) => {
 });
 ```
 
-When the queue is full (`maxSize` items pending), the **oldest** item is dropped and `onDrop` is called. This preserves recent messages at the cost of older ones — intentional tradeoff for backpressure.
+The queue is **unbounded** — items are never dropped. Processing is serial (`setImmediate`-based drain loop): one item at a time, next item starts after current completes. Use `queue.depth()` to check pending count. Call `queue.stop()` on shutdown — it clears the buffer and prevents new processing.
 
 ## EmbeddingService — Lazy Initialization
 
@@ -128,7 +126,7 @@ const sessionQueue = createSessionQueue({
 sessionQueue.enqueue({ sessionId, filePath, repo, pass: "both" });
 ```
 
-`SessionJob.pass` controls ingestion depth: `"summary"` creates one node per turn, `"detail"` expands individual tool use blocks, `"both"` runs summary then detail. Unlike `BoundedQueue` which drops oldest items, `SessionQueue` uses an unbounded FIFO buffer and processes one item per tick. Stop it with `sessionQueue.stop()` on server shutdown.
+`SessionJob.pass` controls ingestion depth: `"summary"` creates one node per turn, `"detail"` expands individual tool use blocks, `"both"` runs summary then detail. Unlike `AsyncQueue` which processes items serially via `setImmediate`, `SessionQueue` uses a rate-limited fixed-interval timer and processes one item per tick. Stop it with `sessionQueue.stop()` on server shutdown.
 
 ## Claude Code Parser
 

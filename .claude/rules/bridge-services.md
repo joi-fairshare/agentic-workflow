@@ -50,24 +50,22 @@ const unsub = bus.subscribe((event) => {
 bus.emit({ type: "message:created", data: messageRow });
 ```
 
-Event types: `message:created`, `task:created`, `task:updated`, `memory:ingestion_dropped`.
+Event types: `message:created`, `task:created`, `task:updated`, `memory:ingestion_dropped`, `memory:session_ingested`.
 
 Emit events **after** the DB write succeeds. Controllers emit — services do not.
 
 ## Ingestion Queue Integration (index.ts)
 
-The `BoundedQueue` decouples the EventBus from async memory processing. Pattern in `index.ts`:
+The `AsyncQueue` decouples the EventBus from async memory processing. Pattern in `index.ts`:
 
 1. Subscribe `bus.subscribe(event => { if (event.type === "message:created") ... })` → enqueue `{ id, conversation }`
 2. Queue handler fetches full message row, calls `ingestBridgeMessage(memoryDb, secretFilter, repo, msg)`
-3. `onDrop` emits `memory:ingestion_dropped` event (non-fatal)
-4. `backfillBridge()` runs at startup (non-blocking) before subscribing to avoid missing messages
-
-Max queue size: 500. If full, oldest item is dropped.
+3. `backfillBridge()` runs at startup (non-blocking) before subscribing to avoid missing messages
+4. `SessionQueue` handles Claude Code session ingestion separately (rate-limited, one session per tick)
 
 ## MCP Tool Pattern (mcp.ts)
 
-All 10 MCP tools follow this structure:
+All 11 MCP tools follow this structure:
 
 ```typescript
 server.tool("tool_name", "description", ZodSchema.shape, async (args) => {

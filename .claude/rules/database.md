@@ -99,7 +99,7 @@ Key methods:
 - `upsertCursor(id, repo, cursor): void` / `getCursor(id, repo): string | undefined` — ingestion position tracking
 - `searchFTS(query, repo, limit, sender?)` → `FTSResult[]` — `FTSResult` extends `NodeRow` with `rank: number`. Pass `sender` to filter by originating agent.
 - `searchKNN(query: Float32Array, limit: number, repo?: string, sender?: string)` → `Array<{ node_id: string; distance: number }>` — caller must do a separate `getNode()` lookup for full row data
-- `getSenders(repo)` → `string[]` — distinct non-null sender values for the repo
+- `getDistinctSenders(repo)` → `string[]` — distinct non-null sender values for the repo
 - `insertEmbedding(nodeId, embedding: Float32Array): void` / `getEmbedding(nodeId): Float32Array | undefined`
 - `getStats(repo)` → `MemoryStats` — `{ node_count: number; edge_count: number }`
 - `insertTraversalLog(input: InsertTraversalLogInput)` → `TraversalLogRow`
