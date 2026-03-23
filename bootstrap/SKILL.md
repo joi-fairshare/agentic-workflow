@@ -362,7 +362,12 @@ Serena configured. Languages: [typescript, python]. Restart Claude Code session 
 If `csharp` is in the detected languages, append:
 > NOTE: C# requires the csharp image. Run `./setup.sh` from agentic-workflow if `serena-local:v0.1.4-csharp` hasn't been built yet.
 
-**Run Serena onboarding:** After writing `.serena/project.yml`, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+**Run Serena onboarding check (non-fatal):** After writing `.serena/project.yml`, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+
+> **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is a different tool that is explicitly excluded in the generated `project.yml` (see `excluded_tools`). Using `onboarding` will be rejected by Serena.
+
+> **Non-fatal:** If `check_onboarding_performed` fails (e.g., Docker is not running or the Serena image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
+> `WARN: Serena not available — run /bootstrap again after \`setup.sh\` to initialize LSP.`
 
 ## Step 8: Report
 

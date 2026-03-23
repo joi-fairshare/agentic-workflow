@@ -151,4 +151,4 @@ read_only_memory_patterns: []
 # For a list of possible encodings, see https://docs.python.org/3.11/library/codecs.html#standard-encodings
 encoding: utf-8
 # the name by which the project can be referenced within Serena
-project_name: feat-serena-integration
+project_name: agentic-workflow
