@@ -224,8 +224,16 @@ Test coverage spans unit tests (controllers, services, DB client, schemas, utili
 ```
 agentic-workflow/
 ├── .claude/
-│   ├── rules/mcp-servers.md   # MCP server usage rules for Claude Code
-│   └── settings.json          # Claude Code project settings
+│   └── rules/                 # Glob-scoped domain rules (9 files, auto-loaded by Claude Code)
+│       ├── bridge-services.md # AppResult, EventBus, MCP tools, memory services
+│       ├── bridge-transport.md # Typed router, controllers, Zod schemas
+│       ├── database.md        # SQLite schema, DbClient, MemoryDbClient
+│       ├── design.md          # Design pipeline, tokens, .impeccable.md
+│       ├── ingestion.md       # Queues, embeddings, secret filter, Claude Code parser
+│       ├── mcp-servers.md     # MCP server usage rules (Serena, bridge, context7, etc.)
+│       ├── skills.md          # Skill structure, preamble, pipeline, bootstrap
+│       ├── testing.md         # Test patterns, helpers, coverage policy
+│       └── ui.md              # Next.js App Router, hooks, React Flow graph
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
 ├── skills/                    # Claude Code custom skills
@@ -255,7 +263,6 @@ agentic-workflow/
 │       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
 │       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │       └── lib/               # API client, Mermaid builders, shared types
-├── .claude/rules/             # Glob-scoped domain rules (auto-loaded by Claude Code)
 ├── Dockerfile.serena           # Serena base image (TypeScript + Python LSPs)
 ├── Dockerfile.serena-csharp    # Serena C# extension image (opt-in)
 ├── start.sh                   # Start bridge + UI together

@@ -80,7 +80,7 @@ graph TD
         Services --> SQLite[(bridge.db)]
         REST --> EventBus[EventBus]
         EventBus --> SSE[GET /events — SSE stream]
-        EventBus --> IngestionQueue[Bounded Queue]
+        EventBus --> IngestionQueue[Async Queue]
         IngestionQueue --> MemServices[Memory Services]
         MCP --> MemServices
         REST --> MemServices
@@ -164,7 +164,7 @@ agentic-workflow/
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
 │   ├── vitest.config.ts                 #   Vitest config — v8 coverage, no thresholds, excludes index.ts + mcp.ts
-│   ├── tests/                           #   Unit and integration tests (293 tests)
+│   ├── tests/                           #   Unit and integration tests (341 tests)
 │   │   ├── routes/                      #     Route integration tests via Fastify inject (messages, tasks, conversations, events, memory)
 │   │   ├── client.test.ts               #     DbClient unit tests
 │   │   ├── schema.test.ts               #     Migration and schema tests
@@ -182,12 +182,18 @@ agentic-workflow/
 │   │   ├── ingest-bridge.test.ts        #     Bridge ingestion pipeline tests
 │   │   ├── ingest-transcript.test.ts    #     Transcript ingestion tests
 │   │   ├── ingest-git.test.ts           #     Git ingestion tests
+│   │   ├── ingest-claude-code.test.ts   #     Claude Code session ingestion tests
+│   │   ├── ingest-generic.test.ts       #     Generic conversation ingestion tests
 │   │   ├── extract-decisions.test.ts    #     Decision extraction tests
 │   │   ├── infer-topics.test.ts         #     Topic inference tests
 │   │   ├── embedding.test.ts            #     EmbeddingService tests
-│   │   ├── queue.test.ts                #     BoundedQueue tests
+│   │   ├── queue.test.ts                #     AsyncQueue tests
+│   │   ├── session-queue.test.ts        #     SessionQueue tests
+│   │   ├── claude-code-parser.test.ts   #     Claude Code JSONL parser tests
+│   │   ├── claude-code-watcher.test.ts  #     Claude Code file watcher tests
 │   │   ├── secret-filter.test.ts        #     SecretFilter tests
 │   │   ├── transcript-parser.test.ts    #     JSONL parser tests
+│   │   ├── traversal-logs.test.ts       #     Traversal log tests
 │   │   ├── sse-integration.test.ts      #     SSE stream integration tests
 │   │   ├── server-errors.test.ts        #     Server error handling tests
 │   │   ├── result.test.ts               #     AppResult utility tests
@@ -195,7 +201,7 @@ agentic-workflow/
 │   │   └── helpers.ts                   #     Shared test helpers: createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService
 │   └── src/
 │       ├── index.ts                     #   REST entry point — binds Fastify on :3100, inits memory system
-│       ├── mcp.ts                       #   MCP entry point — stdio transport, 10 tools
+│       ├── mcp.ts                       #   MCP entry point — stdio transport, 11 tools
 │       ├── server.ts                    #   Fastify factory — registers routes, Zod validation
 │       ├── db/
 │       │   ├── schema.ts               #   SQLite migrations (messages + tasks tables, WAL)
@@ -204,12 +210,15 @@ agentic-workflow/
 │       │   └── memory-client.ts        #   MemoryDbClient — node/edge CRUD, FTS5 search, KNN search
 │       ├── ingestion/
 │       │   ├── embedding.ts            #   EmbeddingService — lazy model init, batch embed, 768-dim vectors
-│       │   ├── queue.ts                #   Bounded async queue with overflow drop and setImmediate drain
+│       │   ├── queue.ts                #   Unbounded async queue with setImmediate drain
+│       │   ├── session-queue.ts        #   Rate-limited single-item queue for session ingestion
+│       │   ├── claude-code-parser.ts   #   JSONL session parser — turns, tool uses, metadata extraction
+│       │   ├── claude-code-watcher.ts  #   File watcher for Claude Code session files
 │       │   ├── secret-filter.ts        #   Regex-based redaction for API keys, tokens, passwords
 │       │   └── transcript-parser.ts    #   JSONL transcript parser with Zod validation and skip-on-error
 │       ├── application/
 │       │   ├── result.ts               #   AppResult<T> discriminated union (ok/err, never throws)
-│       │   ├── events.ts               #   EventBus factory — pub/sub (message:created, task:created, task:updated)
+│       │   ├── events.ts               #   EventBus factory — pub/sub (message:created, task:created, task:updated, memory:*)
 │       │   └── services/
 │       │       ├── send-context.ts     #   Insert a "context" message into a conversation
 │       │       ├── get-messages.ts     #   Fetch by conversation; fetch unread + mark-read (atomic)
@@ -222,6 +231,8 @@ agentic-workflow/
 │       │       ├── ingest-bridge.ts    #   Bridge message → memory node ingestion with backfill
 │       │       ├── ingest-transcript.ts #  JSONL transcript → memory nodes with reply_to edges
 │       │       ├── ingest-git.ts       #   Git commit/PR metadata → memory nodes
+│       │       ├── ingest-claude-code.ts #  Claude Code session → memory nodes (summary + detail passes)
+│       │       ├── ingest-generic.ts   #   Generic conversation → memory nodes (role/content messages)
 │       │       ├── extract-decisions.ts #  Decision extraction via regex heuristics
 │       │       └── infer-topics.ts     #   Topic inference via embedding clustering (k-means++)
 │       ├── transport/
@@ -242,30 +253,54 @@ agentic-workflow/
 │           ├── tasks.ts               #   POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
 │           ├── conversations.ts       #   GET /conversations (paginated summaries)
 │           ├── events.ts              #   GET /events (SSE stream, heartbeat 30s)
-│           └── memory.ts             #   10 memory routes: search, node, edges, traverse, context, topics, stats, ingest, link, node
+│           └── memory.ts             #   17 memory routes: search, node, node-by-source, edges, traverse, context, topics, stats, ingest, expand, link, node, traversals, traversal, senders, repos, conversations
 ├── ui/                                 # Next.js 15 App Router conversation dashboard
 │   ├── next.config.ts                  #   Reverse proxy /api/* → http://localhost:3100/*
 │   ├── vitest.config.ts                #   Vitest config — happy-dom, v8 coverage, no thresholds (hooks + lib only)
-│   ├── __tests__/                      #   UI tests (61 tests)
+│   ├── __tests__/                      #   UI tests (67 tests)
 │   │   ├── setup.ts                    #     Global test setup: mocks fetch and EventSource (MockEventSource)
 │   │   ├── hooks/                      #     Hook tests: use-sse, use-memory-search, use-memory-traverse, use-context-assembler
 │   │   └── lib/                        #     Lib tests: api, memory-api, diagrams
 │   └── src/
 │       ├── app/
-│       │   ├── layout.tsx             #   Dark mode layout, Inter font, Bridge UI header
+│       │   ├── layout.tsx             #   Dark mode layout, Inter font, NavHeader
 │       │   ├── page.tsx               #   Conversation list (paginated, UUID filter, SSE live)
-│       │   ├── conversation/[id]/page.tsx  #   Detail: timeline (3 col) + graph + sequence diagram (2 col)
+│       │   ├── conversation/[id]/
+│       │   │   ├── layout.tsx         #   Shared layout with Timeline/Graph tab nav
+│       │   │   ├── page.tsx           #   Timeline tab: messages, tasks, diagrams
+│       │   │   └── graph/page.tsx     #   Graph tab: React Flow DAG of memory nodes
 │       │   └── memory/page.tsx        #   Memory Explorer: search, graph traversal, context assembly
 │       ├── components/
+│       │   ├── nav-header.tsx         #   Top-level navigation (Conversations, Memory Explorer)
+│       │   ├── conversation-card.tsx  #   Conversation list card
 │       │   ├── diagram-renderer.tsx   #   Mermaid rendering abstraction (dynamic import)
+│       │   ├── diagram-panel.tsx      #   Diagram display panel
 │       │   ├── vertical-timeline.tsx  #   Chronological message+task list, expand/collapse
 │       │   ├── copy-button.tsx        #   Copy-to-clipboard for conversation UUIDs
-│       │   └── memory-graph.tsx       #   Memory graph visualization component
+│       │   ├── graph/                 #   React Flow graph components
+│       │   │   ├── graph-canvas.tsx   #   React Flow wrapper with Dagre layout
+│       │   │   ├── graph-toolbar.tsx  #   Depth/direction/edge-kind/sender filters
+│       │   │   ├── graph-minimap.tsx  #   React Flow minimap overlay
+│       │   │   ├── node-detail-panel.tsx #  Selected node metadata + edges
+│       │   │   ├── context-builder-panel.tsx #  Token-budgeted context assembly UI
+│       │   │   ├── path-replay.tsx    #   Play/pause/step/speed traversal replay controls
+│       │   │   ├── edge-styles.ts     #   Edge color and dash pattern maps (10 kinds)
+│       │   │   └── node-types/        #   6 typed node renderers (message, conversation, topic, decision, task, artifact)
+│       │   ├── conversation-graph/    #   Conversation-scoped graph view
+│       │   │   ├── conversation-graph-page.tsx #  Graph canvas + node list sidebar
+│       │   │   └── conversation-node-list.tsx  #  Click-to-focus node navigation
+│       │   └── memory-explorer/       #   Memory Explorer three-column layout
+│       │       ├── memory-explorer-page.tsx  #  Shell component
+│       │       ├── memory-search-panel.tsx   #  Search input, results, mode selector
+│       │       └── traversal-log-panel.tsx   #  Recent traversal logs
 │       ├── hooks/
 │       │   ├── use-sse.ts             #   EventSource hook → real-time bridge events
 │       │   ├── use-memory-search.ts   #   Hook for memory search with mode selection
 │       │   ├── use-memory-traverse.ts #   Hook for graph traversal from a node
-│       │   └── use-context-assembler.ts #  Hook for token-budgeted context assembly
+│       │   ├── use-context-assembler.ts #  Hook for token-budgeted context assembly
+│       │   ├── use-graph-layout.ts    #   Dagre layout for React Flow nodes/edges
+│       │   ├── use-path-replay.ts     #   Traversal path playback controls
+│       │   └── use-traversal-logs.ts  #   Fetch recent traversal logs
 │       └── lib/
 │           ├── api.ts                 #   Fetch wrappers: fetchConversations, fetchMessages, fetchTasks
 │           ├── memory-api.ts          #   Fetch wrappers: searchMemory, traverseMemory, assembleContext
@@ -283,7 +318,7 @@ agentic-workflow/
 │   │   ├── bridge-transport.md          #   Typed router, controller factories, Zod schema conventions
 │   │   ├── database.md                  #   DbClient, MemoryDbClient, schema reference, idempotency
 │   │   ├── design.md                    #   Design pipeline, artifact formats, design principles
-│   │   ├── ingestion.md                 #   BoundedQueue, EmbeddingService, SecretFilter, ingestion services
+│   │   ├── ingestion.md                 #   AsyncQueue, EmbeddingService, SecretFilter, ingestion services
 │   │   ├── mcp-servers.md               #   MCP server usage guide (Serena vs Grep/Read decision table)
 │   │   ├── skills.md                    #   Skill structure, preamble format, repo slug, output dirs
 │   │   ├── testing.md                   #   Test infrastructure, shared helpers, coverage policy
@@ -379,7 +414,7 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines) and a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
 
 ### Serena LSP Integration
 
@@ -416,7 +451,7 @@ The bridge follows a strict three-layer architecture with unidirectional depende
 
 **Memory database (memory.db)** — Knowledge graph with full-text and vector search:
 
-**nodes** — `id` (UUID PK), `repo`, `kind` (enum: message | conversation | topic | decision | artifact | task), `title`, `body` (truncated to 50 KB), `meta` (JSON), `source_id`, `source_type`, `created_at`, `updated_at`. Unique index on `(source_type, source_id)`. Indexed on `repo` and `(repo, kind)`.
+**nodes** — `id` (UUID PK), `repo`, `kind` (enum: message | conversation | topic | decision | artifact | task), `title`, `body` (truncated to 50 KB), `meta` (JSON), `source_id`, `source_type`, `sender` (nullable, identifies originating agent), `created_at`, `updated_at`. Unique index on `(source_type, source_id)`. Indexed on `repo`, `(repo, kind)`, and `(repo, sender)`.
 
 **edges** — `id` (UUID PK), `repo`, `from_node` (FK → nodes), `to_node` (FK → nodes), `kind` (enum: contains | spawned | assigned_in | reply_to | led_to | discussed_in | decided_in | implemented_by | references | related_to), `weight`, `meta` (JSON), `auto` (boolean), `created_at`. Unique index on `(from_node, to_node, kind)`. Cascading deletes from nodes.
 
@@ -426,9 +461,11 @@ The bridge follows a strict three-layer architecture with unidirectional depende
 
 **ingestion_cursors** — Composite PK `(id, repo)` tracking ingestion progress for idempotent re-runs.
 
+**traversal_logs** — `id` (UUID PK), `repo`, `agent` (nullable), `operation`, `start_node`, `params` (JSON), `steps` (JSON), `scores` (JSON), `token_allocation` (INT), `created_at`. Indexed by `(repo, created_at DESC)`. Auto-pruned after N days via `pruneTraversalLogs`.
+
 ### MCP Tools (mcp.ts)
 
-Ten tools exposed over stdio transport:
+Eleven tools exposed over stdio transport:
 
 | Tool | Description |
 |------|-------------|
@@ -442,10 +479,11 @@ Ten tools exposed over stdio transport:
 | `get_context` | Token-budgeted context assembly combining search and graph traversal |
 | `create_memory_link` | Create an edge between two existing memory nodes |
 | `create_memory_node` | Create a topic or decision node (optionally linked to an existing node) |
+| `ingest_conversation` | Ingest a conversation into the memory graph for long-term preservation |
 
 ### REST API (index.ts + server.ts)
 
-Twenty endpoints on Fastify (default `127.0.0.1:3100`):
+Twenty-seven endpoints on Fastify (default `127.0.0.1:3100`):
 
 | Method | Path | Handler |
 |--------|------|---------|
@@ -460,6 +498,7 @@ Twenty endpoints on Fastify (default `127.0.0.1:3100`):
 | GET | `/conversations?limit=&offset=` | `getConversations` service — paginated summaries |
 | GET | `/events` | SSE stream — emits `message:created`, `task:created`, `task:updated`; heartbeat every 30s |
 | GET | `/memory/search?query=&repo=&mode=&kinds=&limit=` | Hybrid search (keyword, semantic, or hybrid mode) |
+| GET | `/memory/node/by-source/:source_type/:source_id` | Get a memory node by source type and source ID |
 | GET | `/memory/node/:id` | Get a single memory node by ID |
 | GET | `/memory/node/:id/edges` | Get all edges for a memory node |
 | GET | `/memory/traverse/:id?direction=&edge_kinds=&max_depth=&max_nodes=` | BFS graph traversal from a node |
@@ -467,8 +506,14 @@ Twenty endpoints on Fastify (default `127.0.0.1:3100`):
 | GET | `/memory/topics?repo=` | Get all topic nodes for a repo |
 | GET | `/memory/stats?repo=` | Memory graph statistics (node/edge counts) |
 | POST | `/memory/ingest` | Trigger ingestion from a source (bridge, transcript, git) |
+| POST | `/memory/node/:id/expand` | Expand a summary-only turn into full detail nodes |
 | POST | `/memory/link` | Create an edge between two memory nodes |
 | POST | `/memory/node` | Create a new topic or decision node |
+| GET | `/memory/traversals?repo=&limit=` | List recent traversal logs |
+| GET | `/memory/traversals/:id` | Get a specific traversal log |
+| GET | `/memory/senders?repo=` | List distinct senders for a repo |
+| GET | `/memory/repos` | List distinct repo slugs |
+| GET | `/memory/conversations?repo=&limit=&offset=` | List conversation nodes with message counts |
 
 The server refuses to bind to non-loopback addresses unless `ALLOW_REMOTE=1` is set, since the API has no authentication. CORS is enabled (via `@fastify/cors`) to allow the local UI at `:3000` to connect.
 
@@ -478,12 +523,11 @@ An in-process pub/sub bus created once in `index.ts` and passed into controller 
 
 ```
 createEventBus() → EventBus
-  .on(type, handler)   — subscribe
-  .off(type, handler)  — unsubscribe
+  .subscribe(handler)  — subscribe (returns unsubscribe function)
   .emit(event)         — publish
 ```
 
-Event union: `BridgeEvent = MessageCreatedEvent | TaskCreatedEvent | TaskUpdatedEvent`
+Event union: `BridgeEvent = MessageCreatedEvent | TaskCreatedEvent | TaskUpdatedEvent | MemoryIngestionDroppedEvent | MemorySessionIngestedEvent`
 
 ### Memory System (db/memory-*, ingestion/, application/services/*-memory*, ingest-*, extract-*, infer-*)
 
@@ -491,10 +535,12 @@ A conversation memory and retrieval system that builds a persistent knowledge gr
 
 **Knowledge Graph** — Nodes represent entities (messages, conversations, topics, decisions, artifacts, tasks) and edges represent relationships (contains, reply_to, led_to, references, related_to, etc.). Both are scoped by `repo` slug. The graph is stored in a separate SQLite database (memory.db) with WAL mode and foreign keys enabled. Node bodies are truncated to 50 KB to bound storage.
 
-**Ingestion Pipeline** — Three ingestion sources feed the graph:
-- **Bridge ingestion** (`ingest-bridge.ts`) — Converts bridge messages and tasks into memory nodes with `contains` edges to conversation nodes. Supports full backfill (replays all existing messages/tasks) and incremental ingestion via the EventBus → bounded queue pipeline. Uses ingestion cursors for idempotent re-runs.
+**Ingestion Pipeline** — Five ingestion sources feed the graph:
+- **Bridge ingestion** (`ingest-bridge.ts`) — Converts bridge messages and tasks into memory nodes with `contains` edges to conversation nodes. Supports full backfill (replays all existing messages/tasks) and incremental ingestion via the EventBus → async queue pipeline. Uses ingestion cursors for idempotent re-runs.
 - **Transcript ingestion** (`ingest-transcript.ts`) — Parses JSONL transcript files via `transcript-parser.ts` (Zod-validated, skip-on-error). Creates message nodes with `reply_to` and `contains` edges.
 - **Git ingestion** (`ingest-git.ts`) — Extracts commit and PR metadata into memory nodes.
+- **Claude Code ingestion** (`ingest-claude-code.ts`) — Two-pass ingestion of Claude Code session JSONL files. Summary pass creates one node per turn; detail pass expands tool uses into `artifact` nodes and subagent dispatches into `task` nodes. Parsed via `claude-code-parser.ts`; file changes detected via `claude-code-watcher.ts`; rate-limited via `session-queue.ts`.
+- **Generic ingestion** (`ingest-generic.ts`) — Ingests arbitrary `{ role, content, timestamp? }` message arrays. Used by the `ingest_conversation` MCP tool for ad-hoc conversation preservation.
 
 **Post-processing** — After ingestion, two analysis passes enrich the graph:
 - **Decision extraction** (`extract-decisions.ts`) — Regex heuristics identify decision statements in node bodies and create `decision` nodes with `decided_in` edges.
@@ -510,9 +556,15 @@ A conversation memory and retrieval system that builds a persistent knowledge gr
 
 **Secret Filter** (`ingestion/secret-filter.ts`) — Regex-based redaction applied to all ingested content. Matches API keys, tokens, passwords, and other sensitive patterns before storage.
 
-**Bounded Queue** (`ingestion/queue.ts`) — Async queue (max 500 items) that decouples the EventBus from ingestion processing. Uses `setImmediate` for non-blocking drain. Drops events on overflow rather than blocking bridge operations.
+**Async Queue** (`ingestion/queue.ts`) — Unbounded async queue that decouples the EventBus from ingestion processing. Uses `setImmediate` for serial non-blocking drain (one item at a time). Items are never dropped.
 
-**Initialization** — On REST server startup (`index.ts`), the memory system initializes a separate database, creates the `MemoryDbClient`, `EmbeddingService`, and `SecretFilter`, then runs a non-blocking backfill of existing bridge data. After backfill completes, the EventBus subscription is activated for incremental ingestion. The MCP server (`mcp.ts`) initializes its own memory database instance independently.
+**Session Queue** (`ingestion/session-queue.ts`) — Rate-limited single-item queue for Claude Code session ingestion. Processes one job per fixed interval (default 5 seconds) to avoid hammering the embedding model. Unlike `AsyncQueue` which uses `setImmediate`, `SessionQueue` uses a rate-limited timer.
+
+**Claude Code Parser** (`ingestion/claude-code-parser.ts`) — Reads Claude Code `.jsonl` session files and returns structured turns with human/assistant content, tool uses, subagent detection, and metadata extraction.
+
+**Claude Code Watcher** (`ingestion/claude-code-watcher.ts`) — File watcher for Claude Code session files using Node.js `fs.watch`. New files trigger summary pass; modifications trigger detail pass. Debounced and deduplicated.
+
+**Initialization** — On REST server startup (`index.ts`), the memory system initializes a separate database, creates the `MemoryDbClient`, `EmbeddingService`, and `SecretFilter`, then runs a non-blocking backfill of existing bridge data. After backfill completes, the EventBus subscription is activated for incremental ingestion. A `SessionQueue` and `ClaudeCodeWatcher` are optionally started for Claude Code session ingestion. The MCP server (`mcp.ts`) initializes its own memory database instance independently.
 
 ### Component 4: UI Dashboard (ui/)
 
@@ -520,9 +572,9 @@ A Next.js 15 App Router application that provides a visual interface for bridge 
 
 **Conversation list (`/`):** Paginated list of conversation summaries with participant names, message/task counts, and last-activity time. Supports UUID-based filtering. SSE via `use-sse` hook triggers refetch on `message:created`, `task:created`, and `task:updated` events.
 
-**Conversation detail (`/conversation/[id]`):** Three-panel layout: timeline (chronological messages + tasks with expand/collapse), directed graph (Mermaid `graph TD`), and sequence diagram (Mermaid `sequenceDiagram`). Diagrams are built client-side from fetched data via `src/lib/diagrams.ts`.
+**Conversation detail (`/conversation/[id]`):** Tabbed layout with shared `NavHeader`. Timeline tab shows chronological messages and tasks with expand/collapse, plus Mermaid diagrams (directed graph and sequence diagram built client-side via `src/lib/diagrams.ts`). Graph tab renders a React Flow DAG of memory nodes for the conversation using Dagre hierarchical layout, with 6 typed node renderers (message, conversation, topic, decision, task, artifact), a toolbar for depth/direction/edge-kind/sender filters, a node detail panel, and traversal path replay controls.
 
-**Memory Explorer (`/memory`):** Three-view page for interacting with the knowledge graph. Search view supports keyword, semantic, and hybrid search modes with node kind filtering. Graph view shows BFS traversal from any node with adjustable depth and direction. Context view assembles token-budgeted context snippets from a query or node. Custom hooks (`use-memory-search`, `use-memory-traverse`, `use-context-assembler`) manage API calls and loading state. The `memory-graph` component renders traversal results as an interactive graph visualization.
+**Memory Explorer (`/memory`):** Three-column layout for interacting with the knowledge graph. Left column: search input with keyword/semantic/hybrid mode selector, node kind filtering, and results list. Center: React Flow graph canvas showing BFS traversal results with Dagre layout. Right column: recent traversal logs and context assembly panel with configurable token budget. Custom hooks (`use-memory-search`, `use-memory-traverse`, `use-context-assembler`, `use-graph-layout`, `use-path-replay`, `use-traversal-logs`) manage API calls, layout computation, and playback state.
 
 **Reverse proxy:** `next.config.ts` proxies all `/api/*` requests to `http://localhost:3100/*`, so the UI never makes cross-origin requests to the bridge directly.
 
@@ -533,7 +585,7 @@ Archived Claude Code configuration for replication across machines:
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
 - **config/mcp.json** — Registers the `mobai` MCP server (`npx -y mobai-mcp`).
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
-- **`.claude/rules/mcp-servers.md`** — Project-scoped rule listing all registered MCP servers with a Serena vs Grep/Read decision table.
+- **`.claude/rules/`** — Nine glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `mcp-servers.md`, `skills.md`, `testing.md`, `ui.md`.
 
 ## Key Rules
 
@@ -567,10 +619,10 @@ Archived Claude Code configuration for replication across machines:
 
 15. **Memory uses a separate database.** The memory system stores its knowledge graph in `memory.db`, separate from the bridge's `bridge.db`. This isolates memory storage from messaging, allows independent schema evolution, and prevents memory ingestion from contending with real-time message delivery.
 
-16. **Ingestion is asynchronous and non-blocking.** Bridge messages are ingested into memory via a bounded queue (max 500 items) that drains asynchronously using `setImmediate`. Overflow drops events silently rather than blocking the EventBus. Backfill runs once on startup before the EventBus subscription is activated to prevent duplicate ingestion.
+16. **Ingestion is asynchronous and non-blocking.** Bridge messages are ingested into memory via an unbounded async queue that drains serially using `setImmediate`. Items are never dropped. Backfill runs once on startup before the EventBus subscription is activated to prevent duplicate ingestion.
 
 17. **All ingested content is secret-filtered.** The `SecretFilter` applies regex-based redaction to node titles and bodies before storage, catching API keys, tokens, passwords, and other sensitive patterns. Both MCP tools and REST endpoints filter content before writing to the memory database.
 
 18. **Embedding is lazy and gracefully degradable.** The embedding model loads on first use (pre-warmed in background on server start). If loading fails, the system falls back to keyword-only search. Batch embedding is supported for ingestion efficiency.
 
-19. **`/* v8 ignore */` annotations are allowed only for genuinely untestable infrastructure.** Acceptable uses: model download paths in `embedding.ts`, FTS5 internal error handlers, and degenerate math branches in `infer-topics.ts`. Never use them to hide testable business logic. Both `mcp-bridge` and `ui` use Vitest with v8 coverage and enforce 100% thresholds. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`).
+19. **`/* v8 ignore */` annotations are prohibited.** Write the test instead. Both `mcp-bridge` and `ui` use Vitest with v8 coverage. Coverage thresholds are not enforced at the `vitest.config.ts` level. The bridge excludes `src/index.ts` and `src/mcp.ts` (entry points); the UI covers only `src/hooks/**` and `src/lib/**` (excluding `src/lib/types.ts`).
