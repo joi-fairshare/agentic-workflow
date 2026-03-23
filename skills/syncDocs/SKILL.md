@@ -25,7 +25,7 @@ Refreshes project documentation to reflect recent changes. Updates only the sect
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
 > | `/design-analyze` | Extract design tokens from reference sites |

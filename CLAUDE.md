@@ -47,7 +47,7 @@ All skills are slash commands invoked inside Claude Code sessions. They are inst
 | `/shipRelease` | Sync, test, push, open PR | `releases/` |
 | `/syncDocs` | Post-ship doc updater | `releases/` |
 | `/weeklyRetro` | Weekly retrospective with shipping streaks | `retros/` |
-| `/officeHours` | YC-style brainstorming → design doc | `plans/` |
+| `/officeHours` | Spec-driven brainstorming with EARS requirements | `plans/<feature>/` |
 | `/productReview` | Founder/product lens plan review | `plans/` |
 | `/archReview` | Engineering architecture plan review | `plans/` |
 | `/design-analyze` | Extract design tokens from reference sites | `design/` |
@@ -80,7 +80,8 @@ All skill outputs are written to `~/.agentic-workflow/<repo-slug>/` with subdire
 ├── reviews/          # /review, /postReview, /addressReview state files
 ├── investigations/   # /rootCause investigation reports
 ├── qa/               # /bugHunt and /bugReport reports
-├── plans/            # /officeHours, /productReview, /archReview design docs
+├── plans/            # /officeHours (SDD directories), /productReview, /archReview
+│   └── <feature>/    #   requirements.md, design.md, TASKS.md (per feature)
 ├── releases/         # /shipRelease and /syncDocs reports
 └── retros/           # /weeklyRetro retrospectives
 ```
@@ -108,7 +109,7 @@ agentic-workflow/
 │   ├── shipRelease/           # /shipRelease — sync, test, push, PR
 │   ├── syncDocs/              # /syncDocs — post-ship doc updater
 │   ├── weeklyRetro/           # /weeklyRetro — weekly retrospective
-│   ├── officeHours/           # /officeHours — YC-style brainstorming
+│   ├── officeHours/           # /officeHours — spec-driven brainstorming (EARS/SDD)
 │   ├── productReview/         # /productReview — founder/product lens review
 │   ├── archReview/            # /archReview — engineering architecture review
 │   ├── design-analyze/        # /design-analyze — extract design tokens

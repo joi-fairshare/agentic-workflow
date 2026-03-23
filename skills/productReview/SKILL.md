@@ -25,7 +25,7 @@ Reviews plans through a product/founder lens with four distinct modes. Challenge
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
 > | `/design-analyze` | Extract design tokens from reference sites |
@@ -86,13 +86,36 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans"
 - Default to `mvp` if no mode is specified
 
 **Resolve the plan to review:**
-1. If a file path is given as argument, read that file
+1. If a file path or directory path is given as argument, use it directly
 2. If a text description is given, use it directly as the plan content
-3. If neither is provided, find the most recent file in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`:
+3. If neither is provided, auto-discover the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
 
 ```bash
-ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1
+# Find newest plan directory (SDD format) and newest plan file (legacy format)
+NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
+NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
+
+# Compare timestamps -- prefer whichever is more recent
+if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
+  if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
+    PLAN_TARGET="$NEWEST_DIR"
+  else
+    PLAN_TARGET="$NEWEST_FILE"
+  fi
+elif [ -n "$NEWEST_DIR" ]; then
+  PLAN_TARGET="$NEWEST_DIR"
+elif [ -n "$NEWEST_FILE" ]; then
+  PLAN_TARGET="$NEWEST_FILE"
+fi
 ```
+
+**If `PLAN_TARGET` is a directory** (SDD format), read all three files inside it (`requirements.md`, `design.md`, `TASKS.md`) and review them holistically. The review framework maps naturally:
+- **Scope check** -- `requirements.md` (EARS requirements) + `TASKS.md` (task list)
+- **Persona clarity** -- `requirements.md` (Target User section)
+- **Timeline reality** -- `TASKS.md` (complexity estimates)
+- **Riskiest assumption** -- `design.md` (Architecture Decisions + Open Questions)
+
+**If `PLAN_TARGET` is a single file** (legacy format), read and review it as before.
 
 If no plan is found at all, tell the user:
 > "No plan found. Provide a file path, a description, or run `/officeHours` first to generate a design doc."

@@ -25,7 +25,7 @@ Reviews plans or implementations for technical soundness. Produces mandatory mer
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
 > | `/design-analyze` | Extract design tokens from reference sites |
@@ -86,10 +86,26 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans"
 **If a directory is given**, explore its structure using Glob and Read to understand the implementation.
 
 **If nothing is given**, try two fallbacks in order:
-1. Find the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`:
+1. Find the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
    ```bash
-   ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1
+   # Find newest plan directory (SDD format) and newest plan file (legacy format)
+   NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
+   NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
+
+   # Compare timestamps -- prefer whichever is more recent
+   if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
+     if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
+       PLAN_TARGET="$NEWEST_DIR"
+     else
+       PLAN_TARGET="$NEWEST_FILE"
+     fi
+   elif [ -n "$NEWEST_DIR" ]; then
+     PLAN_TARGET="$NEWEST_DIR"
+   elif [ -n "$NEWEST_FILE" ]; then
+     PLAN_TARGET="$NEWEST_FILE"
+   fi
    ```
+   If `PLAN_TARGET` is a directory, explore its structure using Glob and Read to review all three files (`requirements.md`, `design.md`, `TASKS.md`). If it is a single file, read it as before.
 2. If no plans exist, review the current project's architecture by exploring the repository root.
 
 ## Step 2: Read Context
