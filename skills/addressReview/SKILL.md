@@ -58,7 +58,7 @@ BRIDGE_OK=false
 [ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
-[ -d ".claude/rules" ] && RULES_OK=true
+[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
 
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-built: $BRIDGE_OK"
