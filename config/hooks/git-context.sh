@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-
 # SessionStart hook: Inject recent git context
 # Outputs context to stdout for Claude to see.
+# Note: set -euo pipefail intentionally omitted — this hook is informational only
+# and must always exit 0 even when run outside a git repository.
 
 echo "=== Git Context ==="
 

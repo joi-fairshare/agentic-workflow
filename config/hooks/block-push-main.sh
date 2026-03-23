@@ -25,6 +25,7 @@ fi
 # Handles: git push, git push origin, git push --tags, git push -u origin, git push && echo done
 if echo "$COMMAND" | grep -qE '\bgit\s+push(\s+(-[a-zA-Z]|--[a-zA-Z-]+=?\S*)\s*)*\s*($|&&|;|\||2>)' || \
    echo "$COMMAND" | grep -qE '\bgit\s+push\s+(--[a-zA-Z-]+=?\S*\s+|-[a-zA-Z]\s+\S*\s+)*origin\s*($|&&|;|\||2>)'; then
+  # Note: returns "" in non-git directories — branch check silently passes (known limitation)
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
   if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
     echo "BLOCKED: You are on '$CURRENT_BRANCH'. Pushing directly to main/master is not allowed."
