@@ -54,21 +54,11 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/block-destructive.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "~/.claude/hooks/block-push-main.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "~/.claude/hooks/detect-secrets.sh"
