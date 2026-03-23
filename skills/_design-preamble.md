@@ -15,6 +15,6 @@ Before proceeding, load existing design context:
 3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
 
 If none of these files exist and this skill requires design context to function, advise:
-> "No design language found. Run `/design-analyze <url>` to extract tokens from a reference site, then `/design-language` to define brand personality."
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
 
 <!-- === DESIGN PREAMBLE END === -->
