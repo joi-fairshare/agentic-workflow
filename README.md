@@ -32,13 +32,26 @@ Extracted from `~/.claude/` for replication on any machine.
 | `/officeHours` | YC-style brainstorming → design doc |
 | `/productReview` | Founder/product lens plan review |
 | `/archReview` | Engineering architecture plan review |
-| `/design-analyze` | Extract design tokens from reference sites |
+| `/design-analyze` | Platform dispatcher: extract design tokens from reference sites |
 | `/design-language` | Define brand personality and aesthetic direction |
-| `/design-evolve` | Merge new reference into design language |
-| `/design-mockup` | Generate HTML mockup from design language |
-| `/design-implement` | Generate production code from mockup |
+| `/design-evolve` | Platform dispatcher: merge new reference into design language |
+| `/design-mockup` | Platform dispatcher: generate mockup from design language |
+| `/design-implement` | Platform dispatcher: generate production code from mockup |
 | `/design-refine` | Dispatch Impeccable refinement commands |
-| `/design-verify` | Screenshot diff implementation vs mockup |
+| `/design-verify` | Platform dispatcher: screenshot diff implementation vs mockup |
+| `/verify-app` | Platform-detecting Playwright/XcodeBuildMCP app verification |
+| `/verify-web` | Playwright browser verification of running web app |
+| `/verify-ios` | XcodeBuildMCP iOS simulator verification |
+| `/design-analyze-web` | Extract design tokens from web reference sites |
+| `/design-analyze-ios` | Extract design tokens from iOS app references |
+| `/design-evolve-web` | Merge new web reference into design language |
+| `/design-evolve-ios` | Merge new iOS reference into design language |
+| `/design-mockup-web` | Generate HTML mockup from design language |
+| `/design-mockup-ios` | Generate SwiftUI mockup from design language |
+| `/design-implement-web` | Generate production web code from mockup |
+| `/design-implement-ios` | Generate production SwiftUI code from mockup |
+| `/design-verify-web` | Screenshot diff web implementation vs mockup |
+| `/design-verify-ios` | XcodeBuildMCP visual diff iOS implementation vs mockup |
 
 **Config files:** `config/settings.json`, `config/mcp.json`, `config/statusline.sh`, `config/hooks/`
 
@@ -102,6 +115,7 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - `get_context` — Token-budgeted context assembly from memory for an agent
 - `create_memory_link` — Create an edge between two memory nodes
 - `create_memory_node` — Create a topic or decision node in memory
+- `ingest_conversation` — Ingest a conversation payload into the memory graph
 
 **API Endpoints (messaging):**
 - `POST /messages/send` — Send context between agents
@@ -178,6 +192,7 @@ The setup script:
 - Installs the `serena-docker` wrapper script to `~/.local/bin/`
 - Registers `agentic-bridge` and `serena` MCP servers with Claude Code
 - Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright)
+- Registers `xcodebuildmcp` MCP server for iOS simulator automation
 
 ### Start the bridge + UI
 
@@ -237,7 +252,7 @@ agentic-workflow/
 │       └── ui.md              # Next.js App Router, hooks, React Flow graph
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
-├── skills/                    # Claude Code custom skills
+├── skills/                    # 34 Claude Code custom skills
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer
@@ -255,7 +270,7 @@ agentic-workflow/
 │   │   ├── transport/         # Typed router, Zod schemas, controllers
 │   │   ├── routes/            # Route factories (messages, tasks, conversations, memory, events)
 │   │   ├── server.ts          # Fastify server factory
-│   │   ├── mcp.ts             # MCP stdio server (10 tools: 5 messaging + 5 memory)
+│   │   ├── mcp.ts             # MCP stdio server (11 tools: 5 messaging + 6 memory)
 │   │   └── index.ts           # REST API entry point
 │   └── tests/                 # Vitest suite — unit + integration, 100% coverage
 ├── ui/                        # Next.js 15 conversation dashboard
