@@ -137,7 +137,8 @@ Source the shared lockfile script and acquire the lock before interacting with t
 
 ```bash
 SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
-LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"
+LOCK_NAME=ios-sim
+source "$SHARED_DIR/skill-lock.sh"
 acquire_lock
 ```
 

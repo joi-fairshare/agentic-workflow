@@ -137,7 +137,8 @@ Acquire the simulator lock to prevent concurrent sessions from corrupting screen
 
 ```bash
 SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
-LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"
+LOCK_NAME=ios-sim
+source "$SHARED_DIR/skill-lock.sh"
 acquire_lock || { echo "Could not acquire simulator lock — another skill may be using the simulator"; exit 1; }
 ```
 
