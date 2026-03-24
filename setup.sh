@@ -435,7 +435,7 @@ echo "=== Building Serena C# extension image (opt-in) ==="
 _build_csharp=0
 if [ "${BUILD_CSHARP:-0}" = "1" ]; then
   _build_csharp=1
-elif find "$(dirname "$0")" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
+elif find "$SCRIPT_DIR" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
   _build_csharp=1
 fi
 
@@ -447,8 +447,8 @@ if [ "$_build_csharp" = "1" ]; then
       --progress plain \
       --build-arg LOCAL_TAG="${SERENA_VERSION}" \
       -t "serena-local:${SERENA_VERSION}-csharp" \
-      -f "$(dirname "$0")/Dockerfile.serena-csharp" \
-      "$(dirname "$0")" \
+      -f "$SCRIPT_DIR/Dockerfile.serena-csharp" \
+      "$SCRIPT_DIR" \
       || { echo "FATAL: C# image build failed."; exit 1; }
     echo "Built serena-local:${SERENA_VERSION}-csharp"
   else
@@ -465,7 +465,7 @@ echo "=== Building Serena Swift extension image (opt-in) ==="
 _build_swift=0
 if [ "${BUILD_SWIFT:-0}" = "1" ]; then
   _build_swift=1
-elif find "$(dirname "$0")" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null | grep -q .; then
+elif find "$SCRIPT_DIR" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null | grep -q .; then
   _build_swift=1
 fi
 
@@ -491,8 +491,8 @@ if [ "$_build_swift" = "1" ]; then
         --progress plain \
         --build-arg LOCAL_TAG="${SERENA_VERSION}" \
         -t "serena-local:${SERENA_VERSION}-swift" \
-        -f "$(dirname "$0")/Dockerfile.serena-swift" \
-        "$(dirname "$0")" \
+        -f "$SCRIPT_DIR/Dockerfile.serena-swift" \
+        "$SCRIPT_DIR" \
         || { echo "FATAL: Swift image build failed."; exit 1; }
       echo "Built serena-local:${SERENA_VERSION}-swift"
     else
@@ -519,11 +519,15 @@ claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
   2>/dev/null \
   || echo "WARN: Serena already registered (or claude CLI not found)"
 
-echo "=== Registering XcodeBuildMCP (global) ==="
-XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
-claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
-  2>/dev/null \
-  || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
+if [ "$(uname)" = "Darwin" ]; then
+  echo "=== Registering XcodeBuildMCP (macOS only) ==="
+  XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
+  claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
+    2>/dev/null \
+    || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
+else
+  echo "=== Skipping XcodeBuildMCP (macOS only — not Darwin) ==="
+fi
 
 echo "=== Security check ==="
 if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then

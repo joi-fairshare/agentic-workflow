@@ -132,7 +132,22 @@ Glob("~/.agentic-workflow/<repo-slug>/design/mockup-*.png")
 If no baselines match (either no baselines exist, or the specified screen-name has no baseline):
 > "No mockup baselines found. Run `/design-mockup-web <screen-name>` first to create a baseline."
 
-## Step 2: Capture Implementation Screenshots
+## Step 2: Acquire Browser Lock
+
+Source the browser lockfile script and acquire the lock before running any Playwright actions:
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")"
+source "$SKILL_DIR/browser-lock.sh"
+acquire_browser_lock
+```
+
+If the lock cannot be acquired (timeout), report:
+> "Another browser verification session is in progress. Wait for it to finish or remove `~/.agentic-workflow/.browser.lock` if stale."
+
+**Important:** Always release the lock when done, even on errors. If any subsequent step fails, release the lock before exiting.
+
+## Step 3: Capture Implementation Screenshots
 
 Spawn an Agent to capture screenshots at multiple viewports:
 
@@ -150,7 +165,7 @@ Spawn an Agent to capture screenshots at multiple viewports:
 
 The agent should use Playwright MCP tools: `browser_navigate`, `browser_resize`, `browser_take_screenshot`.
 
-## Step 3: Diff Against Baselines
+## Step 4: Diff Against Baselines
 
 For each implementation screenshot, call the design-comparison MCP tool `compare_design` with these parameters:
 
@@ -166,7 +181,7 @@ Save diff images:
 ~/.agentic-workflow/<repo-slug>/design/diff-<screen>-<viewport>.png
 ```
 
-## Step 4: Report Results
+## Step 5: Report Results
 
 ### Pass (< 2% diff):
 
@@ -226,6 +241,14 @@ Diff images saved to ~/.agentic-workflow/<repo-slug>/design/
 
 Recommended: Run the design-iterator agent for automated multi-pass refinement:
   Use Agent tool with compound-engineering:design:design-iterator subagent
+```
+
+## Step 6: Release Browser Lock
+
+Always release the lock after the Agent completes, regardless of success or failure:
+
+```bash
+release_browser_lock
 ```
 
 ## Rules
