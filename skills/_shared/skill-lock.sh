@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# NOTE: sourcing this file enables set -euo pipefail in the caller's shell.
+# Callers must tolerate nounset (-u) and pipefail after sourcing.
+# In particular, all referenced variables must be set or provide a default.
+#
+# NOTE: No trap is registered for automatic lock release on unexpected exit.
+# Traps in sourced files can interfere with the caller's own trap handlers.
+# Recovery from unexpected exits relies on stale-lock detection (kill -0 check).
 set -euo pipefail
 
 # Generic skill lockfile — prevents concurrent skill sessions for a given resource.
@@ -23,6 +30,14 @@ if ! [[ "$LOCK_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
+# sec-1: Require bash >= 4 for atomic noclobber (O_CREAT|O_EXCL semantics).
+# macOS ships bash 3.2 where noclobber uses stat+open, not open(O_CREAT|O_EXCL),
+# making the atomic write claim false on that platform.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "skill-lock: requires bash >= 4 for atomic noclobber (found $BASH_VERSION)" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
 LOCK_FILE="$HOME/.agentic-workflow/.${LOCK_NAME}.lock"
 SKILL_LOCK_TIMEOUT="${SKILL_LOCK_TIMEOUT:-120}"
 
@@ -30,7 +45,7 @@ _lock_is_stale() {
   [ ! -f "$LOCK_FILE" ] && return 0
   local pid
   pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-  [ -z "$pid" ] && return 0
+  [ -z "$pid" ] && return 0  # empty/truncated lock file — treat as stale
   # Check if PID is still running.
   # Known limitation (sec-4): kill -0 checks process existence, but PIDs can be
   # reused by the OS after a process exits. In theory, a new unrelated process
@@ -65,7 +80,9 @@ acquire_lock() {
 
     # File exists — check if the holder is still alive
     if _lock_is_stale; then
-      # Stale lock: remove and retry immediately (loop will re-attempt atomic write)
+      # Stale lock: remove and retry. Safe for concurrent waiters — if multiple
+      # processes remove it simultaneously, the noclobber write below arbitrates;
+      # only one winner proceeds, others loop back and wait.
       rm -f "$LOCK_FILE"
       continue
     fi
@@ -78,9 +95,13 @@ acquire_lock() {
       return 1
     fi
 
-    echo "skill-lock[$LOCK_NAME]: waiting (held by pid $(cat "$LOCK_FILE" 2>/dev/null)), retry in ${backoff}s..."
-    sleep "$backoff"
-    elapsed=$((elapsed + backoff))
+    local remaining=$((SKILL_LOCK_TIMEOUT - elapsed))
+    local actual_sleep=$((backoff < remaining ? backoff : remaining))
+    [ "$actual_sleep" -lt 1 ] && actual_sleep=1
+
+    echo "skill-lock[$LOCK_NAME]: waiting (held by pid $(cat "$LOCK_FILE" 2>/dev/null)), retry in ${actual_sleep}s..."
+    sleep "$actual_sleep"
+    elapsed=$((elapsed + actual_sleep))
 
     # Exponential backoff: 1, 2, 4, 8, 16, 30 (cap)
     backoff=$((backoff * 2))
@@ -89,14 +110,16 @@ acquire_lock() {
 }
 
 release_lock() {
-  if [ -f "$LOCK_FILE" ]; then
+  local tmp="${LOCK_FILE}.releasing.$$"
+  if mv "$LOCK_FILE" "$tmp" 2>/dev/null; then
     local holder
-    holder=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+    holder=$(cat "$tmp" 2>/dev/null || echo "")
     if [ "$holder" = "$$" ]; then
-      rm -f "$LOCK_FILE"
+      rm "$tmp"
       echo "skill-lock[$LOCK_NAME]: released (pid $$)"
     else
-      echo "skill-lock[$LOCK_NAME]: not releasing — held by pid $holder, we are pid $$"
+      mv "$tmp" "$LOCK_FILE" 2>/dev/null || true
+      echo "skill-lock[$LOCK_NAME]: not releasing — held by pid $holder, we are pid $$" >&2
     fi
   fi
 }
