@@ -2,7 +2,7 @@
 name: design-verify
 description: Detect web vs iOS automatically and delegate to /design-verify-web (Playwright screenshots) or /design-verify-ios (XcodeBuildMCP screenshots). Diffs against mockup baseline.
 disable-model-invocation: true
-allowed-tools: Glob, Read, AskUserQuestion, Skill
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->
@@ -125,7 +125,7 @@ Detects whether this is a web or iOS project and delegates to the appropriate sc
 Use the `Glob` tool to check for iOS indicators:
 
 ```
-Glob("Package.swift")
+Glob("**/Package.swift")
 Glob("**/*.xcodeproj")
 Glob("**/*.xcworkspace")
 ```

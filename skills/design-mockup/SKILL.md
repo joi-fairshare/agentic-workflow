@@ -2,7 +2,7 @@
 name: design-mockup
 description: Detect web vs iOS automatically and delegate to /design-mockup-web (HTML mockup + Playwright baseline) or /design-mockup-ios (SwiftUI preview + simulator baseline).
 disable-model-invocation: true
-allowed-tools: Glob, Read, AskUserQuestion, Skill
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->
@@ -125,7 +125,7 @@ Detects whether this is a web or iOS project and delegates to the appropriate mo
 Use the `Glob` tool to check for iOS indicators:
 
 ```
-Glob("Package.swift")
+Glob("**/Package.swift")
 Glob("**/*.xcodeproj")
 Glob("**/*.xcworkspace")
 ```

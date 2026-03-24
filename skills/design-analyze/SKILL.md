@@ -2,7 +2,7 @@
 name: design-analyze
 description: Detect web vs iOS automatically and delegate to /design-analyze-web (Dembrandt CLI on URLs) or /design-analyze-ios (Swift/Xcode asset extraction). Writes design-tokens.json.
 disable-model-invocation: true
-allowed-tools: Glob, Read, AskUserQuestion, Skill
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->
@@ -114,7 +114,7 @@ Detects whether this is a web or iOS project and delegates to the appropriate to
 Use the `Glob` tool to check for iOS indicators:
 
 ```
-Glob("Package.swift")
+Glob("**/Package.swift")
 Glob("**/*.xcodeproj")
 Glob("**/*.xcworkspace")
 ```

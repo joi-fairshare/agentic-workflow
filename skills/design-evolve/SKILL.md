@@ -2,7 +2,7 @@
 name: design-evolve
 description: Detect web vs iOS automatically and delegate to /design-evolve-web (Dembrandt on a new URL) or /design-evolve-ios (extract from local Swift reference). Merges updates into design-tokens.json.
 disable-model-invocation: true
-allowed-tools: Glob, Read, AskUserQuestion, Skill
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->

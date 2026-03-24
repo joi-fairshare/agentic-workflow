@@ -2,7 +2,7 @@
 name: verify-app
 description: "Detect web vs iOS automatically and delegate to /verify-web (Playwright) or /verify-ios (XcodeBuildMCP). Pass any arguments through unchanged."
 disable-model-invocation: true
-allowed-tools: Glob, Read, AskUserQuestion, Skill
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->
@@ -110,7 +110,7 @@ Detects whether this is a web or iOS project and delegates to the appropriate ve
 Use the `Glob` tool to check for iOS indicators:
 
 ```
-Glob("Package.swift")
+Glob("**/Package.swift")
 Glob("**/*.xcodeproj")
 Glob("**/*.xcworkspace")
 ```
