@@ -22,9 +22,14 @@ This toolkit supports an end-to-end product workflow where **AI sessions replace
 
 **Human in the loop:** This is a back-and-forth collaboration. The agent proposes requirements, you push back. It drafts the technical design, you redirect priorities and flag constraints it doesn't know about. Think of it as a YC office hours session — you leave with decisions made, not just options listed. It also brings structure to multi-team collaboration: product and engineering can align on vision, scope, and trade-offs in a shared session before anyone writes a line of code. The output lands in `~/.agentic-workflow/<repo>/plans/`:
 
-- `requirements.md` — EARS-format requirements
-- `design.md` — technical design with trade-offs
-- `TASKS.md` — atomic task breakdown
+| File | Owner | Contents |
+|------|-------|----------|
+| `product.md` | Product | Problem statement, EARS requirements, acceptance criteria, success metrics, MVP scope |
+| `engineering.md` | Engineering | Current state, approach, architecture decisions, open questions |
+| `design-brief.md` | Design | Experience goals, key interactions, UX requirements, design language reference |
+| `TASKS.md` | Engineering | Atomic task breakdown with `domain` tags — cross-team visibility |
+
+Each file is a standalone artifact. Everyone leaves the session with a doc they own, not a monolith no one does.
 
 Optionally pressure-test the outputs before moving on:
 
@@ -50,7 +55,7 @@ These produce `design-tokens.json`, `.impeccable.md`, and a `mockup.html` (or Sw
 
 Create a **multi-phase issue hierarchy** directly from the officeHours output:
 
-1. **Epic issue** — paste the product vision, `requirements.md`, and the `design.md` summary
+1. **Epic issue** — paste the product vision, `product.md`, and the `engineering.md` approach section
 2. **Task issues** — one per entry in `TASKS.md`, each referencing the epic and embedding relevant context
 3. **Attach mockups** — link or embed the mockup screenshot so the visual spec lives in the issue
 
