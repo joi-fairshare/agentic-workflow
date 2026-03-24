@@ -179,36 +179,38 @@ The mockup should use ALL color, spacing, and typography tokens to demonstrate t
 Acquire the simulator lock to prevent concurrent sessions from corrupting screenshots:
 
 ```bash
-SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-ios/SKILL.md")")/../_shared"
 LOCK_NAME=ios-sim
 source "$SHARED_DIR/skill-lock.sh"
 acquire_lock || { echo "Could not acquire simulator lock — another skill may be using the simulator"; exit 1; }
 ```
 
-## Step 5: Ensure Simulator Is Running
+On any failure in subsequent steps, call `release_lock` before stopping.
+
+## Step 5: Build on Simulator
+
+Build the project on simulator:
+```
+xcodebuildmcp: build_ios_sim
+```
+
+If the build fails:
+> "Build failed. Fix compilation errors before running `/design-mockup-ios` again. Error details: [paste build output]"
+Call `release_lock` and stop here — do not write a baseline.
+
+## Step 6: Launch App on Simulator
 
 Use XcodeBuildMCP:
 ```
 xcodebuildmcp: list_sims
 ```
 
-If no simulator is booted:
+If no simulator is booted or the app is not running:
 ```
 xcodebuildmcp: launch_app_sim (with app bundle ID)
 ```
 
 If the app bundle ID can't be determined from the project, ask via AskUserQuestion.
-
-## Step 6: Build and Run
-
-Build and run the project on simulator:
-```
-xcodebuildmcp: build_run_sim
-```
-
-If the build fails:
-> "Build failed. Fix compilation errors before running `/design-mockup-ios` again. Error details: [paste build output]"
-Stop here — do not write a baseline.
 
 ## Step 7: Capture Baseline Screenshot
 
