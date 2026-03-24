@@ -3,7 +3,7 @@ name: design-verify-ios
 description: Boot simulator if needed, capture screenshot via XcodeBuildMCP, diff against mockup baseline using design-comparison MCP. Reports discrepancies with fix suggestions.
 argument-hint: [screen-name]
 disable-model-invocation: true
-allowed-tools: Read, Write, Glob, AskUserQuestion
+allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -131,7 +131,17 @@ ls ~/.agentic-workflow/$REPO_SLUG/design/mockup-ios*.png 2>/dev/null
 If no baselines match:
 > "No iOS mockup baselines found. Run `/design-mockup-ios` first to create a baseline."
 
-## Step 2: Ensure Simulator Is Running
+## Step 2: Acquire Simulator Lock
+
+Acquire the simulator lock to prevent concurrent sessions from corrupting screenshots:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
+LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"
+acquire_lock || { echo "Could not acquire simulator lock — another skill may be using the simulator"; exit 1; }
+```
+
+## Step 3: Ensure Simulator Is Running
 
 ```
 xcodebuildmcp: list_sims
@@ -144,13 +154,13 @@ xcodebuildmcp: launch_app_sim
 
 If the app bundle ID can't be determined, ask via AskUserQuestion.
 
-## Step 3: Navigate to Screen (if needed)
+## Step 4: Navigate to Screen (if needed)
 
 If a `[screen-name]` argument was provided that implies navigation (e.g., "settings", "profile"):
 - Use `xcodebuildmcp: tap` to navigate to the target screen
 - Wait briefly for the view to appear (use `xcodebuildmcp: snapshot_ui` to confirm)
 
-## Step 4: Capture Implementation Screenshot
+## Step 5: Capture Implementation Screenshot
 
 ```
 xcodebuildmcp: screenshot
@@ -161,7 +171,7 @@ Save to:
 ~/.agentic-workflow/<repo-slug>/design/impl-<screen>-ios.png
 ```
 
-## Step 5: Diff Against Baseline
+## Step 6: Diff Against Baseline
 
 Call the design-comparison MCP tool `compare_design`:
 
@@ -173,7 +183,7 @@ Save diff image:
 ~/.agentic-workflow/<repo-slug>/design/diff-<screen>-ios.png
 ```
 
-## Step 6: Report Results
+## Step 7: Report Results
 
 ### Pass (< 2% diff):
 ```
@@ -222,6 +232,12 @@ Priority fixes:
 Diff image: ~/.agentic-workflow/<repo-slug>/design/diff-<screen>-ios.png
 
 Recommended: Run /design-implement-ios to regenerate components, then /design-verify-ios again.
+```
+
+## Step 8: Release Simulator Lock
+
+```bash
+release_lock
 ```
 
 ## Rules

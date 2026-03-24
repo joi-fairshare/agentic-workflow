@@ -2,7 +2,7 @@
 name: design-mockup-ios
 description: Generate a Mockup.swift SwiftUI preview file from design tokens, build and run on simulator via XcodeBuildMCP, capture a screenshot as the baseline for /design-verify-ios.
 disable-model-invocation: true
-allowed-tools: Read, Write, Glob, AskUserQuestion
+allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -174,7 +174,17 @@ struct MockupView: View {
 
 The mockup should use ALL color, spacing, and typography tokens to demonstrate the full design language.
 
-## Step 4: Ensure Simulator Is Running
+## Step 4: Acquire Simulator Lock
+
+Acquire the simulator lock to prevent concurrent sessions from corrupting screenshots:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-ios/SKILL.md")")/../_shared"
+LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"
+acquire_lock || { echo "Could not acquire simulator lock — another skill may be using the simulator"; exit 1; }
+```
+
+## Step 5: Ensure Simulator Is Running
 
 Use XcodeBuildMCP:
 ```
@@ -188,7 +198,7 @@ xcodebuildmcp: launch_app_sim (with app bundle ID)
 
 If the app bundle ID can't be determined from the project, ask via AskUserQuestion.
 
-## Step 5: Build and Run
+## Step 6: Build and Run
 
 Build and run the project on simulator:
 ```
@@ -199,7 +209,7 @@ If the build fails:
 > "Build failed. Fix compilation errors before running `/design-mockup-ios` again. Error details: [paste build output]"
 Stop here — do not write a baseline.
 
-## Step 6: Capture Baseline Screenshot
+## Step 7: Capture Baseline Screenshot
 
 Once the app is running with the mockup visible:
 ```
@@ -218,7 +228,7 @@ Save the screenshot to:
 If a baseline already exists, ask via AskUserQuestion:
 > "A baseline already exists at mockup-ios.png. Overwrite? (yes/no)"
 
-## Step 7: Report
+## Step 8: Report
 
 ```
 iOS Mockup Baseline Created
@@ -230,6 +240,12 @@ Baseline:  ~/.agentic-workflow/<repo-slug>/design/mockup-ios.png
 Next steps:
   • Run /design-implement-ios to generate production Theme.swift and SwiftUI components
   • Run /design-verify-ios to compare implementation against this baseline
+```
+
+## Step 9: Release Simulator Lock
+
+```bash
+release_lock
 ```
 
 ## Rules

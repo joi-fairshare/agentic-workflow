@@ -1,7 +1,6 @@
 ---
 name: design-mockup
 description: Detect web vs iOS automatically and delegate to /design-mockup-web (HTML mockup + Playwright baseline) or /design-mockup-ios (SwiftUI preview + simulator baseline).
-argument-hint: <screen-name>
 disable-model-invocation: true
 allowed-tools: Glob, Read, AskUserQuestion, Skill
 ---

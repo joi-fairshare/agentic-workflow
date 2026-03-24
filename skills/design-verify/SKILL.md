@@ -1,7 +1,6 @@
 ---
 name: design-verify
 description: Detect web vs iOS automatically and delegate to /design-verify-web (Playwright screenshots) or /design-verify-ios (XcodeBuildMCP screenshots). Diffs against mockup baseline.
-argument-hint: [screen-name]
 disable-model-invocation: true
 allowed-tools: Glob, Read, AskUserQuestion, Skill
 ---

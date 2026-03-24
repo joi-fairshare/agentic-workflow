@@ -1,7 +1,6 @@
 ---
 name: verify-app
 description: "Detect web vs iOS automatically and delegate to /verify-web (Playwright) or /verify-ios (XcodeBuildMCP). Pass any arguments through unchanged."
-argument-hint: "[--visual] [criteria or 'auto']"
 disable-model-invocation: true
 allowed-tools: Glob, Read, AskUserQuestion, Skill
 ---
