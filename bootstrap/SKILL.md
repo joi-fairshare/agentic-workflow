@@ -8,7 +8,7 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 21 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 34 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -23,30 +23,31 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, 
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | YC-style brainstorming → design doc |
+> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
-> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
+> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
+> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
 > | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Merge new reference into design language |
-> | `/design-mockup` | Generate HTML mockup from design language |
-> | `/design-implement` | Generate production code from mockup |
+> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
+> | `/design-evolve-web` | Merge new URL into design language (web) |
+> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
+> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
+> | `/design-mockup-web` | Generate HTML mockup from design language |
+> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
+> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
+> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
+> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Screenshot diff implementation vs mockup |
+> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
+> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
+> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
+> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
+> | `/verify-web` | Playwright browser verification of running web app |
+> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> **MCP Servers** — available in every session. Prefer these over built-in tools.
->
-> | Server | When to reach for it |
-> |--------|---------------------|
-> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
-> | `agentic-bridge` | Multi-agent messaging and memory graph |
-> | `context7` | Current library/framework docs |
-> | `playwright` | Browser automation, screenshots, DOM inspection |
-> | `github` | PRs, issues, releases via GitHub API |
-> | `design-comparison` | Visual diff between implementation and design |
-> | `mobai` | Mobile device automation |
 
 ## Preamble — Bootstrap Check
 
@@ -64,18 +65,18 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
 BRIDGE_OK=false
-[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
 [ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
 
 echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-built: $BRIDGE_OK"
+echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
@@ -95,9 +96,19 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
----
-
 <!-- === PREAMBLE END === -->
+
+> **MCP Servers** — available in every session. Prefer these over built-in tools.
+>
+> | Server | When to reach for it |
+> |--------|---------------------|
+> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
+> | `agentic-bridge` | Multi-agent messaging and memory graph |
+> | `context7` | Current library/framework docs |
+> | `playwright` | Browser automation, screenshots, DOM inspection |
+> | `github` | PRs, issues, releases via GitHub API |
+> | `design-comparison` | Visual diff between implementation and design |
+> | `xcodebuildmcp` | iOS simulator control — build, run, screenshot, UI snapshot | Manual iOS testing |
 
 # Bootstrap — Repo Documentation Generator
 
@@ -342,7 +353,14 @@ After generating docs and CLAUDE.md, configure Serena LSP for the repo.
 **Language detection** (check repo root and one level deep):
 - TS/JS: `tsconfig.json` or `package.json` → `typescript`
 - Python: `*.py`, `pyproject.toml`, or `requirements.txt` → `python`
-- C#: `*.csproj` or `*.cs` → `csharp`
+- Go: `go.mod` or `*.go` → `go`
+- Rust: `Cargo.toml` or `*.rs` → `rust`
+- C#: `*.csproj` or `*.cs` → detected but **excluded from languages list** (see below)
+- Swift: `*.swift` or `Package.swift` → detected but **excluded from languages list** (see below)
+
+**Language exclusions:** Do NOT add `swift` or `csharp` to the `languages:` list in the generated config:
+- `swift` — sourcekit-lsp is a macOS binary; Serena runs in a Linux Docker container. Swift LSP requires the separate `serena-local:latest-swift` image and host-side socket bridge. Add manually after running `BUILD_SWIFT=1 ./setup.sh`.
+- `csharp` — requires the `-csharp` image variant. Add manually after running `BUILD_CSHARP=1 ./setup.sh`.
 
 **Sensitive path audit:** flag `.claude/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
 
@@ -355,30 +373,38 @@ echo "rules-directory: $RULES_OK"
 If `RULES_OK=false`, print:
 > "WARN: .claude/rules/ not found — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
 
+**Derive repo name for project_name field:**
+```bash
+REPO_NAME="$(basename "$(pwd)")"
+```
+
 **Write `.serena/project.yml`** with detected `languages` and audited `ignored_paths`:
 
 ```yaml
 # Serena project configuration for <repo-name>
 # --context claude-code disables execute_shell_command at Serena level.
 
-project_language: <primary-language>
+project_name: <REPO_NAME>
 
 languages:
-  - <detected-language-1>
-  - <detected-language-2>  # if applicable
+- <detected-language-1>
+- <detected-language-2>  # if applicable
+# swift omitted: sourcekit-lsp requires macOS; add after running BUILD_SWIFT=1 ./setup.sh
+# csharp omitted by default; add after running BUILD_CSHARP=1 ./setup.sh
 
-read_only: true
+read_only: false
 ignore_all_files_in_gitignore: true
 
 ignored_paths:
-  - .claude          # if exists
-  - config           # if exists and may contain tokens
-  - <other-sensitive-paths>
+- .claude          # if exists
+- config           # if exists and may contain tokens
+- <other-sensitive-paths>
 
 excluded_tools:
-  - write_memory
-  - read_memory
-  - onboarding
+- write_memory
+- read_memory
+- onboarding
+- execute_shell_command
 
 initial_prompt: ""
 ```
@@ -392,20 +418,50 @@ initial_prompt: ""
 .serena/*.log
 ```
 
+**Bootstrap the config via Docker (required — expands project.yml to full schema):**
+
+Serena validates `project.yml` on startup and will crash if any required fields are missing. Bootstrap by running Serena once WITHOUT the `:ro` mount so it can write the expanded config:
+
+```bash
+REPO_PATH="$(pwd)"
+REPO_NAME="$(basename "$REPO_PATH" | tr -c '[:alnum:]-_.' '-')"
+mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/.serena/memory"
+docker run --rm \
+  -v "${REPO_PATH}:/workspaces/projects/${REPO_NAME}" \
+  -v "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache" \
+  -v "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs" \
+  -v "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory" \
+  serena-local:latest \
+  serena start-mcp-server \
+  --context claude-code \
+  --project "/workspaces/projects/${REPO_NAME}" &
+SPID=$!
+sleep 5
+kill $SPID 2>/dev/null || true
+```
+
+After this, `.serena/project.yml` will be fully expanded with all required fields. Subsequent `serena-docker` invocations mount the project read-only and will start without errors.
+
+If the Docker command fails (image not built, Docker not running), do NOT abort bootstrap — print a warning and continue:
+> `WARN: Could not bootstrap .serena/project.yml via Docker. The config is minimal and Serena may fail to start. Run setup.sh to build the serena-local image, then re-run /bootstrap.`
+
 **Print summary:**
 ```
-Serena configured. Languages: [typescript, python]. Restart Claude Code session to activate.
+Serena configured. Languages: [<list>]. Run setup.sh if Serena image not yet built.
 ```
 
-If `csharp` is in the detected languages, append:
-> NOTE: C# requires the csharp image. Run `BUILD_CSHARP=1 ./setup.sh` to build it.
+If `csharp` was detected, append:
+> NOTE: C# requires the csharp image. Run `BUILD_CSHARP=1 ./setup.sh` to build it, then add `- csharp` to `.serena/project.yml`.
 
-**Run Serena onboarding check (non-fatal):** After writing `.serena/project.yml`, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+If `swift` was detected, append:
+> NOTE: Swift LSP requires a host-side socket bridge. Run `BUILD_SWIFT=1 ./setup.sh` to build it, then add `- swift` to `.serena/project.yml`.
 
-> **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is a different tool that is explicitly excluded in the generated `project.yml` (see `excluded_tools`). Using `onboarding` will be rejected by Serena.
+**Run Serena onboarding check (non-fatal):** After the Docker bootstrap step, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+
+> **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
 
 > **Non-fatal:** If `check_onboarding_performed` fails (e.g., Docker is not running or the Serena image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
-> `WARN: Serena not available — run /bootstrap again after \`setup.sh\` to initialize LSP.`
+> `WARN: Serena not available — the project.yml must be bootstrapped before Serena will connect. Build the serena-local Docker image with setup.sh, then re-run /bootstrap.`
 
 ## Step 8: Report
 

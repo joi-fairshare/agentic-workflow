@@ -23,8 +23,11 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
-# Canonical list of skills managed by this toolkit
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app)
+# Canonical list of skills managed by this toolkit.
+# Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
+# It is not symlinked directly — each skill accesses it via path traversal
+# from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
 
 echo "=== Agentic Workflow Setup ==="
 echo ""
@@ -435,7 +438,7 @@ echo "=== Building Serena C# extension image (opt-in) ==="
 _build_csharp=0
 if [ "${BUILD_CSHARP:-0}" = "1" ]; then
   _build_csharp=1
-elif find "$(dirname "$0")" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
+elif find "$SCRIPT_DIR" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
   _build_csharp=1
 fi
 
@@ -447,8 +450,8 @@ if [ "$_build_csharp" = "1" ]; then
       --progress plain \
       --build-arg LOCAL_TAG="${SERENA_VERSION}" \
       -t "serena-local:${SERENA_VERSION}-csharp" \
-      -f "$(dirname "$0")/Dockerfile.serena-csharp" \
-      "$(dirname "$0")" \
+      -f "$SCRIPT_DIR/Dockerfile.serena-csharp" \
+      "$SCRIPT_DIR" \
       || { echo "FATAL: C# image build failed."; exit 1; }
     echo "Built serena-local:${SERENA_VERSION}-csharp"
   else
@@ -457,6 +460,51 @@ if [ "$_build_csharp" = "1" ]; then
 else
   echo "=== Skipping C# Serena image (no .csproj/.cs found) ==="
   echo "To build later, run: BUILD_CSHARP=1 ./setup.sh"
+fi
+
+echo "=== Building Serena Swift extension image (opt-in) ==="
+# Auto-detect Swift projects or honour BUILD_SWIFT=1 env var override
+# The Swift image adds socat + a sourcekit-lsp shim; sourcekit-lsp itself runs on the host.
+_build_swift=0
+if [ "${BUILD_SWIFT:-0}" = "1" ]; then
+  _build_swift=1
+elif find "$SCRIPT_DIR" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null | grep -q .; then
+  _build_swift=1
+fi
+
+if [ "$_build_swift" = "1" ]; then
+  # Ensure socat is available on the host — required for the host-side LSP bridge process
+  if ! command -v socat &>/dev/null; then
+    if command -v brew &>/dev/null; then
+      echo "Installing socat (required for Swift LSP bridge)..."
+      brew install socat
+    else
+      echo "WARN: 'socat' not found and Homebrew is not available."
+      echo "      Install socat manually, then re-run setup.sh:"
+      echo "        brew install socat   (macOS with Homebrew)"
+      echo "        apt-get install socat (Debian/Ubuntu)"
+      echo "      Skipping Swift image build."
+      _build_swift=0
+    fi
+  fi
+  if [ "$_build_swift" = "1" ]; then
+    if ! docker image inspect "serena-local:${SERENA_VERSION}-swift" &>/dev/null; then
+      echo "Building serena-local:${SERENA_VERSION}-swift (socat + sourcekit-lsp shim)..."
+      docker build \
+        --progress plain \
+        --build-arg LOCAL_TAG="${SERENA_VERSION}" \
+        -t "serena-local:${SERENA_VERSION}-swift" \
+        -f "$SCRIPT_DIR/Dockerfile.serena-swift" \
+        "$SCRIPT_DIR" \
+        || { echo "FATAL: Swift image build failed."; exit 1; }
+      echo "Built serena-local:${SERENA_VERSION}-swift"
+    else
+      echo "serena-local:${SERENA_VERSION}-swift already exists, skipping"
+    fi
+  fi
+else
+  echo "=== Skipping Swift Serena image (no *.swift found) ==="
+  echo "To build later, run: BUILD_SWIFT=1 ./setup.sh"
 fi
 
 echo "=== Installing serena-docker wrapper ==="
@@ -473,6 +521,16 @@ echo "=== Registering Serena MCP (global) ==="
 claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
   2>/dev/null \
   || echo "WARN: Serena already registered (or claude CLI not found)"
+
+if [ "$(uname)" = "Darwin" ]; then
+  echo "=== Registering XcodeBuildMCP (macOS only) ==="
+  XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
+  claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
+    2>/dev/null \
+    || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
+else
+  echo "=== Skipping XcodeBuildMCP (macOS only — not Darwin) ==="
+fi
 
 echo "=== Security check ==="
 if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
@@ -583,15 +641,17 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (21):"
+echo "Skills installed (34):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
 echo "  Release:          shipRelease, syncDocs"
 echo "  Retrospective:    weeklyRetro"
 echo "  Planning:         officeHours, productReview, archReview"
-echo "  Design:           design-analyze, design-language, design-evolve,"
-echo "                    design-mockup, design-implement, design-refine, design-verify"
+echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
+echo "                    design-mockup [web|ios], design-implement [web|ios],"
+echo "                    design-refine, design-verify [web|ios]"
+echo "  Verification:     verify-app, verify-web, verify-ios"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"

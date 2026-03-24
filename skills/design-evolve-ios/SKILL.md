@@ -1,9 +1,9 @@
 ---
-name: addressReview
-description: Address PR review comments by spawning domain-specific implementation agents in parallel. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json as source of truth, merges any new human GitHub comments, implements fixes, and updates the state file. Can be re-run to continue the review loop.
-argument-hint: [pr-number-or-url]
+name: design-evolve-ios
+description: Extract design tokens from a local Swift file or Xcode project directory and merge updates into the existing design-tokens.json, preserving tokens not present in the reference.
+argument-hint: <path/to/Theme.swift or project dir>
 disable-model-invocation: true
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
+allowed-tools: Read, Write, Edit, Glob, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -98,131 +98,111 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 
 <!-- === PREAMBLE END === -->
 
-# Address PR Review
+<!-- === DESIGN PREAMBLE START === -->
 
-Implements fixes for outstanding review issues. The local state file is the source of truth — run this as many times as needed until all issues are resolved.
+## Design Context — Load Design Language
 
-## Step 1: Resolve the PR
+Before proceeding, load existing design context:
 
-**If an argument was provided**, use it directly:
-```bash
-gh pr view <argument> --json number,title,headRefName,baseRefName,url,headRepository
-```
+1. Read `.impeccable.md` if it exists (brand personality, aesthetic direction)
+2. Read `design-tokens.json` if it exists (W3C DTCG tokens: colors, typography, spacing)
+3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
 
-**If no argument**, auto-detect from the current branch:
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
+If none of these files exist and this skill requires design context to function, advise:
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
 
-If multiple PRs are found, list them and ask the user to pick one.
+<!-- === DESIGN PREAMBLE END === -->
 
-If no PRs are found: "No open PR found for the current branch. Use `/addressReview <number>` to specify one."
+---
 
-## Step 2: Load State File
+# Design Evolve iOS — Merge Swift Reference into Design Language
 
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
+Extracts design tokens from a local Swift reference file or Xcode project and selectively merges them into the existing `design-tokens.json`.
 
-If the file does not exist:
-> "No local review state found for PR #{number}. Run `/review` first."
+## Step 1: Validate Prerequisites
 
-## Step 3: Fetch New Human Comments from GitHub
+Both `.impeccable.md` and `design-tokens.json` must exist. If either is missing:
+> "No existing design language found. Run `/design-analyze-ios` and `/design-language` first to establish a baseline."
 
-Fetch all GitHub comments created **after** `reviewed_at` in the state file:
+## Step 2: Validate Argument
 
-```bash
-# Top-level issue comments
-gh api repos/{owner}/{repo}/issues/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
+The argument must be a local filesystem path to either:
+- A Swift file (`.swift` extension)
+- A directory containing Swift files or an Xcode project
 
-# Inline PR review comments
-gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
-```
+If no argument provided, ask via AskUserQuestion:
+> "Provide the path to a Theme.swift file or Xcode project directory to extract tokens from:"
 
-Filter out comments posted by bots or CI systems (check `user.login` for `[bot]` suffix or known CI usernames).
+Verify the path exists using Read or Glob. If not found:
+> "Path not found: `<path>`. Check the path and retry."
 
-Append any new comments to a `human_comments` array in the state file. Update `human_comments_fetched_at` to now.
+## Step 3: Extract Tokens from Reference
 
-## Step 4: Build the Issue List
+Use `Glob` and `Read` to find and parse Swift files at the given path:
+- If a single `.swift` file: read it directly
+- If a directory: `Glob("<path>/**/*.swift")` and read any files containing `Color(`, `Font.`, or spacing constants
 
-Collect all unaddressed items:
+Extract color, typography, and spacing tokens using the same approach as `/design-analyze-ios` Step 2–4.
 
-**From state file** (`addressed: false`):
-- All issues across all `reviewers[].issues` entries
+## Step 4: Present Diff
 
-**From new human comments** (all — humans comment when something needs attention):
-- Each comment becomes a candidate issue for triage
-
-**Filter by severity** (for structured issues):
-- Default: `blocking` and `issue` only
-- Pass `--all` to include `suggestion` and `nit`
-
-Report to the user:
-```
-PR #{number}: "{title}"
-
-Outstanding items:
-  X blocking   (structured)
-  Y issue      (structured)
-  Z new human comments
-  (W suggestions/nits skipped — pass --all to include)
-
-Already addressed: N items
-```
-
-If everything is already addressed, stop:
-> "All review items have been addressed. Consider running /postReview if you haven't published yet."
-
-## Step 5: Triage for Implementation
-
-Spawn a **general-purpose** subagent with the triage prompt from [address-triage-prompt.md](address-triage-prompt.md).
-
-Inject:
-- `{structured_issues}` — JSON array of unaddressed structured issues
-- `{human_comments}` — JSON array of new human comments
-- `{diff}` — output of `gh pr diff {number}`
-- `{file_list}` — changed file paths
-
-Parse the returned JSON array of implementation assignments.
-
-## Step 6: Checkout and Spawn Parallel Implementers
-
-Check out the PR branch:
-```bash
-gh pr checkout {number}
-```
-
-Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
-- `{agent}`, `{focus}`, `{issues}` — from triage output
-- `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
-
-## Step 7: Update State File
-
-After all implementers complete, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
-
-For each issue that was addressed:
-- Set `"addressed": true`
-- Set `"addressed_at"` to current ISO timestamp
-- Set `"addressed_by"` to the agent name
-- Set `"fix_commit"` to the commit SHA the agent reported
-
-For new human comments that were addressed, add them to the state file under `human_comments` with the same fields.
-
-Update `"last_addressed_at"` at the top level.
-
-Use the Edit tool to update the file.
-
-## Step 8: Report
+Compare extracted tokens against existing `design-tokens.json`:
 
 ```
-Address complete for PR #{number}: "{title}"
+iOS Design Evolution Diff
+==========================
 
-Implemented:
-  • security-engineer — 2 issues fixed (commit abc1234)
-  • typescript-pro — 1 issue fixed (commit def5678)
+Source: <path>
 
-Still outstanding (if any):
-  [blocking] src/auth.ts — JWT not verified (agent error — address manually)
+NEW tokens (not in current language):
+  color.brand-purple: #7C3AED
+  spacing.2xl: 48px
 
-Run /addressReview again to continue, or /postReview to publish.
+DIFFERENT values (exist but differ):
+  color.primary: current=#6366F1 → new=#4F46E5
+  spacing.lg: current=24px → new=20px
+
+UNCHANGED (same in both):
+  color.background: #FFFFFF
+  spacing.sm: 8px
 ```
+
+## Step 5: Ask What to Adopt
+
+For each changed category (new tokens, different values), ask via AskUserQuestion:
+> "Which elements from `<path>` would you like to adopt?
+> - **Adopt**: take the new value as-is
+> - **Adapt**: use as inspiration, modify manually
+> - **Ignore**: keep current value unchanged"
+
+## Step 6: Update Design Files
+
+Apply choices:
+1. Update `design-tokens.json` with adopted/adapted tokens (preserve all tokens not in reference)
+2. Update `.impeccable.md` if the reference introduces new aesthetic direction
+
+## Step 7: Report
+
+```
+iOS Design Language Updated
+============================
+
+Adopted:  N tokens from <path>
+Adapted:  N tokens (modified)
+Ignored:  N tokens (kept current)
+
+Updated files:
+  design-tokens.json (N changes)
+  .impeccable.md (if updated)
+
+Next steps:
+  • Run /design-implement-ios to regenerate Theme.swift with new values
+  • Run /design-verify-ios to check implementation against updated design
+```
+
+## Rules
+
+- Never overwrite existing tokens without user confirmation
+- Show exact before/after values for all changes
+- Preserve token structure — only update values, don't reorganize
+- Tokens in `design-tokens.json` NOT present in the reference are always preserved

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with four independent components: 21 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication with a built-in conversation memory and retrieval system, a Next.js 15 conversation dashboard UI, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. A separate memory database (memory.db) stores a knowledge graph of nodes and edges, supporting hybrid search (FTS5 + sqlite-vec KNN) and token-budgeted context assembly for agent retrieval. The UI connects to the bridge REST API and receives real-time updates via SSE, and includes a Memory Explorer page for searching, traversing, and visualizing the knowledge graph.
+Agentic Workflow is a portable Claude Code toolkit with four independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent communication with a built-in conversation memory and retrieval system, a Next.js 15 conversation dashboard UI, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously. A separate memory database (memory.db) stores a knowledge graph of nodes and edges, supporting hybrid search (FTS5 + sqlite-vec KNN) and token-budgeted context assembly for agent retrieval. The UI connects to the bridge REST API and receives real-time updates via SSE, and includes a Memory Explorer page for searching, traversing, and visualizing the knowledge graph.
 
 ```mermaid
 graph TD
@@ -104,7 +104,7 @@ Skills are designed to flow into each other in a natural development lifecycle:
 
 ```
 officeHours → productReview / archReview
-    → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
+    → design-analyze [web|ios] → design-language → design-mockup [web|ios] → design-implement [web|ios] → design-refine → design-verify [web|ios]
     → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
 ```
 
@@ -114,7 +114,7 @@ Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream 
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills (21)
+├── skills/                              # Claude Code custom slash-command skills (34)
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -145,21 +145,36 @@ agentic-workflow/
 │   │   └── SKILL.md                     #   4 modes: mvp, growth, scale, pivot
 │   ├── archReview/                      # /archReview — engineering architecture review
 │   │   └── SKILL.md                     #   mandatory diagrams, edge case analysis
-│   ├── design-analyze/                  # /design-analyze — extract design tokens from reference sites
+│   ├── design-analyze/                  # /design-analyze — platform dispatcher (routes to -web or -ios)
+│   ├── design-analyze-web/              # /design-analyze web — extract design tokens from web reference sites
+│   ├── design-analyze-ios/              # /design-analyze ios — extract design tokens from iOS reference apps
 │   ├── design-language/                 # /design-language — define brand personality and aesthetic direction
-│   ├── design-evolve/                   # /design-evolve — merge new reference into existing design language
-│   ├── design-mockup/                   # /design-mockup — generate HTML mockup using design language
-│   ├── design-implement/                # /design-implement — generate production code from mockup
+│   ├── design-evolve/                   # /design-evolve — platform dispatcher (routes to -web or -ios)
+│   ├── design-evolve-web/               # /design-evolve web — merge new web reference into existing design language
+│   ├── design-evolve-ios/               # /design-evolve ios — merge new iOS reference into existing design language
+│   ├── design-mockup/                   # /design-mockup — platform dispatcher (routes to -web or -ios)
+│   ├── design-mockup-web/               # /design-mockup web — generate HTML mockup using design language
+│   ├── design-mockup-ios/               # /design-mockup ios — generate SwiftUI mockup using design language
+│   ├── design-implement/                # /design-implement — platform dispatcher (routes to -web or -ios)
+│   ├── design-implement-web/            # /design-implement web — generate React/Next.js production code from mockup
+│   ├── design-implement-ios/            # /design-implement ios — generate SwiftUI production code from mockup
 │   ├── design-refine/                   # /design-refine — dispatch Impeccable refinement commands
-│   ├── design-verify/                   # /design-verify — screenshot diff implementation vs mockup
+│   ├── design-verify/                   # /design-verify — platform dispatcher (routes to -web or -ios)
+│   ├── design-verify-web/               # /design-verify web — screenshot diff web implementation vs mockup
+│   ├── design-verify-ios/               # /design-verify ios — screenshot diff iOS implementation vs mockup
+│   ├── verify-app/                      # /verify-app — platform dispatcher (routes to verify-web or verify-ios)
+│   ├── verify-web/                      # /verify-web — standalone web app verification using Playwright
+│   ├── verify-ios/                      # /verify-ios — standalone iOS app verification using XcodeBuildMCP
 │   ├── _preamble.md                     # Shared preamble reference (not a skill)
-│   └── _design-preamble.md              # Shared design context preamble (not a skill)
+│   ├── _design-preamble.md              # Shared design context preamble (not a skill)
+│   └── _shared/
+│       └── skill-lock.sh               # Shared lock script sourced by platform sub-skills to prevent concurrent runs
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
 ├── config/                              # Claude Code configuration archive
 │   ├── settings.json                    #   model, plugins, permissions, statusLine command, PreToolUse + SessionStart hook registrations
 │   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
-│   ├── mcp.json                         #   MCP server registrations (mobai)
+│   ├── mcp.json                         #   MCP server registrations (xcodebuildmcp)
 │   └── hooks/                           #   Safety hook scripts installed to ~/.claude/hooks/
 │       ├── block-destructive.sh         #     PreToolUse — blocks rm -rf, git reset --hard, git push --force, etc.
 │       ├── block-push-main.sh           #     PreToolUse — blocks git push to main/master
@@ -356,7 +371,7 @@ The repo slug is derived from `git remote get-url origin` (e.g., `org-name-repo-
 
 ### Overview
 
-Twenty-one Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 21 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management.
+Thirty-four Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 34 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
 
 ### Review Pipeline (skills/review/, postReview/, addressReview/)
 
@@ -394,25 +409,33 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 ### Design Pipeline (skills/design-*)
 
-A seven-skill pipeline for extracting brand identity from reference sites and generating pixel-accurate UI implementations. Design artifacts are written to `~/.agentic-workflow/<repo-slug>/design/`.
+A seventeen-skill pipeline for extracting brand identity from reference sites and generating pixel-accurate UI implementations for web and iOS. Design artifacts are written to `~/.agentic-workflow/<repo-slug>/design/`. Five of the skills are platform dispatchers that route to web or iOS sub-skills based on the first argument.
 
-**`/design-analyze`** — Runs the Dembrandt CLI against one or more reference URLs to extract a structured set of design tokens (colors, typography, spacing, motion) and writes them to `design-tokens.json` in W3C DTCG format. The extracted tokens serve as the raw material for the design language step.
+**`/design-analyze [web|ios]`** — Dispatcher that routes to `design-analyze-web` or `design-analyze-ios`. The web variant runs the Dembrandt CLI against reference URLs to extract design tokens (colors, typography, spacing, motion) into `design-tokens.json` in W3C DTCG format. The iOS variant inspects reference iOS apps via XcodeBuildMCP.
 
 **`/design-language`** — Interactive session that synthesizes token analysis into a brand personality document. Asks forcing questions about tone, target audience, and aesthetic direction, then writes `.impeccable.md` with the brand context and updates `planning/DESIGN_SYSTEM.md` with the full component catalog and strategic decisions.
 
-**`/design-evolve`** — Merges a new reference site into an existing design language. Runs Dembrandt on the new URL, diffs against the current `design-tokens.json`, and updates `.impeccable.md` and `DESIGN_SYSTEM.md` to incorporate the new influences without discarding prior decisions.
+**`/design-evolve [web|ios]`** — Dispatcher that routes to `design-evolve-web` or `design-evolve-ios`. Merges a new reference into the existing design language, diffs against the current `design-tokens.json`, and updates `.impeccable.md` and `DESIGN_SYSTEM.md` without discarding prior decisions.
 
-**`/design-mockup`** — Generates a self-contained HTML mockup file using the design language from `.impeccable.md` and `design-tokens.json`. The mockup is written to `~/.agentic-workflow/<repo-slug>/design/` and serves as the pixel-accurate baseline for downstream implementation and verification.
+**`/design-mockup [web|ios]`** — Dispatcher that routes to `design-mockup-web` or `design-mockup-ios`. The web variant generates a self-contained HTML mockup; the iOS variant generates a SwiftUI mockup. Both write to `~/.agentic-workflow/<repo-slug>/design/` and serve as the pixel-accurate baseline for downstream verification.
 
-**`/design-implement`** — Reads the mockup and design language, then generates production-quality component code targeting either web (React/Next.js with Tailwind) or SwiftUI. Aligns component structure, spacing, and color usage to the design tokens.
+**`/design-implement [web|ios]`** — Dispatcher that routes to `design-implement-web` or `design-implement-ios`. Generates production-quality code: React/Next.js with Tailwind for web, SwiftUI for iOS. Aligns component structure, spacing, and color usage to the design tokens.
 
 **`/design-refine`** — Dispatches Impeccable refinement commands with the full design context injected. Used to iteratively tighten spacing, typography, and visual hierarchy in the implementation against the mockup baseline.
 
-**`/design-verify`** — Takes screenshots of both the mockup and the live implementation, performs a pixel diff, and writes a verification report to `design/`. Reports deviation percentage and highlights mismatched regions. Used as the acceptance gate before shipping UI changes.
+**`/design-verify [web|ios]`** — Dispatcher that routes to `design-verify-web` or `design-verify-ios`. Takes screenshots of both the mockup and the live implementation, performs a pixel diff, and writes a verification report to `design/`. Reports deviation percentage and highlights mismatched regions.
 
-Pipeline: `design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify` (`design-evolve` can run anytime to incorporate new references)
+Pipeline: `design-analyze [web|ios] → design-language → design-mockup [web|ios] → design-implement [web|ios] → design-refine → design-verify [web|ios]` (`design-evolve [web|ios]` can run anytime to incorporate new references)
 
 Design artifacts: `.impeccable.md` (brand context for AI tools), `design-tokens.json` (W3C DTCG token set), `planning/DESIGN_SYSTEM.md` (component catalog and strategic decisions).
+
+### App Verification (skills/verify-app/, verify-web/, verify-ios/)
+
+**`/verify-app`** — Thin platform dispatcher. Auto-detects the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and routes to `verify-web` or `verify-ios` automatically. When detection is ambiguous, asks the user to clarify. Can be used anytime — it does not depend on the design pipeline.
+
+**`/verify-web`** — Standalone web app verification. Uses Playwright to navigate the running web app, take screenshots, and verify UI behaviour against expected outcomes. Writes a verification report to `~/.agentic-workflow/<repo-slug>/verification/`.
+
+**`/verify-ios`** — Standalone iOS app verification. Uses XcodeBuildMCP to launch the app on an iOS Simulator, capture `snapshot_ui` trees and screenshots, and verify screen state against expected outcomes. Supports a `--visual` flag to trigger pixel-level screenshot comparison. Writes a verification report to `~/.agentic-workflow/<repo-slug>/verification/`.
 
 ### Prompt Enhancer (skills/enhancePrompt/)
 
@@ -420,7 +443,7 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 21-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 34-skill pipeline as next steps.
 
 ### Serena LSP Integration
 
@@ -589,7 +612,7 @@ A Next.js 15 App Router application that provides a visual interface for bridge 
 Archived Claude Code configuration for replication across machines:
 
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
-- **config/mcp.json** — Registers the `mobai` MCP server (`npx -y mobai-mcp`).
+- **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@2.3.0 mcp`) for iOS Simulator control.
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
 - **`.claude/rules/`** — Nine glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `mcp-servers.md`, `skills.md`, `testing.md`, `ui.md`.
 
@@ -599,7 +622,7 @@ Archived Claude Code configuration for replication across machines:
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 21 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 

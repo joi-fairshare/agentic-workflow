@@ -47,7 +47,7 @@ Replace `mobai` with `xcodebuildmcp`:
   "mcpServers": {
     "xcodebuildmcp": {
       "command": "npx",
-      "args": ["-y", "xcodebuildmcp@latest", "mcp"]
+      "args": ["-y", "xcodebuildmcp@2.3.0", "mcp"]
     }
   }
 }
@@ -176,7 +176,7 @@ Update the tagline (line 3): `22 custom skills` → `34 custom skills`.
 | File | Change |
 |------|--------|
 | `config/mcp.json` | Replace mobai with xcodebuildmcp |
-| `setup.sh` | (1) Add 12 new skill names to MANAGED_SKILLS; (2) replace `claude mcp add mobai ...` with `claude mcp add xcodebuildmcp npx -y xcodebuildmcp@latest mcp --scope user`; (3) add `claude mcp remove mobai --scope user 2>/dev/null \|\| true` before the add, to deregister the old server for existing installs |
+| `setup.sh` | (1) Add 12 new skill names to MANAGED_SKILLS; (2) replace `claude mcp add mobai ...` with `claude mcp add xcodebuildmcp npx -y xcodebuildmcp@2.3.0 mcp --scope user`; (3) add `claude mcp remove mobai --scope user 2>/dev/null \|\| true` before the add, to deregister the old server for existing installs |
 | `.claude/rules/mcp-servers.md` | Replace mobai row with xcodebuildmcp rows |
 | `.claude/rules/skills.md` | Update all three hardcoded "22" skill-count references to "34" |
 | `.claude/rules/design.md` | Update pipeline diagram to show `[web\|ios]` dispatcher notation; update "Adding New Design Skills" section to note web/iOS pairs |

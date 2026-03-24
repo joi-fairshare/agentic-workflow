@@ -1,14 +1,13 @@
 ---
 name: design-verify
-description: Screenshot the live implementation, diff against the approved mockup baseline using design-comparison MCP, and report discrepancies with fix suggestions. Detects web vs iOS automatically.
-argument-hint: [screen-name]
+description: Detect web vs iOS automatically and delegate to /design-verify-web (Playwright screenshots) or /design-verify-ios (XcodeBuildMCP screenshots). Diffs against mockup baseline.
 disable-model-invocation: true
-allowed-tools: Read, Write, Glob, Agent, AskUserQuestion
+allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 22 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 34 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -26,14 +25,26 @@ allowed-tools: Read, Write, Glob, Agent, AskUserQuestion
 > | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
-> | `/design-analyze` | Extract design tokens from reference sites |
+> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
+> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
+> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
 > | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Merge new reference into design language |
-> | `/design-mockup` | Generate HTML mockup from design language |
-> | `/design-implement` | Generate production code from mockup |
+> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
+> | `/design-evolve-web` | Merge new URL into design language (web) |
+> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
+> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
+> | `/design-mockup-web` | Generate HTML mockup from design language |
+> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
+> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
+> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
+> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
 > | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Screenshot diff implementation vs mockup |
-> | `/verify-app` | Playwright browser verification of running app |
+> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
+> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
+> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
+> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
+> | `/verify-web` | Playwright browser verification of running web app |
+> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 
@@ -53,18 +64,18 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-language design-evolve design-mockup design-implement design-refine design-verify verify-app; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
 BRIDGE_OK=false
-[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
 [ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
 
 echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-built: $BRIDGE_OK"
+echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
@@ -86,6 +97,8 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 
 <!-- === PREAMBLE END === -->
 
+<!-- === DESIGN PREAMBLE START === -->
+
 ## Design Context — Load Design Language
 
 Before proceeding, load existing design context:
@@ -95,160 +108,41 @@ Before proceeding, load existing design context:
 3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
 
 If none of these files exist and this skill requires design context to function, advise:
-> "No design language found. Run `/design-analyze <url>` to extract tokens from a reference site, then `/design-language` to define brand personality."
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
+
+<!-- === DESIGN PREAMBLE END === -->
 
 ---
 
-# Design Verify — Screenshot Diff Implementation vs Mockup
+# Design Verify — Platform Dispatcher
 
-Captures screenshots of the live implementation, compares against the mockup baseline, and reports discrepancies with prioritized fix suggestions.
+Detects whether this is a web or iOS project and delegates to the appropriate screenshot verification skill. Contains no implementation logic.
 
-## Step 1: Detect Target Platform
+> **Tip:** If you already know the platform, invoke directly: `/design-verify-web` or `/design-verify-ios`
 
-Check project files to determine the target:
+## Platform Detection
 
-- **iOS indicators:** `Package.swift`, `*.xcodeproj`, `*.xcworkspace` → use mobai MCP
-- **Web indicators:** `package.json` with Next.js/React/Vue dependencies → use Playwright MCP
-- **Both present:** run verification for both platforms
-
-Use `Glob` and `Read` tools to detect the platform:
+Use the `Glob` tool to check for iOS indicators:
 
 ```
-# Check for iOS
-Glob("Package.swift")
-Glob("*.xcodeproj")
-Glob("*.xcworkspace")
-
-# Check for web (read package.json dependencies)
-Read("package.json")
+Glob("**/Package.swift")
+Glob("**/*.xcodeproj")
+Glob("**/*.xcworkspace")
 ```
 
-## Step 2: Load Baselines
+Use the `Read` tool to check for web indicators:
+- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
 
-Find mockup baselines in the design output directory:
+**iOS detected** = any Glob above returns a match.
+**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
 
-```
-Glob("~/.agentic-workflow/<repo-slug>/design/mockup-*.png")
-```
+## Platform Resolution
 
-**Filtering by screen-name:** If a `[screen-name]` argument was provided (e.g., `/design-verify dashboard`), filter the baselines to only those matching `mockup-<screen-name>.png`. If no argument was provided, verify all baselines found.
+| Detected | Action |
+|----------|--------|
+| iOS only | Invoke `Skill("design-verify-ios")` with original arguments |
+| Web only | Invoke `Skill("design-verify-web")` with original arguments |
+| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
+| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
 
-If no baselines match (either no baselines exist, or the specified screen-name has no baseline):
-> "No mockup baselines found. Run `/design-mockup <screen-name>` first to create a baseline."
-
-## Step 3: Capture Implementation Screenshots
-
-### For Web (Playwright MCP):
-
-Spawn an Agent to capture screenshots at multiple viewports:
-
-1. Navigate to the implementation URL (detect from `package.json` scripts, typically `http://localhost:3000`)
-2. Capture at standard viewports:
-   - Mobile: 375×812 (iPhone)
-   - Tablet: 768×1024 (iPad)
-   - Desktop: 1440×900
-3. Save each screenshot:
-   ```
-   ~/.agentic-workflow/<repo-slug>/design/impl-<screen>-mobile.png
-   ~/.agentic-workflow/<repo-slug>/design/impl-<screen>-tablet.png
-   ~/.agentic-workflow/<repo-slug>/design/impl-<screen>-desktop.png
-   ```
-
-The agent should use Playwright MCP tools: `browser_navigate`, `browser_resize`, `browser_take_screenshot`.
-
-### For iOS (mobai MCP):
-
-Spawn an Agent to capture simulator screenshots:
-
-1. Use `get_screenshot` to capture the current screen
-2. Save screenshot:
-   ```
-   ~/.agentic-workflow/<repo-slug>/design/impl-<screen>-ios.png
-   ```
-
-## Step 4: Diff Against Baselines
-
-For each implementation screenshot, call the design-comparison MCP tool `compare_design` with these parameters:
-
-- **reference:** `~/.agentic-workflow/<repo-slug>/design/mockup-<screen>.png`
-- **implementation:** `~/.agentic-workflow/<repo-slug>/design/impl-<screen>-<viewport>.png`
-
-The MCP returns:
-- Pixel diff percentage
-- Diff image highlighting differences
-
-Save diff images:
-```
-~/.agentic-workflow/<repo-slug>/design/diff-<screen>-<viewport>.png
-```
-
-## Step 5: Report Results
-
-### Pass (< 2% diff):
-
-```
-[PASS] Verification Passed
-===========================
-
-Screen:     <screen-name>
-Diff:       <N>% (threshold: 2%)
-Viewports:  mobile [pass], tablet [pass], desktop [pass]
-
-Implementation matches the approved mockup.
-```
-
-### Minor Discrepancies (2–10% diff):
-
-```
-[WARN] Minor Discrepancies Found
-==================================
-
-Screen:     <screen-name>
-Diff:       <N>%
-
-Discrepancies:
-  1. [viewport] Header height differs by ~8px (impl: 64px, mockup: 72px)
-  2. [viewport] Button border-radius uses 4px instead of token value 8px
-  3. [viewport] Body text color is #333 instead of token color.text (#1A1A2E)
-
-Suggested fixes:
-  • Update header height to match spacing.header token
-  • Replace hardcoded border-radius with var(--radius-md)
-  • Use var(--color-text) instead of hardcoded #333
-
-Suggested fix path: Run `/design-refine` to address discrepancies, then `/design-verify` again.
-
-Diff images saved to ~/.agentic-workflow/<repo-slug>/design/
-```
-
-### Major Discrepancies (> 10% diff):
-
-```
-[FAIL] Major Discrepancies Found
-==================================
-
-Screen:     <screen-name>
-Diff:       <N>%
-
-This is a significant deviation from the mockup.
-
-Priority fixes:
-  1. [HIGH] Layout structure differs — sidebar missing in implementation
-  2. [HIGH] Color scheme not applied — implementation uses default colors
-  3. [MED]  Typography scale doesn't match design tokens
-  4. [LOW]  Icon sizes inconsistent
-
-Diff images saved to ~/.agentic-workflow/<repo-slug>/design/
-
-Recommended: Run the design-iterator agent for automated multi-pass refinement:
-  Use Agent tool with compound-engineering:design:design-iterator subagent
-```
-
-## Rules
-
-- Always compare against the latest baseline — warn if the baseline is older than the most recent mockup HTML
-- Capture all configured viewports, don't skip any
-- Report exact pixel values and token references for each discrepancy
-- For major diffs, suggest the `design-iterator` compound-engineering agent as an automated fix path
-- Do not modify any code — this skill is read-only verification
-- If the dev server is not running, advise the user to start it before re-running
+All user-supplied arguments (e.g., `[screen-name]`) are passed through to the sub-skill unchanged.

@@ -1,9 +1,9 @@
 ---
-name: addressReview
-description: Address PR review comments by spawning domain-specific implementation agents in parallel. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json as source of truth, merges any new human GitHub comments, implements fixes, and updates the state file. Can be re-run to continue the review loop.
-argument-hint: [pr-number-or-url]
+name: design-mockup-web
+description: Generate an HTML mockup informed by the design language, serve it via the visual companion, iterate with feedback until approved, then screenshot the final version as a baseline for /design-verify-web.
+argument-hint: <screen-name>
 disable-model-invocation: true
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
+allowed-tools: Bash(*/start-server.sh *), Bash(mkdir *), Write, Read, Agent, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -98,131 +98,118 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 
 <!-- === PREAMBLE END === -->
 
-# Address PR Review
+<!-- === DESIGN PREAMBLE START === -->
 
-Implements fixes for outstanding review issues. The local state file is the source of truth — run this as many times as needed until all issues are resolved.
+## Design Context — Load Design Language
 
-## Step 1: Resolve the PR
+Before proceeding, load existing design context:
 
-**If an argument was provided**, use it directly:
+1. Read `.impeccable.md` if it exists (brand personality, aesthetic direction)
+2. Read `design-tokens.json` if it exists (W3C DTCG tokens: colors, typography, spacing)
+3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
+
+If none of these files exist and this skill requires design context to function, advise:
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
+
+<!-- === DESIGN PREAMBLE END === -->
+
+---
+
+# Design Mockup — Generate HTML Mockup from Design Language
+
+Generate an HTML mockup using the visual companion, informed by the design language. Iterate with user feedback until approved, then capture a baseline screenshot for verification.
+
+## Step 1: Validate Arguments
+
+The user must provide a screen name (e.g., "dashboard", "login", "settings", "onboarding").
+
+If no screen name provided:
+> "Usage: `/design-mockup <screen-name>`
+> Example: `/design-mockup dashboard`"
+
+## Step 2: Load Design Context
+
+Read `.impeccable.md` and `design-tokens.json` to understand:
+- Color palette and semantic color usage
+- Typography scale and font choices
+- Spacing system and layout approach
+- Brand personality and aesthetic direction
+
+These values must drive every visual decision in the mockup.
+
+## Step 3: Generate HTML Mockup
+
+Create an HTML file as a content fragment for the visual companion. The mockup should:
+
+1. **Be a single HTML file** with inline CSS (no external dependencies except CDN fonts)
+2. **Use exact token values** from `design-tokens.json` — colors, font sizes, spacing, radii
+3. **Reflect the brand personality** from `.impeccable.md` — not generic Bootstrap/Tailwind defaults
+4. **Be responsive** — include viewport meta tag and basic responsive breakpoints
+5. **Include realistic content** — use plausible text and data, not "Lorem ipsum"
+
+Save to the visual companion's session directory:
+```
+.superpowers/brainstorm/<session-id>/<screen-name>.html
+```
+
+## Step 4: Present in Browser
+
+Start the visual companion server:
 ```bash
-gh pr view <argument> --json number,title,headRefName,baseRefName,url,headRepository
+*/start-server.sh *
 ```
 
-**If no argument**, auto-detect from the current branch:
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
+The mockup will be visible in the browser for the user to review.
 
-If multiple PRs are found, list them and ask the user to pick one.
+## Step 5: Iterate
 
-If no PRs are found: "No open PR found for the current branch. Use `/addressReview <number>` to specify one."
+Use `AskUserQuestion` to gather feedback from the user. Common adjustments:
+- Layout changes (reorder sections, change grid)
+- Color refinements (too much contrast, wrong emphasis)
+- Typography tweaks (heading sizes, body line-height)
+- Content density (too sparse, too crowded)
+- Missing elements (navigation, footer, status indicators)
 
-## Step 2: Load State File
+Apply changes to the HTML file and continue asking via `AskUserQuestion` until the user approves.
 
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
+## Step 6: Capture Baseline
 
-If the file does not exist:
-> "No local review state found for PR #{number}. Run `/review` first."
-
-## Step 3: Fetch New Human Comments from GitHub
-
-Fetch all GitHub comments created **after** `reviewed_at` in the state file:
+Once approved, save the baseline screenshot for `/design-verify`:
 
 ```bash
-# Top-level issue comments
-gh api repos/{owner}/{repo}/issues/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
-
-# Inline PR review comments
-gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
+mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/design"
 ```
 
-Filter out comments posted by bots or CI systems (check `user.login` for `[bot]` suffix or known CI usernames).
+Use an `Agent` subagent with Playwright MCP tools to capture the screenshot. The subagent should:
+1. Navigate to the mockup URL served by the visual companion
+2. Take a full-page screenshot
+3. Save it to the baseline path
 
-Append any new comments to a `human_comments` array in the state file. Update `human_comments_fetched_at` to now.
-
-## Step 4: Build the Issue List
-
-Collect all unaddressed items:
-
-**From state file** (`addressed: false`):
-- All issues across all `reviewers[].issues` entries
-
-**From new human comments** (all — humans comment when something needs attention):
-- Each comment becomes a candidate issue for triage
-
-**Filter by severity** (for structured issues):
-- Default: `blocking` and `issue` only
-- Pass `--all` to include `suggestion` and `nit`
-
-Report to the user:
+Baseline path:
 ```
-PR #{number}: "{title}"
-
-Outstanding items:
-  X blocking   (structured)
-  Y issue      (structured)
-  Z new human comments
-  (W suggestions/nits skipped — pass --all to include)
-
-Already addressed: N items
+~/.agentic-workflow/<repo-slug>/design/mockup-<screen-name>.png
 ```
 
-If everything is already addressed, stop:
-> "All review items have been addressed. Consider running /postReview if you haven't published yet."
-
-## Step 5: Triage for Implementation
-
-Spawn a **general-purpose** subagent with the triage prompt from [address-triage-prompt.md](address-triage-prompt.md).
-
-Inject:
-- `{structured_issues}` — JSON array of unaddressed structured issues
-- `{human_comments}` — JSON array of new human comments
-- `{diff}` — output of `gh pr diff {number}`
-- `{file_list}` — changed file paths
-
-Parse the returned JSON array of implementation assignments.
-
-## Step 6: Checkout and Spawn Parallel Implementers
-
-Check out the PR branch:
-```bash
-gh pr checkout {number}
-```
-
-Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
-- `{agent}`, `{focus}`, `{issues}` — from triage output
-- `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
-
-## Step 7: Update State File
-
-After all implementers complete, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
-
-For each issue that was addressed:
-- Set `"addressed": true`
-- Set `"addressed_at"` to current ISO timestamp
-- Set `"addressed_by"` to the agent name
-- Set `"fix_commit"` to the commit SHA the agent reported
-
-For new human comments that were addressed, add them to the state file under `human_comments` with the same fields.
-
-Update `"last_addressed_at"` at the top level.
-
-Use the Edit tool to update the file.
-
-## Step 8: Report
+## Step 7: Report
 
 ```
-Address complete for PR #{number}: "{title}"
+Mockup Approved
+===============
 
-Implemented:
-  • security-engineer — 2 issues fixed (commit abc1234)
-  • typescript-pro — 1 issue fixed (commit def5678)
+Screen:    <screen-name>
+File:      .superpowers/brainstorm/<session-id>/<screen-name>.html
+Baseline:  ~/.agentic-workflow/<repo-slug>/design/mockup-<screen-name>.png
 
-Still outstanding (if any):
-  [blocking] src/auth.ts — JWT not verified (agent error — address manually)
-
-Run /addressReview again to continue, or /postReview to publish.
+Next steps:
+  • Run /design-implement web|swiftui to generate production code
+  • Run /design-mockup <another-screen> to mockup additional screens
+  • Run /design-refine to apply Impeccable refinements
 ```
+
+## Rules
+
+- Every color, font size, and spacing value must come from `design-tokens.json` — no hardcoded values
+- The mockup is a design artifact, not production code — optimize for visual fidelity, not code quality
+- Include hover states and interactive affordances in the HTML/CSS
+- If `.impeccable.md` doesn't exist, warn but still allow creation with manual style guidance
+- Save only ONE baseline per screen name — re-running overwrites the previous baseline after confirmation

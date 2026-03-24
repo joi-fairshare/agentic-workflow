@@ -7,13 +7,13 @@
 set -euo pipefail
 
 REPO_PATH="$(pwd)"
-REPO_NAME="$(basename "$REPO_PATH" | tr -c '[:alnum:]-_.' '-')"   # sanitize all non-safe chars (spaces, colons, @, etc.)
+REPO_NAME="$(printf '%s' "$(basename "$REPO_PATH")" | tr -c '[:alnum:]-_.' '-')"   # sanitize; printf avoids trailing newline → trailing '-' bug
 BASE_VERSION="latest"                                 # single source of truth for version
 
 # Select image based on repo's declared languages in .serena/project.yml
 # Repos with 'csharp' in their languages list use the C# extension image
 IMAGE="serena-local:${BASE_VERSION}"
-if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^- csharp' "${REPO_PATH}/.serena/project.yml"; then
+if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space:]]*csharp([[:space:]]|$)' "${REPO_PATH}/.serena/project.yml"; then
   IMAGE="serena-local:${BASE_VERSION}-csharp"
 fi
 
@@ -28,11 +28,85 @@ fi
 
 mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/.serena/memory"
 
-exec docker run --rm -i \
-  -v "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro" \
-  -v "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache" \
-  -v "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs" \
-  -v "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory" \
+# ---------------------------------------------------------------------------
+# Swift LSP bridge: sourcekit-lsp runs on the macOS host; the container talks
+# to it through a Unix domain socket mounted into the container.
+#
+# When .serena/project.yml declares '- swift' in its languages list:
+#   1. Host-side: socat listens on a per-project socket and spawns sourcekit-lsp
+#      for each connection (fork mode, so Serena can reconnect after crashes).
+#   2. Container-side: /usr/local/bin/sourcekit-lsp shim (in serena-local:*-swift)
+#      connects its stdin/stdout to the socket via UNIX-CONNECT.
+#   3. The socket file is mounted into the container at /tmp/sourcekit-lsp.sock.
+#
+# Zero-trust parity: only JSON-RPC passes through the socket. The container
+# gains no shell access. execute_shell_command remains excluded in project.yml.
+# ---------------------------------------------------------------------------
+SWIFT_SOCAT_PID=""
+SOCKET_PATH=""
+
+if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space:]]*swift([[:space:]]|$)' "${REPO_PATH}/.serena/project.yml"; then
+  if ! command -v socat &>/dev/null; then
+    echo "WARN: 'socat' not found — Swift LSP bridge disabled. Install with: brew install socat" >&2
+    echo "WARN: Serena will start without Swift LSP support." >&2
+  elif ! command -v sourcekit-lsp &>/dev/null; then
+    echo "WARN: 'sourcekit-lsp' not found — Swift LSP bridge disabled. Xcode required." >&2
+    echo "WARN: Serena will start without Swift LSP support." >&2
+  else
+    # Check for the swift image; fall back to standard if not built yet
+    SWIFT_IMAGE="serena-local:${BASE_VERSION}-swift"
+    if [[ -z "$(docker images -q "${SWIFT_IMAGE}" 2>/dev/null)" ]]; then
+      echo "WARN: ${SWIFT_IMAGE} not found — run BUILD_SWIFT=1 ./setup.sh to build it." >&2
+      echo "WARN: Falling back to standard Serena image without Swift LSP support." >&2
+    else
+      IMAGE="${SWIFT_IMAGE}"
+      SOCKET_PATH="/tmp/serena-swift-${REPO_NAME}.sock"
+
+      # Remove any stale socket from a prior session
+      rm -f "${SOCKET_PATH}"
+
+      # Launch host-side bridge: accepts connections on the socket, forks sourcekit-lsp
+      socat "UNIX-LISTEN:${SOCKET_PATH},reuseaddr,fork" \
+            "EXEC:$(command -v sourcekit-lsp)" &
+      SWIFT_SOCAT_PID=$!
+
+      # Wait briefly for socat to bind the socket before the container starts
+      sleep 1
+
+      if ! kill -0 "${SWIFT_SOCAT_PID}" 2>/dev/null; then
+        echo "WARN: Swift LSP bridge failed to start. Falling back to standard image." >&2
+        IMAGE="serena-local:${BASE_VERSION}"
+        SOCKET_PATH=""
+        SWIFT_SOCAT_PID=""
+      else
+        echo "Swift LSP bridge active (pid=${SWIFT_SOCAT_PID}, socket=${SOCKET_PATH})" >&2
+      fi
+    fi
+  fi
+fi
+
+# Kill the host-side socat when the container exits (covers normal exit and signals)
+cleanup() {
+  if [ -n "${SWIFT_SOCAT_PID}" ]; then
+    kill "${SWIFT_SOCAT_PID}" 2>/dev/null || true
+    rm -f "${SOCKET_PATH}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+# Build docker run options (bash 3-compatible array approach)
+DOCKER_OPTS=(
+  "--rm" "-i"
+  "-v" "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro"
+  "-v" "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache"
+  "-v" "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs"
+  "-v" "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory"
+)
+if [ -n "${SOCKET_PATH}" ]; then
+  DOCKER_OPTS+=("-v" "${SOCKET_PATH}:/tmp/sourcekit-lsp.sock")
+fi
+
+docker run "${DOCKER_OPTS[@]}" \
   "${IMAGE}" \
   serena start-mcp-server \
   --context claude-code \

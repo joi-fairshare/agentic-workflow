@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 12 new platform-specific sub-skills: `verify-web`, `verify-ios`, `design-analyze-web`, `design-analyze-ios`, `design-evolve-web`, `design-evolve-ios`, `design-mockup-web`, `design-mockup-ios`, `design-implement-web`, `design-implement-ios`, `design-verify-web`, `design-verify-ios`
+- Generic `skills/_shared/skill-lock.sh` for mutual exclusion across concurrent simulator and browser sessions; used by `verify-ios` and `verify-web`
+- Platform dispatcher pattern: `verify-app`, `design-analyze`, `design-evolve`, `design-mockup`, `design-implement`, and `design-verify` detect the target platform and delegate to the appropriate sub-skill
+- `MANAGED_SKILLS` in `setup.sh` expanded from 22 to 34 entries covering all new sub-skills
+- `xcodebuildmcp` (pinned at `xcodebuildmcp@2.3.0`) registered as MCP server for iOS Simulator control (build, launch, `snapshot_ui`, screenshot, tap, swipe)
+- Design pipeline updated in `.claude/rules/design.md` to reflect `[web|ios]` argument variants
+- `mcp-servers.md` rule updated with `xcodebuildmcp` usage guidance and a "When to use XcodeBuildMCP" quick-reference table
+
+### Changed
+
+- 6 existing skills (`verify-app`, `design-analyze`, `design-evolve`, `design-mockup`, `design-implement`, `design-verify`) rewritten as thin platform dispatchers — all execution logic moved to platform-specific sub-skills
+- `verify-web` is the new home for `browser-lock.sh` (previously in `verify-app`); `verify-app` no longer carries browser-locking logic
+- `mobai` MCP server replaced by `xcodebuildmcp` for iOS Simulator automation
+- Preamble table in `skills/_preamble.md` updated to list all 34 skills; change propagated to all 16 existing `SKILL.md` files
+- `skills/_design-preamble.md` updated to reflect the dispatcher pattern for design sub-skills
+- `.gitignore` updated to exclude `.claude/worktrees/` directory
+
+### Fixed
+
+- TOCTOU race in `skill-lock.sh` `acquire_lock` — replaced non-atomic test-then-create with an atomic `O_EXCL` open pattern
+- `LOCK_NAME` input validation in `skill-lock.sh` to reject path traversal characters (e.g. `../`)
+- `xcodebuildmcp` pinned to `xcodebuildmcp@2.3.0` (previously `@latest`) to eliminate supply-chain risk from unreviewed upstream updates
+- Argument hints corrected in dispatcher `SKILL.md` frontmatter to show `[web|ios]` syntax
+- Simulator lock acquisition hardened with error handling for edge cases in `skill-lock.sh`
+
+---
+
+## [Unreleased] - 2026-03-23
+
+### Added
+
 - `config/hooks/` directory with four shell hooks: `block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, and `git-context.sh`
 - `config/settings.json` updated with consolidated PreToolUse (Bash matcher) and SessionStart hook registrations
 - `.claude/rules/hooks.md` documenting PreToolUse vs SessionStart protocols, hook file inventory, and steps for adding new hooks

@@ -1,9 +1,9 @@
 ---
-name: addressReview
-description: Address PR review comments by spawning domain-specific implementation agents in parallel. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json as source of truth, merges any new human GitHub comments, implements fixes, and updates the state file. Can be re-run to continue the review loop.
-argument-hint: [pr-number-or-url]
+name: design-evolve-web
+description: Analyze a new reference URL mid-project and selectively merge design tokens into the existing design language. Diffs new tokens against current, asks what to adopt/adapt/ignore, updates design-tokens.json and .impeccable.md.
+argument-hint: <url>
 disable-model-invocation: true
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
+allowed-tools: Bash(npx dembrandt *), Bash(git *), Read, Write, Edit, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -98,131 +98,111 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 
 <!-- === PREAMBLE END === -->
 
-# Address PR Review
+<!-- === DESIGN PREAMBLE START === -->
 
-Implements fixes for outstanding review issues. The local state file is the source of truth — run this as many times as needed until all issues are resolved.
+## Design Context — Load Design Language
 
-## Step 1: Resolve the PR
+Before proceeding, load existing design context:
 
-**If an argument was provided**, use it directly:
+1. Read `.impeccable.md` if it exists (brand personality, aesthetic direction)
+2. Read `design-tokens.json` if it exists (W3C DTCG tokens: colors, typography, spacing)
+3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
+
+If none of these files exist and this skill requires design context to function, advise:
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
+
+<!-- === DESIGN PREAMBLE END === -->
+
+---
+
+# Design Evolve — Merge New Reference into Design Language
+
+Analyze a new reference site mid-project and selectively merge its design elements into the existing design language. Shows a diff of what would change, lets the user choose what to adopt.
+
+## Step 1: Validate Prerequisites
+
+Both `.impeccable.md` and `design-tokens.json` must exist. If either is missing:
+> "No existing design language found. Run `/design-analyze` and `/design-language` first to establish a baseline before evolving."
+
+## Step 2: Validate URL
+
+Validate that the `<url>` argument starts with `http://` or `https://` and contains only URL-safe characters: letters, digits, `:`, `/`, `.`, `-`, `_`, `~`, `?`, `=`, `%`, `+`, `@`, `,`.
+
+Reject any URL containing characters outside this allowlist.
+
+If validation fails:
+> "Invalid URL: `<url>`. URLs must start with `http://` or `https://` and may only contain URL-safe characters (`a-zA-Z0-9` and `:/.\\-_~?=%+@,`). Offending characters: `<list of disallowed characters found>`."
+
+## Step 3: Run Dembrandt on New URL
+
 ```bash
-gh pr view <argument> --json number,title,headRefName,baseRefName,url,headRepository
+npx dembrandt <url> --dtcg --save-output
 ```
 
-**If no argument**, auto-detect from the current branch:
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
+Read the Dembrandt output.
 
-If multiple PRs are found, list them and ask the user to pick one.
+## Step 4: Present Diff
 
-If no PRs are found: "No open PR found for the current branch. Use `/addressReview <number>` to specify one."
-
-## Step 2: Load State File
-
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
-
-If the file does not exist:
-> "No local review state found for PR #{number}. Run `/review` first."
-
-## Step 3: Fetch New Human Comments from GitHub
-
-Fetch all GitHub comments created **after** `reviewed_at` in the state file:
-
-```bash
-# Top-level issue comments
-gh api repos/{owner}/{repo}/issues/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
-
-# Inline PR review comments
-gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
-```
-
-Filter out comments posted by bots or CI systems (check `user.login` for `[bot]` suffix or known CI usernames).
-
-Append any new comments to a `human_comments` array in the state file. Update `human_comments_fetched_at` to now.
-
-## Step 4: Build the Issue List
-
-Collect all unaddressed items:
-
-**From state file** (`addressed: false`):
-- All issues across all `reviewers[].issues` entries
-
-**From new human comments** (all — humans comment when something needs attention):
-- Each comment becomes a candidate issue for triage
-
-**Filter by severity** (for structured issues):
-- Default: `blocking` and `issue` only
-- Pass `--all` to include `suggestion` and `nit`
-
-Report to the user:
-```
-PR #{number}: "{title}"
-
-Outstanding items:
-  X blocking   (structured)
-  Y issue      (structured)
-  Z new human comments
-  (W suggestions/nits skipped — pass --all to include)
-
-Already addressed: N items
-```
-
-If everything is already addressed, stop:
-> "All review items have been addressed. Consider running /postReview if you haven't published yet."
-
-## Step 5: Triage for Implementation
-
-Spawn a **general-purpose** subagent with the triage prompt from [address-triage-prompt.md](address-triage-prompt.md).
-
-Inject:
-- `{structured_issues}` — JSON array of unaddressed structured issues
-- `{human_comments}` — JSON array of new human comments
-- `{diff}` — output of `gh pr diff {number}`
-- `{file_list}` — changed file paths
-
-Parse the returned JSON array of implementation assignments.
-
-## Step 6: Checkout and Spawn Parallel Implementers
-
-Check out the PR branch:
-```bash
-gh pr checkout {number}
-```
-
-Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
-- `{agent}`, `{focus}`, `{issues}` — from triage output
-- `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
-
-## Step 7: Update State File
-
-After all implementers complete, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
-
-For each issue that was addressed:
-- Set `"addressed": true`
-- Set `"addressed_at"` to current ISO timestamp
-- Set `"addressed_by"` to the agent name
-- Set `"fix_commit"` to the commit SHA the agent reported
-
-For new human comments that were addressed, add them to the state file under `human_comments` with the same fields.
-
-Update `"last_addressed_at"` at the top level.
-
-Use the Edit tool to update the file.
-
-## Step 8: Report
+Compare new tokens against existing `design-tokens.json`:
 
 ```
-Address complete for PR #{number}: "{title}"
+Design Evolution Diff
+=====================
 
-Implemented:
-  • security-engineer — 2 issues fixed (commit abc1234)
-  • typescript-pro — 1 issue fixed (commit def5678)
+Source: <url>
 
-Still outstanding (if any):
-  [blocking] src/auth.ts — JWT not verified (agent error — address manually)
+NEW tokens (not in current language):
+  color.accent-blue: #3B82F6
+  spacing.2xl: 3rem
+  typography.mono: "JetBrains Mono"
 
-Run /addressReview again to continue, or /postReview to publish.
+DIFFERENT values (exist but differ):
+  color.primary: current=#1A1A2E → new=#0F172A
+  spacing.lg: current=2rem → new=1.5rem
+
+UNCHANGED (same in both):
+  color.background: #FFFFFF
+  typography.body.fontSize: 1rem
 ```
+
+## Step 5: Ask What to Adopt
+
+For each category (new tokens, different values), ask via AskUserQuestion:
+> "Which elements would you like to adopt from <url>?
+> - **Adopt**: take the new value as-is
+> - **Adapt**: use the new value as inspiration but modify
+> - **Ignore**: keep current value unchanged"
+
+## Step 6: Update Design Files
+
+Apply the user's choices:
+1. Update `design-tokens.json` with adopted/adapted tokens
+2. Update `.impeccable.md` if the new reference changes aesthetic direction:
+   - Add to references list if adopted
+   - Note any style shifts in relevant sections
+
+## Step 7: Report
+
+```
+Design Language Updated
+=======================
+
+Adopted:  N tokens from <url>
+Adapted:  N tokens (modified from <url>)
+Ignored:  N tokens (kept current values)
+
+Updated files:
+  design-tokens.json (N changes)
+  .impeccable.md (references updated)
+
+Next steps:
+  • Run /design-implement web|swiftui to regenerate platform-specific token files
+  • Run /design-verify to check implementation against updated tokens
+```
+
+## Rules
+
+- Never overwrite existing tokens without user confirmation
+- Show exact before/after values for all changes
+- Preserve token structure — only update values, don't reorganize
+- Clean up Dembrandt output files after processing

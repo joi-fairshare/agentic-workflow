@@ -1,9 +1,9 @@
 ---
-name: addressReview
-description: Address PR review comments by spawning domain-specific implementation agents in parallel. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json as source of truth, merges any new human GitHub comments, implements fixes, and updates the state file. Can be re-run to continue the review loop.
-argument-hint: [pr-number-or-url]
+name: design-analyze-web
+description: Run Dembrandt on reference site URLs to extract design tokens (colors, typography, spacing) as W3C DTCG JSON. Merges multiple sites, resolves conflicts by frequency/prominence, and writes design-tokens.json.
+argument-hint: <url> [url2...]
 disable-model-invocation: true
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
+allowed-tools: Bash(npx dembrandt *), Bash(git *), Read, Write, Glob, AskUserQuestion
 ---
 
 <!-- === PREAMBLE START === -->
@@ -98,131 +98,127 @@ mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 
 <!-- === PREAMBLE END === -->
 
-# Address PR Review
+<!-- === DESIGN PREAMBLE START === -->
 
-Implements fixes for outstanding review issues. The local state file is the source of truth — run this as many times as needed until all issues are resolved.
+## Design Context — Load Design Language
 
-## Step 1: Resolve the PR
+Before proceeding, load existing design context:
 
-**If an argument was provided**, use it directly:
+1. Read `.impeccable.md` if it exists (brand personality, aesthetic direction)
+2. Read `design-tokens.json` if it exists (W3C DTCG tokens: colors, typography, spacing)
+3. Read `planning/DESIGN_SYSTEM.md` if it exists (design principles, component catalog)
+
+If none of these files exist and this skill requires design context to function, advise:
+> "No design language found. Run `/design-analyze` (detects web vs iOS automatically) to extract tokens, then `/design-language` to define brand personality."
+
+<!-- === DESIGN PREAMBLE END === -->
+
+> **Note:** This skill creates design context — missing `design-tokens.json` is expected on first run.
+
+---
+
+# Design Analyze — Extract Design Tokens from Reference Sites
+
+Runs Dembrandt CLI on one or more reference website URLs, extracts design tokens, merges across sites, and writes `design-tokens.json` in W3C DTCG format.
+
+## Step 1: Validate Arguments
+
+The user must provide at least one URL. Parse all URLs from the argument string.
+
+If no URLs provided:
+> "Usage: `/design-analyze <url> [url2...]`
+> Example: `/design-analyze https://linear.app https://vercel.com`"
+
+## Step 2: Validate URLs
+
+Validate that each URL starts with `http://` or `https://` and contains only URL-safe characters: letters, digits, `:`, `/`, `.`, `-`, `_`, `~`, `?`, `=`, `%`, `+`, `@`, `,`.
+
+Reject any URL containing characters outside this allowlist.
+
+If any argument fails validation:
+> "Invalid URL: `<argument>`. URLs must start with `http://` or `https://` and may only contain URL-safe characters (`a-zA-Z0-9` and `:/.\\-_~?=%+@,`). Offending characters: `<list of disallowed characters found>`."
+
+## Step 3: Run Dembrandt on Each URL
+
+For each URL, run:
+
 ```bash
-gh pr view <argument> --json number,title,headRefName,baseRefName,url,headRepository
+npx dembrandt <url> --dtcg --save-output
 ```
 
-**If no argument**, auto-detect from the current branch:
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
-
-If multiple PRs are found, list them and ask the user to pick one.
-
-If no PRs are found: "No open PR found for the current branch. Use `/addressReview <number>` to specify one."
-
-## Step 2: Load State File
-
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
-
-If the file does not exist:
-> "No local review state found for PR #{number}. Run `/review` first."
-
-## Step 3: Fetch New Human Comments from GitHub
-
-Fetch all GitHub comments created **after** `reviewed_at` in the state file:
+If the user's design system includes dark mode, also run:
 
 ```bash
-# Top-level issue comments
-gh api repos/{owner}/{repo}/issues/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
-
-# Inline PR review comments
-gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
+npx dembrandt <url> --dtcg --dark-mode --save-output
 ```
 
-Filter out comments posted by bots or CI systems (check `user.login` for `[bot]` suffix or known CI usernames).
+Collect all output files. Dembrandt saves JSON files with the extracted tokens.
 
-Append any new comments to a `human_comments` array in the state file. Update `human_comments_fetched_at` to now.
+## Step 4: Merge Extracted Tokens
 
-## Step 4: Build the Issue List
+If multiple URLs were provided:
 
-Collect all unaddressed items:
+1. Read all Dembrandt output files
+2. Identify shared patterns across sites (common colors, similar typography scales, consistent spacing)
+3. Resolve conflicts by frequency and prominence:
+   - Token present in most sites wins
+   - If tied, prefer the token from the first URL (primary reference)
+4. Synthesize: what's shared across references, what's distinctive about each
 
-**From state file** (`addressed: false`):
-- All issues across all `reviewers[].issues` entries
+If single URL, use its tokens directly.
 
-**From new human comments** (all — humans comment when something needs attention):
-- Each comment becomes a candidate issue for triage
+## Step 5: Write design-tokens.json
 
-**Filter by severity** (for structured issues):
-- Default: `blocking` and `issue` only
-- Pass `--all` to include `suggestion` and `nit`
+Write the merged tokens to `design-tokens.json` at the project root in W3C DTCG format:
 
-Report to the user:
-```
-PR #{number}: "{title}"
-
-Outstanding items:
-  X blocking   (structured)
-  Y issue      (structured)
-  Z new human comments
-  (W suggestions/nits skipped — pass --all to include)
-
-Already addressed: N items
-```
-
-If everything is already addressed, stop:
-> "All review items have been addressed. Consider running /postReview if you haven't published yet."
-
-## Step 5: Triage for Implementation
-
-Spawn a **general-purpose** subagent with the triage prompt from [address-triage-prompt.md](address-triage-prompt.md).
-
-Inject:
-- `{structured_issues}` — JSON array of unaddressed structured issues
-- `{human_comments}` — JSON array of new human comments
-- `{diff}` — output of `gh pr diff {number}`
-- `{file_list}` — changed file paths
-
-Parse the returned JSON array of implementation assignments.
-
-## Step 6: Checkout and Spawn Parallel Implementers
-
-Check out the PR branch:
-```bash
-gh pr checkout {number}
+```json
+{
+  "$schema": "https://design-tokens.org/schema.json",
+  "color": {
+    "primary": { "$value": "#...", "$type": "color" },
+    "secondary": { "$value": "#...", "$type": "color" }
+  },
+  "typography": {
+    "heading": {
+      "fontFamily": { "$value": "...", "$type": "fontFamily" },
+      "fontSize": { "$value": "...", "$type": "dimension" }
+    }
+  },
+  "spacing": {
+    "sm": { "$value": "...", "$type": "dimension" },
+    "md": { "$value": "...", "$type": "dimension" }
+  }
+}
 ```
 
-Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
-- `{agent}`, `{focus}`, `{issues}` — from triage output
-- `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
+## Step 6: Present Summary
 
-## Step 7: Update State File
-
-After all implementers complete, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
-
-For each issue that was addressed:
-- Set `"addressed": true`
-- Set `"addressed_at"` to current ISO timestamp
-- Set `"addressed_by"` to the agent name
-- Set `"fix_commit"` to the commit SHA the agent reported
-
-For new human comments that were addressed, add them to the state file under `human_comments` with the same fields.
-
-Update `"last_addressed_at"` at the top level.
-
-Use the Edit tool to update the file.
-
-## Step 8: Report
+Display a summary of extracted tokens:
 
 ```
-Address complete for PR #{number}: "{title}"
+Design Token Extraction Complete
+=================================
 
-Implemented:
-  • security-engineer — 2 issues fixed (commit abc1234)
-  • typescript-pro — 1 issue fixed (commit def5678)
+Source(s): <url1>, <url2>, ...
 
-Still outstanding (if any):
-  [blocking] src/auth.ts — JWT not verified (agent error — address manually)
+Colors:     N tokens extracted
+Typography: N tokens extracted
+Spacing:    N tokens extracted
+Radii:      N tokens extracted
+Elevation:  N tokens extracted
+Motion:     N tokens extracted
 
-Run /addressReview again to continue, or /postReview to publish.
+Written to: design-tokens.json
+
+Next steps:
+  1. Run /design-language to define brand personality
+  2. Run /design-mockup <screen> to generate HTML mockups
+  3. Run /design-implement web|swiftui to generate production code
 ```
+
+## Rules
+
+- Always use `--dtcg` flag for W3C DTCG format output
+- Do not modify existing `design-tokens.json` without warning — if it exists, ask before overwriting
+- Clean up Dembrandt output files after merging (keep only `design-tokens.json`)
+- If Dembrandt is not installed, advise: "Run `npm install -g dembrandt` or re-run `setup.sh`"

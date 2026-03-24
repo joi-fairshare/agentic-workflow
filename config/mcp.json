@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "mobai": {
+    "xcodebuildmcp": {
       "command": "npx",
-      "args": ["-y", "mobai-mcp"]
+      "args": ["-y", "xcodebuildmcp@2.3.0", "mcp"]
     }
   }
 }
