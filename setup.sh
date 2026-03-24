@@ -520,7 +520,8 @@ claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
   || echo "WARN: Serena already registered (or claude CLI not found)"
 
 echo "=== Registering XcodeBuildMCP (global) ==="
-claude mcp add --scope user xcodebuildmcp -- npx -y xcodebuildmcp@latest mcp \
+XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
+claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
   2>/dev/null \
   || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
 
