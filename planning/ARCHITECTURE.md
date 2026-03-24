@@ -612,7 +612,7 @@ A Next.js 15 App Router application that provides a visual interface for bridge 
 Archived Claude Code configuration for replication across machines:
 
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
-- **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@latest mcp`) for iOS Simulator control.
+- **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@2.3.0 mcp`) for iOS Simulator control.
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
 - **`.claude/rules/`** — Nine glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `ingestion.md`, `mcp-servers.md`, `skills.md`, `testing.md`, `ui.md`.
 
