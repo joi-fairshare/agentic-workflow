@@ -74,13 +74,13 @@ for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHu
 done
 
 BRIDGE_OK=false
-[ -f "$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md" 2>/dev/null || echo /dev/null)")/../mcp-bridge/dist/mcp.js" ] 2>/dev/null && BRIDGE_OK=true
+lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
 [ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
 
 echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-built: $BRIDGE_OK"
+echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
