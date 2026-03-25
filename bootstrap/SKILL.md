@@ -1,7 +1,7 @@
 ---
 name: bootstrap
-description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the target repo's tech stack and domain. Calls /enhancePrompt first for context.
-argument-hint: [--force to regenerate existing docs]
+description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
+argument-hint: [--force] [--product-docs <url-or-path>]...
 allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
@@ -150,16 +150,129 @@ mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budg
 > | `design-comparison` | Visual diff between implementation and design |
 > | `xcodebuildmcp` | iOS simulator control — build, run, screenshot, UI snapshot | Manual iOS testing |
 
+## External Documentation — Parse and Classify
+
+If the user provides `--product-docs` arguments, parse and classify them before proceeding to Step 1.
+
+### Argument Format
+
+```bash
+/bootstrap --product-docs <url-or-path> [--product-docs <url-or-path>]...
+# e.g.
+/bootstrap --product-docs https://company.sharepoint.com/.../Roadmap.docx --product-docs ~/docs/strategy.pdf
+```
+
+If no `--product-docs` arguments are provided, skip this entire section entirely — no validation, no confirmation, no External References sections added to generated docs.
+
+### Classification
+
+Classify each source by URL pattern:
+
+| Pattern | Type |
+|---------|------|
+| `sharepoint.com` in URL | SharePoint |
+| `atlassian.net/wiki` or `confluence` in URL | Confluence |
+| `dropbox.com` or `paper.dropbox.com` in URL | Dropbox |
+| `notion.so` or `notion.site` in URL | Notion |
+| `drive.google.com` or `docs.google.com` in URL | Google Drive |
+| Starts with `/`, `~/`, or `./` | Local file path |
+| Any other `https://` URL | Generic documentation |
+
+Matching is case-insensitive.
+
+### Validation
+
+For each source, check accessibility:
+
+```bash
+# URL sources — HEAD request
+curl --head --silent --fail --max-time 5 "<url>" 2>&1 | head -1
+
+# File paths — existence check
+[ -f "<resolved-path>" ] && echo "exists" || echo "not found"
+```
+
+### Confirmation Prompt
+
+After classifying all sources, present them to the user before proceeding:
+
+```
+External Product Documentation
+===============================
+
+SharePoint:
+  • https://company.sharepoint.com/.../Roadmap.docx    ✓ Accessible
+Confluence:
+  • https://company.atlassian.net/wiki/...              ✗ Not accessible
+File:
+  • ~/docs/strategy.pdf                                 ✓ Accessible
+
+These sources will be referenced when generating:
+  PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET
+
+Inaccessible sources will be documented as unavailable but won't halt bootstrap.
+
+Continue? (yes/no/edit)
+```
+
+- **yes** — proceed with all sources
+- **no** — skip external documentation (treat as if `--product-docs` was not provided)
+- **edit** — ask which sources to remove or add before continuing
+
+### When to Reference External Docs
+
+Only include an "External References" section in product-facing documents:
+
+| Document | Include External Refs? |
+|----------|----------------------|
+| `BUSINESS_PLAN` | Yes |
+| `PRODUCT_ROADMAP` | Yes |
+| `GO_TO_MARKET` | Yes |
+| `COMPETITIVE_ANALYSIS` | Yes |
+| `ARCHITECTURE` | No |
+| `ERD` | No |
+| `API_CONTRACT` | No |
+| `CODE_STYLE` | No |
+| `COMMIT_STRATEGY` | No |
+| `TESTING` | No |
+| `CI_CD` | No |
+| `DEPLOYMENT` | No |
+
+### External References Section Template
+
+Append this section at the **end** of each qualifying document (before any changelog/appendix):
+
+```markdown
+## External References
+
+This document was informed by the following external product documentation:
+
+- [SharePoint] [Roadmap Q1 2026](https://company.sharepoint.com/.../Roadmap.docx) — Product priorities and timelines
+- [File] `~/docs/strategy.pdf` — Strategic direction
+- [Confluence] [PRD: Feature X](https://...) — ⚠️ Not accessible at bootstrap time
+
+These sources were referenced but not automatically ingested. If details conflict with this document, defer to the most recent source or consult the product team.
+```
+
+Use `⚠️ Not accessible at bootstrap time` for sources that failed the curl/file check.
+
+---
+
 # Bootstrap — Repo Documentation Generator
 
 Orchestrates documentation generation for any repository. Detects existing coverage, generates missing docs using Pivot-pattern templates, and creates a CLAUDE.md if none exists.
 
 ## Step 1: Enhance Context
 
-Invoke `/enhancePrompt` with the prompt:
+Construct the `/enhancePrompt` call. If external docs were provided and confirmed in the step above, append external doc context to the base prompt.
+
+**Base prompt:**
 > "Analyze this repository to understand its tech stack, architecture, domain, and existing documentation. I need to generate comprehensive planning documents."
 
-Wait for the enhanced prompt. Proceed with the enriched context.
+**If external docs provided, append to prompt:**
+> "External product documentation has been provided: [list classified sources with types and URLs]. When generating product-facing documents (PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET, COMPETITIVE_ANALYSIS), reference these sources and indicate where details should be cross-checked with the external docs."
+
+Invoke `/enhancePrompt` with the constructed prompt. Wait for the enhanced prompt. Proceed with the enriched context.
 
 ## Step 2: Gather Repo Intelligence
 
@@ -261,8 +374,8 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
 1. **Adapt to the tech stack.** A Python/Django repo gets Django-specific architecture, pytest testing patterns, pip dependency management — not Swift/Firebase patterns.
 
 2. **Follow the Pivot template structure.** Each doc type has a consistent format:
-   - `BUSINESS_PLAN` — Executive summary, monetization model, unit economics tables, revenue projections, break-even analysis
-   - `PRODUCT_ROADMAP` — Vision, versioned releases with scope/success criteria/timeline tables
+   - `BUSINESS_PLAN` — Executive summary, monetization model, unit economics tables, revenue projections, break-even analysis. **If external docs provided:** append "## External References" section (see template above) listing source URLs with a note to cross-check market and business model details.
+   - `PRODUCT_ROADMAP` — Vision, versioned releases with scope/success criteria/timeline tables. **If external docs provided:** append "## External References" section listing source URLs and noting which priorities or timelines should be validated against those sources.
    - `ARCHITECTURE` — System overview diagram, directory tree, layer descriptions, key rules
    - `ERD` — Relationship diagram, collection/table schemas with field tables
    - `DEPENDENCY_GRAPH` — Framework requirements, version constraints, layer dependency map
@@ -276,8 +389,8 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
    - `DEPLOYMENT` — Release workflow, promotion path, checklists, monitoring
    - `LOCAL_DEV` — Prerequisites table, setup commands, environment config, running locally
    - `ANALYTICS` — Event catalog with property tables, funnel diagrams
-   - `COMPETITIVE_ANALYSIS` — Competitor profiles (overview/strengths/weaknesses), positioning matrix
-   - `GO_TO_MARKET` — User segments with profiles/behavior/channels, launch strategy
+   - `COMPETITIVE_ANALYSIS` — Competitor profiles (overview/strengths/weaknesses), positioning matrix. **If external docs provided:** append "## External References" section listing source URLs.
+   - `GO_TO_MARKET` — User segments with profiles/behavior/channels, launch strategy. **If external docs provided:** append "## External References" section listing source URLs and noting which targeting or launch strategy details should be cross-checked.
 
 3. **Use real data.** Read the actual codebase to populate architecture trees, dependency lists, API endpoints, test commands, etc. Don't invent placeholder content.
 
