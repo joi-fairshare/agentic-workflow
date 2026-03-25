@@ -8,6 +8,7 @@ set -euo pipefail
 
 REPO_PATH="$(pwd)"
 REPO_NAME="$(printf '%s' "$(basename "$REPO_PATH")" | tr -c '[:alnum:]-_.' '-')"   # sanitize; printf avoids trailing newline → trailing '-' bug
+CONTAINER_NAME="serena-${REPO_NAME}"                 # stable name enables pre-flight eviction on restart
 BASE_VERSION="latest"                                 # single source of truth for version
 
 # Select image based on repo's declared languages in .serena/project.yml
@@ -62,7 +63,21 @@ if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space
       IMAGE="${SWIFT_IMAGE}"
       SOCKET_PATH="/tmp/serena-swift-${REPO_NAME}.sock"
 
-      # Remove any stale socket from a prior session
+      # R1: Evict any prior container that still holds the old socket inode.
+      # Without this, the running container's bind-mount points to the old inode
+      # even after we delete/recreate the socket file (Docker captures the inode
+      # at mount time). The container would see ECONNREFUSED forever.
+      if docker inspect "${CONTAINER_NAME}" &>/dev/null; then
+        echo "Stopping prior Serena container '${CONTAINER_NAME}' (stale socket inode) ..." >&2
+        docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+        docker rm   "${CONTAINER_NAME}" 2>/dev/null || true
+      fi
+
+      # R1: Kill any orphaned host socat from a prior session (its wrapper exited
+      # but socat kept running, holding the old inode open as an unlinked file).
+      pkill -f "socat.*UNIX-LISTEN:${SOCKET_PATH}" 2>/dev/null || true
+
+      # Remove any stale socket file so the new socat gets a clean bind
       rm -f "${SOCKET_PATH}"
 
       # Launch host-side bridge: accepts connections on the socket, forks sourcekit-lsp
@@ -70,11 +85,16 @@ if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space
             "EXEC:$(command -v sourcekit-lsp)" &
       SWIFT_SOCAT_PID=$!
 
-      # Wait briefly for socat to bind the socket before the container starts
-      sleep 1
+      # R2: Wait for socat to bind the socket (up to 10s) instead of a fixed sleep.
+      # On a fast machine this completes in <0.1s; the budget covers slow/loaded hosts.
+      _sw=0; _sw_max=50   # 50 × 0.2s = 10s
+      while [ ! -S "${SOCKET_PATH}" ] && [ "${_sw}" -lt "${_sw_max}" ]; do
+        sleep 0.2
+        _sw=$(( _sw + 1 ))
+      done
 
-      if ! kill -0 "${SWIFT_SOCAT_PID}" 2>/dev/null; then
-        echo "WARN: Swift LSP bridge failed to start. Falling back to standard image." >&2
+      if [ ! -S "${SOCKET_PATH}" ] || ! kill -0 "${SWIFT_SOCAT_PID}" 2>/dev/null; then
+        echo "WARN: Swift LSP bridge failed to bind within 10s. Falling back to standard image." >&2
         IMAGE="serena-local:${BASE_VERSION}"
         SOCKET_PATH=""
         SWIFT_SOCAT_PID=""
@@ -96,7 +116,7 @@ trap cleanup EXIT
 
 # Build docker run options (bash 3-compatible array approach)
 DOCKER_OPTS=(
-  "--rm" "-i"
+  "--name" "${CONTAINER_NAME}" "--rm" "-i"
   "-v" "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro"
   "-v" "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache"
   "-v" "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs"

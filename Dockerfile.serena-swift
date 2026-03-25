@@ -11,7 +11,9 @@
 #   socat UNIX-LISTEN:/tmp/serena-swift-<repo>.sock,fork EXEC:/usr/bin/sourcekit-lsp
 #
 # Container shim (/usr/local/bin/sourcekit-lsp):
-#   exec socat - UNIX-CONNECT:/tmp/sourcekit-lsp.sock
+#   Startup retry loop — retries socat connect up to 15× with back-off (~30s window).
+#   Exits 0 after a successful connection closes (Serena restarts us if needed via
+#   LanguageServerManager._ensure_functional_ls). Exits 1 if socket never appears.
 #
 # Zero-trust parity: the socket is a narrow JSON-RPC pipe. The container gains no
 # new capabilities beyond Swift symbol resolution. execute_shell_command remains
@@ -26,6 +28,19 @@ RUN apt-get update \
 
 # --- sourcekit-lsp shim: Serena invokes this as if it were the real LSP binary ---
 # Connects to the socket the host created at /tmp/sourcekit-lsp.sock
-RUN printf '#!/bin/sh\nexec socat - UNIX-CONNECT:/tmp/sourcekit-lsp.sock\n' \
+RUN printf '%s\n' \
+      '#!/bin/sh' \
+      '# Startup retry loop: up to 15 attempts (~30s) for the host socat to bind.' \
+      '# socat exits 1 on ECONNREFUSED, exits 0 on clean connection close.' \
+      '# After a successful connection, exit and let Serena restart us if needed.' \
+      '_delay=1; _attempts=0; _max=15' \
+      'while [ "${_attempts}" -lt "${_max}" ]; do' \
+      '  socat - UNIX-CONNECT:/tmp/sourcekit-lsp.sock' \
+      '  [ "$?" -eq 0 ] && exit 0' \
+      '  _attempts=$(( _attempts + 1 ))' \
+      '  sleep "${_delay}"' \
+      '  [ "${_delay}" -lt 4 ] && _delay=$(( _delay + 1 ))' \
+      'done' \
+      'exit 1' \
       > /usr/local/bin/sourcekit-lsp \
     && chmod +x /usr/local/bin/sourcekit-lsp
