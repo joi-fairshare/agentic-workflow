@@ -291,7 +291,7 @@ Ask the user these questions interactively via `AskUserQuestion`. Group related 
 
 ### Group 2: Brand Personality
 - Describe your brand in 3 words (e.g., "precise, warm, confident")
-- Name 1–3 reference products/sites whose aesthetic you admire
+- Name 1–3 reference products/sites whose aesthetic you admire *(skip if URLs were provided as arguments — those are already your references)*
 - Name 1–3 anti-references — aesthetics you want to avoid and why
 
 ### Group 3: Aesthetic Direction
@@ -333,7 +333,7 @@ Example shape:
     "surface": { "$value": "#0f172a", "$type": "color" },
     "border": { "$value": "#1e293b", "$type": "color" }
   },
-  "typography": {
+  "font": {
     "family-sans": { "$value": "Inter, sans-serif", "$type": "fontFamily" },
     "family-mono": { "$value": "JetBrains Mono, monospace", "$type": "fontFamily" },
     "size-base": { "$value": "14px", "$type": "dimension" },
