@@ -32,6 +32,20 @@ Look for:
 - Patterns that will cause maintenance pain
 - Missing error handling or edge cases
 
+### 4. Flag investigation candidates
+
+If you find a `blocking`-severity issue containing a clear error message or stack trace,
+set `investigation_needed: true` in your JSON output and include the stack trace or error message:
+
+```json
+"investigation_needed": true,
+"investigation_error": "<the exact error message or stack trace>"
+```
+
+Do not invoke rootCause yourself. The orchestrator will confirm with the user and dispatch the investigation after all reviewers complete.
+
+If no blocking bugs with error traces are found, omit both fields.
+
 ---
 
 ## Output Format

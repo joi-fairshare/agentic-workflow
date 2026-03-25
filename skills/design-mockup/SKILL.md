@@ -4,6 +4,7 @@ description: Detect web vs iOS automatically and delegate to /design-mockup-web 
 disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
 ---
+<!-- MEMORY: SKIP -->
 
 <!-- === PREAMBLE START === -->
 

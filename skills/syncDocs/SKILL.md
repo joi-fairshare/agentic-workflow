@@ -5,6 +5,7 @@ argument-hint: "[--scope readme,architecture,changelog,claude]"
 disable-model-invocation: true
 allowed-tools: Bash(git *), Agent, Read, Write, Edit, Glob, Grep
 ---
+<!-- MEMORY: SKIP -->
 
 # Sync Documentation
 

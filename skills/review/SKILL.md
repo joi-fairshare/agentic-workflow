@@ -3,7 +3,7 @@ name: review
 description: Orchestrate a multi-agent PR code review. Spawns domain-specific reviewer subagents in parallel based on changed files. Findings are saved to ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json — run /postReview to publish to GitHub.
 argument-hint: [pr-number-or-url]
 disable-model-invocation: true
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write
+allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write, Skill
 ---
 
 <!-- === PREAMBLE START === -->
@@ -108,6 +108,35 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
+## Memory Recall
+
+> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
+
+Check for prior discussion context in memory before reading the codebase.
+
+**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
+- `/officeHours add dark mode` → `"dark mode UI feature"`
+- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
+- `/review 42` → use the PR title once fetched: `"PR {title} review"`
+- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
+
+**2. Search memory:**
+```
+mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
+```
+
+**3. Assemble context:**
+```
+mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
+```
+(Use `token_budget: 1000` for `/review` and `/addressReview`.)
+
+**4. Surface results:**
+- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
+  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+  Use this to inform your approach before continuing.
+- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
+
 <!-- === PREAMBLE END === -->
 
 # PR Review Orchestrator
@@ -163,6 +192,18 @@ Spawn **all agents simultaneously** in a single message. Each reviewer receives 
 - `{agent}`, `{focus}`, `{number}`, `{title}`, `{diff}`
 
 Each reviewer returns a **JSON object** as its final output (not GitHub comments). Collect all responses.
+
+### Sub-skill Dispatch
+
+After collecting all reviewer JSON outputs:
+1. Check for any reviewer output with `investigation_needed: true`
+2. If found: identify the single highest-confidence entry (blocking severity + clearest error trace)
+3. Ask the user (conversationally):
+   > "Found a blocking bug with a stack trace in {path}. Run rootCause to investigate? (yes/no)"
+4. If yes: Skill tool: `rootCause`, args: `"<investigation_error value>"`
+   - Attach the investigation file path to that issue in the state file under `"investigation"`
+   - If rootCause returns `scope-breach`, note it in the state file and continue — do not block the review
+5. If no, or no reviewer flagged `investigation_needed`: skip and proceed to writing the state file
 
 ## Step 6: Write State File
 

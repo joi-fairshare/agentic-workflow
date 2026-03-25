@@ -24,6 +24,16 @@ Each issue has:
 
 ## Your Task
 
+### 0. Check memory for prior context
+
+Before reading the PR, search for prior discussions about the files or issues you're about to address:
+
+```
+mcp__agentic-bridge__search_memory — query: "<issue summary>", repo: {REPO_SLUG}, mode: "hybrid", limit: 5
+```
+
+Use any relevant prior context to inform your implementation approach. Continue silently if nothing relevant is found or if the tool returns an error.
+
 ### 1. Read the PR for full context
 
 ```bash

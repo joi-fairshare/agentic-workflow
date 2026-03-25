@@ -5,6 +5,7 @@ argument-hint: [screen-name]
 disable-model-invocation: true
 allowed-tools: Read, Write, Glob, Agent, AskUserQuestion
 ---
+<!-- MEMORY: SKIP -->
 
 <!-- === PREAMBLE START === -->
 

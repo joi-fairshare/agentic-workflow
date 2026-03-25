@@ -5,6 +5,7 @@ argument-hint: "[impeccable-command]"
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Skill, Glob, AskUserQuestion
 ---
+<!-- MEMORY: SKIP -->
 
 <!-- === PREAMBLE START === -->
 

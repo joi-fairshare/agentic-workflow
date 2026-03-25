@@ -108,6 +108,35 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
+## Memory Recall
+
+> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
+
+Check for prior discussion context in memory before reading the codebase.
+
+**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
+- `/officeHours add dark mode` → `"dark mode UI feature"`
+- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
+- `/review 42` → use the PR title once fetched: `"PR {title} review"`
+- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
+
+**2. Search memory:**
+```
+mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
+```
+
+**3. Assemble context:**
+```
+mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
+```
+(Use `token_budget: 1000` for `/review` and `/addressReview`.)
+
+**4. Surface results:**
+- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
+  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+  Use this to inform your approach before continuing.
+- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
+
 <!-- === PREAMBLE END === -->
 
 # Address PR Review
@@ -207,6 +236,7 @@ gh pr checkout {number}
 Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
 - `{agent}`, `{focus}`, `{issues}` — from triage output
 - `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
+- `{REPO_SLUG}` — repo slug derived in the preamble
 
 ## Step 7: Update State File
 

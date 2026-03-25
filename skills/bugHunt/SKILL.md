@@ -3,7 +3,7 @@ name: bugHunt
 description: Fix-and-verify loop with atomic commits and regression test generation. Three tiers — quick (lint+typecheck), standard (unit+integration), exhaustive (full suite + edge cases).
 argument-hint: "[--tier quick|standard|exhaustive] [bug-description-or-test-command]"
 disable-model-invocation: true
-allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Write, Edit, Glob, Grep
+allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Write, Edit, Glob, Grep, Skill
 ---
 
 # Bug Hunt
@@ -111,6 +111,35 @@ Create the output directory for this repo:
 ```bash
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
+
+## Memory Recall
+
+> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
+
+Check for prior discussion context in memory before reading the codebase.
+
+**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
+- `/officeHours add dark mode` → `"dark mode UI feature"`
+- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
+- `/review 42` → use the PR title once fetched: `"PR {title} review"`
+- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
+
+**2. Search memory:**
+```
+mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
+```
+
+**3. Assemble context:**
+```
+mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
+```
+(Use `token_budget: 1000` for `/review` and `/addressReview`.)
+
+**4. Surface results:**
+- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
+  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+  Use this to inform your approach before continuing.
+- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
 
 <!-- === PREAMBLE END === -->
 
@@ -275,3 +304,10 @@ Fix: {commit sha} — fix: {description}
 Test: {commit sha} — test: regression test for {description}
 Report: ~/.agentic-workflow/{REPO_SLUG}/qa/{filename}
 ```
+
+### Sub-skill Dispatch
+
+If the fix-and-verify loop ends with status `unfixed` (all hypotheses exhausted):
+> Skill tool: `bugReport`
+
+Do not invoke bugReport on success — bugHunt's own Step 8 report is sufficient.

@@ -5,6 +5,7 @@ argument-hint: [pr-number]
 disable-model-invocation: true
 allowed-tools: Bash(gh *), Bash(git *), Read, Edit
 ---
+<!-- MEMORY: SKIP -->
 
 <!-- === PREAMBLE START === -->
 

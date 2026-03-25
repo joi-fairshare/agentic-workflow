@@ -5,6 +5,7 @@ argument-hint: "[--base main] [--skip-docs]"
 disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Read, Glob, Grep, Skill
 ---
+<!-- MEMORY: SKIP -->
 
 # Ship Release
 

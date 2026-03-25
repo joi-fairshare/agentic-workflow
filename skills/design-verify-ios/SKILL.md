@@ -5,6 +5,7 @@ argument-hint: [screen-name]
 disable-model-invocation: true
 allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuestion
 ---
+<!-- MEMORY: SKIP -->
 
 <!-- === PREAMBLE START === -->
 
