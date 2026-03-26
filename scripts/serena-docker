@@ -123,6 +123,7 @@ trap cleanup EXIT
 DOCKER_OPTS=(
   "--name" "${CONTAINER_NAME}" "--rm" "-i"
   "-v" "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro"
+  "-v" "${REPO_PATH}/.serena/project.yml:/workspaces/projects/${REPO_NAME}/.serena/project.yml"
   "-v" "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache"
   "-v" "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs"
   "-v" "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory"
