@@ -694,6 +694,34 @@ if command -v codex &>/dev/null; then
   echo "  headroom: registered with Codex"
 fi
 
+# --- prism-mcp ---
+echo ""
+echo "=== Installing prism-mcp ==="
+
+PRISM_VERSION="5.1.0"  # pin: bump here when upgrading
+
+if command -v claude &>/dev/null; then
+  if claude mcp list 2>&1 | grep -q "prism-mcp"; then
+    echo "  prism-mcp: already registered in Claude Code"
+  else
+    claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+      2>/dev/null || echo "  WARN: prism-mcp registration failed"
+    echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
+  fi
+else
+  echo "  claude CLI not found, skipping prism-mcp registration"
+fi
+
+if command -v codex &>/dev/null; then
+  if codex mcp list 2>&1 | grep -q "prism-mcp"; then
+    echo "  prism-mcp: already registered in Codex"
+  else
+    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+      2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
+    echo "  prism-mcp: registered with Codex"
+  fi
+fi
+
 # --- Output Directory ---
 echo ""
 echo "Creating output directory..."
@@ -721,5 +749,5 @@ echo "Statusline:         $CLAUDE_DIR/statusline.sh"
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
 echo "Rules directory:    .claude/rules/ (auto-loaded by Claude Code)"
 echo "MCP bridge:         $BRIDGE_DIR/"
-echo "MCP registered:     Claude Code + Codex (agentic-bridge)"
+echo "MCP registered:     Claude Code + Codex (agentic-bridge, prism-mcp)"
 echo "Plugins:            github, superpowers, compound-engineering, playwright"

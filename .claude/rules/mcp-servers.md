@@ -9,13 +9,14 @@ All servers are registered globally via `claude mcp add --scope user`.
 | Server | Purpose | Use instead of |
 |--------|---------|----------------|
 | `serena` | LSP symbol navigation — find definitions, usages, call hierarchy | `Grep` + `Read` for code structure questions |
-| `agentic-bridge` | Multi-agent messaging and memory graph | Manual context passing between agents |
+| `agentic-bridge` | Multi-agent messaging — send context, assign tasks, report status | Manual context passing between agents |
 | `context7` | Up-to-date library/framework documentation | Guessing API shapes from training data |
 | `playwright` | Browser automation — click, fill, screenshot, DOM inspection | Manual browser testing |
 | `github` | GitHub API — PRs, issues, releases, comments | `gh` CLI for read operations |
 | `design-comparison` | Visual diff between implementation and design reference | Manual screenshot comparison |
 | `xcodebuildmcp` | iOS Simulator control — build, launch, snapshot_ui, screenshot, tap, swipe | Manual iOS testing |
 | `headroom` | Content compression — compress large file reads, API responses, structured data | Reading large files raw when token budget is tight |
+| `prism-mcp` | Persistent memory, semantic search, conversation visualization (Mind Palace) | Manual context passing between sessions |
 
 ## When to use Serena vs Grep/Read
 
