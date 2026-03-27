@@ -226,6 +226,7 @@ The setup script:
 - Registers `xcodebuildmcp` MCP server for iOS simulator automation
 - Installs rtk (Homebrew on macOS, install script on Linux) and wires `rtk-rewrite.sh` into the Bash hook chain for token-efficient command output
 - Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with Claude Code and Codex
+- Registers `prism-mcp` MCP server with Claude Code and Codex (persistent memory via prism-mcp-server, downloads on first use)
 
 ### Start the bridge
 

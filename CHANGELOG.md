@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 242 bridge tests removed (memory, ingestion, and UI layer); 25 test files deleted.
 - `@huggingface/transformers` and `sqlite-vec` removed from bridge dependencies.
 
+### Added
+
+- `setup.sh`: Registers `prism-mcp` MCP server (`prism-mcp-server@5.1.0`) with Claude Code and Codex via `npx -y`. Skips registration if already registered. Final summary updated to show `agentic-bridge, prism-mcp`.
+- `.claude/rules/mcp-servers.md`: Added `prism-mcp` row to the MCP server table.
+
 ### Changed
 
 - `mcp-bridge` stripped to 5 coordination MCP tools only: `send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`. No UI. No memory DB. No embedding model.

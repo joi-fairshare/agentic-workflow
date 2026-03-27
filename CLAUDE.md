@@ -52,7 +52,7 @@ cd mcp-bridge && npm run test:coverage  # Run with 100% coverage enforcement
 cd mcp-bridge && npm run build          # TypeScript → dist/
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install statusline, install hooks (safety + rtk), build bridge, build Serena Docker image, register MCP servers (incl. headroom), create output dir
+./setup.sh             # Symlink skills, copy config, install statusline, install hooks (safety + rtk), build bridge, build Serena Docker image, register MCP servers (incl. headroom, prism-mcp), create output dir
 ```
 
 ## Merge Gate
