@@ -1,5 +1,4 @@
 import type { DbClient } from "../db/client.js";
-import type { EventBus } from "../application/events.js";
 import { createTaskController } from "../transport/controllers/task-controller.js";
 import { defineRoute, type ControllerDefinition, type RouteEntry } from "../transport/types.js";
 import {
@@ -9,8 +8,8 @@ import {
   ReportStatusSchema,
 } from "../transport/schemas/task-schemas.js";
 
-export function createTaskRoutes(db: DbClient, eventBus: EventBus): ControllerDefinition {
-  const handlers = createTaskController(db, eventBus);
+export function createTaskRoutes(db: DbClient): ControllerDefinition {
+  const handlers = createTaskController(db);
 
   return {
     basePath: "/tasks",
