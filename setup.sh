@@ -232,7 +232,7 @@ done
 # Merge safety hooks into existing settings.json
 if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
   # Replace any existing Bash matcher entry with the canonical one (fully idempotent, handles version drift)
-  HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"}]}'
+  HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"},{"type":"command","command":"~/.claude/hooks/rtk-rewrite.sh"}]}'
   jq --argjson entry "$HOOK_BASH_ENTRY" \
     '.hooks.PreToolUse = ([.hooks.PreToolUse[]? | select(.matcher != "Bash")] + [$entry])' \
     "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
@@ -252,6 +252,20 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
         && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
     fi
     echo "  hooks.SessionStart: git-context added"
+  fi
+
+  # Add bridge-context SessionStart hook if not already present
+  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
+    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
+      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    else
+      jq --argjson entries '[{"hooks":[{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]}]' '.hooks.SessionStart = $entries' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    fi
+    echo "  hooks.SessionStart: bridge-context added"
   fi
 fi
 
@@ -630,6 +644,48 @@ if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
   done
 else
   echo "  impeccable: skipped (source not available)"
+fi
+
+# --- rtk ---
+echo ""
+echo "=== Installing rtk ==="
+if command -v rtk &>/dev/null; then
+  echo "  rtk: already installed ($(rtk --version 2>/dev/null || echo 'unknown version'))"
+else
+  if [ "$(uname)" = "Darwin" ]; then
+    brew install rtk || { echo "FATAL: rtk installation failed. Install Homebrew and re-run."; exit 1; }
+  else
+    curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
+      || { echo "FATAL: rtk installation failed."; exit 1; }
+  fi
+  rtk --version &>/dev/null || { echo "FATAL: rtk not found after installation."; exit 1; }
+  echo "  rtk: installed"
+fi
+
+# --- headroom ---
+echo ""
+echo "=== Installing headroom ==="
+python3 --version &>/dev/null || { echo "FATAL: Python 3 required. Install Python 3 and re-run."; exit 1; }
+pip3 --version &>/dev/null || { echo "FATAL: pip3 required. Install pip and re-run."; exit 1; }
+
+if command -v headroom &>/dev/null; then
+  echo "  headroom: already installed ($(headroom --version 2>/dev/null || echo 'unknown version'))"
+else
+  pip3 install "headroom-ai[all]" || { echo "FATAL: headroom installation failed."; exit 1; }
+  headroom --version &>/dev/null || { echo "FATAL: headroom not found after installation."; exit 1; }
+  echo "  headroom: installed"
+fi
+
+if command -v claude &>/dev/null; then
+  claude mcp add --scope user headroom -- headroom mcp serve \
+    2>/dev/null || echo "  WARN: headroom already registered (or claude CLI not found)"
+  echo "  headroom: registered with Claude Code"
+fi
+
+if command -v codex &>/dev/null; then
+  codex mcp add headroom -- headroom mcp serve \
+    2>/dev/null || echo "  WARN: headroom Codex registration skipped"
+  echo "  headroom: registered with Codex"
 fi
 
 # --- Output Directory ---

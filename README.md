@@ -1,6 +1,6 @@
 # Agentic Workflow
 
-A portable Claude Code workflow toolkit: custom skills, configuration archive, repo bootstrapper, and a bidirectional MCP bridge for multi-agent communication.
+A portable Claude Code workflow toolkit: custom skills, configuration archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, and token-efficiency tools (rtk command rewriter, headroom context compressor).
 
 ## Workflow: Product Vision → Ship
 
@@ -83,6 +83,9 @@ The officeHours MD files are **ephemeral** — once context is in GitHub issues,
 - [Claude Code](https://claude.com/claude-code) installed
 - [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (required by review skills)
 - [`jq`](https://jqlang.github.io/jq/) installed (required by the statusline; `brew install jq` on macOS)
+- [`rtk`](https://github.com/rtk-ai/rtk) — token-compressing CLI proxy (`brew install rtk` on macOS; installed automatically by `setup.sh`)
+- Python 3 + pip — required for headroom
+- [`headroom`](https://github.com/chopratejas/headroom) — context optimization layer (`pip install "headroom-ai[all]"`; installed automatically by `setup.sh`)
 
 ## Contents
 
@@ -267,6 +270,9 @@ The setup script:
 - Registers `agentic-bridge` and `serena` MCP servers with Claude Code
 - Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright)
 - Registers `xcodebuildmcp` MCP server for iOS simulator automation
+- Installs rtk (Homebrew on macOS, install script on Linux) and wires `rtk-rewrite.sh` into the Bash hook chain for token-efficient command output
+- Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with Claude Code and Codex
+- Installs `bridge-context.sh` SessionStart hook for automatic repo memory injection at session start
 
 ### Start the bridge + UI
 

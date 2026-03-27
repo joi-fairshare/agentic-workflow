@@ -13,12 +13,16 @@ Safety hooks run automatically via Claude Code's hook system. All hooks are inst
 | `block-destructive.sh` | `rm -rf`, `git reset --hard`, `git push --force` (not `--force-with-lease`), `git checkout .`, `git clean -f` | Use safer alternatives (trash, stash, etc.) |
 | `block-push-main.sh` | `git push` to main/master (explicit ref or implicit via current branch) | Create a feature branch and open a PR |
 | `detect-secrets.sh` | AWS keys (`AKIA...`), GitHub tokens (`ghp_/gho_/ghs_`), Bearer tokens in curl, secret env var assignments (>20 chars) | Use `.env` files, secrets manager, or `gh auth login` |
+| `rtk-rewrite.sh` | Rewrites eligible commands (`git`, `vitest`, `npm test`, `tsc`, `eslint`, `cargo`, `next build`) to `rtk <command>` for token compression | — |
+
+`rtk-rewrite.sh` runs 4th in the Bash chain — after all three safety hooks — so safety checks always see the original unmodified command.
 
 ## SessionStart Hooks
 
 | Hook | Outputs |
 |------|---------|
 | `git-context.sh` | Current branch, last 5 commits, working tree status |
+| `bridge-context.sh` | Recent decisions, topics, and tasks from the repo's memory graph (no-ops silently if bridge is down) |
 
 ## Hook Protocols
 
@@ -41,7 +45,9 @@ All hook scripts live in `config/hooks/`:
 | `block-destructive.sh` | PreToolUse | `Bash` |
 | `block-push-main.sh` | PreToolUse | `Bash` |
 | `detect-secrets.sh` | PreToolUse | `Bash` |
+| `rtk-rewrite.sh` | PreToolUse | `Bash` |
 | `git-context.sh` | SessionStart | — |
+| `bridge-context.sh` | SessionStart | — |
 
 `setup.sh` installs them by copying (not symlinking) to `~/.claude/hooks/` so they survive repo moves.
 

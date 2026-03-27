@@ -15,6 +15,7 @@ All servers are registered globally via `claude mcp add --scope user`.
 | `github` | GitHub API — PRs, issues, releases, comments | `gh` CLI for read operations |
 | `design-comparison` | Visual diff between implementation and design reference | Manual screenshot comparison |
 | `xcodebuildmcp` | iOS Simulator control — build, launch, snapshot_ui, screenshot, tap, swipe | Manual iOS testing |
+| `headroom` | Content compression — compress large file reads, API responses, structured data | Reading large files raw when token budget is tight |
 
 ## When to use Serena vs Grep/Read
 
