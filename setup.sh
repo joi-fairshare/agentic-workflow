@@ -665,25 +665,51 @@ fi
 # --- headroom ---
 echo ""
 echo "=== Installing headroom ==="
-python3 --version &>/dev/null || { echo "FATAL: Python 3 required. Install Python 3 and re-run."; exit 1; }
-pip3 --version &>/dev/null || { echo "FATAL: pip3 required. Install pip and re-run."; exit 1; }
+
+# headroom-ai requires Python >= 3.10; find the best available Python
+HEADROOM_PYTHON=""
+for _py in python3.13 python3.12 python3.11 python3.10; do
+  if command -v "$_py" &>/dev/null; then
+    _minor=$("$_py" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
+    if [ "${_minor:-0}" -ge 10 ]; then
+      HEADROOM_PYTHON="$_py"
+      break
+    fi
+  fi
+done
+
+if [ -z "$HEADROOM_PYTHON" ]; then
+  echo "FATAL: Python 3.10+ is required for headroom-ai. Install via: brew install python@3.13"
+  exit 1
+fi
+
+# Derive user-install bin dir (e.g. ~/Library/Python/3.13/bin on macOS)
+HEADROOM_BIN_DIR=$("$HEADROOM_PYTHON" -m site --user-base 2>/dev/null)/bin
+HEADROOM_BIN="$HEADROOM_BIN_DIR/headroom"
 
 if command -v headroom &>/dev/null; then
   echo "  headroom: already installed ($(headroom --version 2>/dev/null || echo 'unknown version'))"
+elif [ -x "$HEADROOM_BIN" ]; then
+  echo "  headroom: already installed at $HEADROOM_BIN ($("$HEADROOM_BIN" --version 2>/dev/null || echo 'unknown version'))"
 else
-  pip3 install "headroom-ai[all]" || { echo "FATAL: headroom installation failed."; exit 1; }
-  headroom --version &>/dev/null || { echo "FATAL: headroom not found after installation."; exit 1; }
+  "$HEADROOM_PYTHON" -m pip install --break-system-packages --user "headroom-ai[all]" 2>/dev/null \
+    || "$HEADROOM_PYTHON" -m pip install --user "headroom-ai[all]" \
+    || { echo "FATAL: headroom installation failed."; exit 1; }
+  [ -x "$HEADROOM_BIN" ] || { echo "FATAL: headroom binary not found after installation at $HEADROOM_BIN."; exit 1; }
   echo "  headroom: installed"
 fi
 
+# Use full path when headroom is not on PATH (common after --user install)
+HEADROOM_CMD=$(command -v headroom 2>/dev/null || echo "$HEADROOM_BIN")
+
 if command -v claude &>/dev/null; then
-  claude mcp add --scope user headroom -- headroom mcp serve \
+  claude mcp add --scope user headroom -- "$HEADROOM_CMD" mcp serve \
     2>/dev/null || echo "  WARN: headroom already registered (or claude CLI not found)"
   echo "  headroom: registered with Claude Code"
 fi
 
 if command -v codex &>/dev/null; then
-  codex mcp add headroom -- headroom mcp serve \
+  codex mcp add headroom -- "$HEADROOM_CMD" mcp serve \
     2>/dev/null || echo "  WARN: headroom Codex registration skipped"
   echo "  headroom: registered with Codex"
 fi
