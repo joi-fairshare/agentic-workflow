@@ -61,7 +61,7 @@ cd ui && npm test               # Vitest (hooks + lib tests)
 cd ui && npm run test:coverage  # Run with 100% coverage enforcement
 
 # Setup (from repo root)
-./setup.sh             # Symlink skills, copy config, install statusline, install deps, build bridge, build Serena Docker image, register MCP servers, create output dir
+./setup.sh             # Symlink skills, copy config, install statusline, install hooks (safety + rtk), build bridge, build Serena Docker image, register MCP servers (incl. headroom), create output dir
 ./start.sh             # Start bridge (:3100) + UI (:3000) together
 ```
 

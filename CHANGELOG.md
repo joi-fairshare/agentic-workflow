@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-26
+
+### Added
+
+- `config/hooks/rtk-rewrite.sh`: New PreToolUse hook (4th in Bash chain) that rewrites eligible commands (`git status/log/diff/push/show`, `vitest run`, `npm test`, `npm run test`, `tsc`, `npx tsc`, `eslint`, `npx eslint`, `cargo test/build`, `next build`) to `rtk` equivalents for 60-90% token savings on command output. Silent passthrough if rtk is not installed.
+- `config/hooks/bridge-context.sh`: New SessionStart hook that derives the repo slug, queries the agentic-bridge `/memory/context` endpoint, and prints recent decisions/topics/tasks at session open. Silent no-op when bridge is unreachable.
+- `setup.sh`: Added `=== Installing rtk ===` section (Homebrew on macOS, install script on Linux, fatal on failure), `=== Installing headroom ===` section (`pip3 install headroom-ai[all]`, fatal on failure), headroom MCP registration with Claude Code and Codex, `rtk-rewrite.sh` added as 4th entry in the Bash hook chain, `bridge-context.sh` SessionStart hook registration.
+- `.claude/rules/hooks.md`: Added `rtk-rewrite.sh` and `bridge-context.sh` rows and hook ordering note.
+- `.claude/rules/mcp-servers.md`: Added `headroom` row to the MCP server table.
+- `docs/superpowers/specs/rtk-headroom-bridge-context-integration.md`: Design spec documenting the integration architecture for rtk, headroom, and bridge-context.
+
+### Changed
+
+- `README.md` and `CLAUDE.md`: Updated taglines, prerequisites, and setup description to reflect rtk, headroom, and bridge-context additions.
+
+---
+
 ## [Unreleased] - 2026-03-23
 
 ### Added

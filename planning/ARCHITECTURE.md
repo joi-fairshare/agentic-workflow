@@ -179,7 +179,9 @@ agentic-workflow/
 │       ├── block-destructive.sh         #     PreToolUse — blocks rm -rf, git reset --hard, git push --force, etc.
 │       ├── block-push-main.sh           #     PreToolUse — blocks git push to main/master
 │       ├── detect-secrets.sh            #     PreToolUse — blocks AWS keys, GitHub tokens, Bearer tokens
-│       └── git-context.sh              #     SessionStart — injects current branch, recent commits, working tree status
+│       ├── rtk-rewrite.sh              #     PreToolUse — rewrites eligible bash commands to rtk equivalents for token compression (runs 4th)
+│       ├── git-context.sh              #     SessionStart — injects current branch, recent commits, working tree status
+│       └── bridge-context.sh           #     SessionStart — queries agentic-bridge memory graph, injects recent decisions/topics/tasks (silent no-op if bridge unreachable)
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, sqlite-vec, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode

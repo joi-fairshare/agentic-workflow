@@ -260,7 +260,7 @@ The setup script:
 - Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
 - Symlinks skills into `~/.claude/skills/`
 - Copies config files (settings, MCP)
-- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `git-context.sh`) to `~/.claude/hooks/`
+- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`, `bridge-context.sh`) to `~/.claude/hooks/`
 - Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
 - Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
 - Installs and builds the MCP bridge
