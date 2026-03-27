@@ -27,50 +27,20 @@ Entry-point files (`index.ts`, `mcp.ts`) and type-only files (`types.ts`) are ex
 mcp-bridge/tests/
 ├── result.test.ts              # AppResult, ERROR_CODE constants
 ├── types.test.ts               # RouteSchema, defineRoute
-├── memory-schema.test.ts       # Memory DDL, NODE_KINDS, EDGE_KINDS
 ├── schema.test.ts              # createDatabase, WAL mode
 ├── client.test.ts              # DbClient CRUD operations
-├── memory-client.test.ts       # MemoryDbClient: nodes, edges, FTS, KNN, cursors
-├── events.test.ts              # EventBus: emit, subscribe, unsubscribe
-├── embedding.test.ts           # EmbeddingService: embed, batch, warmUp, degraded
-├── secret-filter.test.ts       # Secret detection and redaction
-├── queue.test.ts               # BoundedQueue: enqueue, backpressure, drop
-├── transcript-parser.test.ts   # JSONL transcript parsing
 ├── services.test.ts            # Service-layer unit tests (send, get, assign, report)
 ├── conversations.test.ts       # Conversation summary service
-├── search-memory.test.ts       # Hybrid search: FTS5, KNN, RRF, degraded mode
-├── traverse-memory.test.ts     # BFS graph traversal
-├── assemble-context.test.ts    # Token-budgeted context assembly
-├── ingest-bridge.test.ts       # Bridge message → memory node pipeline
-├── ingest-git.test.ts          # Git metadata ingestion (mocked execFileSync)
-├── ingest-transcript.test.ts   # JSONL transcript ingestion
-├── extract-decisions.test.ts   # Decision extraction via regex heuristics
-├── infer-topics.test.ts        # Topic inference via embedding clustering
 ├── message-controller.test.ts  # Message controller: send, getByConversation, getUnread
 ├── task-controller.test.ts     # Task controller: assign, get, report
 ├── conversation-controller.test.ts  # Conversation controller: list
-├── memory-controller.test.ts   # Memory controller: search, traverse, context, createNode, createLink
 ├── server-errors.test.ts       # Server error handling: ZodError→400, generic→500, details field
-├── sse-integration.test.ts     # Real TCP SSE: headers, events, cleanup
 ├── mcp-tools.test.ts           # MCP tool handler tests with resultToContent
 ├── routes/
 │   ├── messages.test.ts        # POST /messages/send, GET conversation/:id, GET /unread
 │   ├── tasks.test.ts           # POST /tasks/assign, GET /:id, POST /report
-│   ├── conversations.test.ts   # GET /conversations, /health
-│   ├── events.test.ts          # SSE route registration
-│   └── memory.test.ts          # All 10 memory routes
-
-ui/__tests__/
-├── setup.ts                    # Global fetch mock, MockEventSource
-├── lib/
-│   ├── diagrams.test.ts        # buildDirectedGraph, buildSequenceDiagram
-│   ├── api.test.ts             # fetchConversations, fetchMessages, fetchTasks
-│   └── memory-api.test.ts      # All memory API client functions
-└── hooks/
-    ├── use-sse.test.ts         # SSE hook: lifecycle, events, error, cleanup
-    ├── use-memory-search.test.ts    # Search hook: state, search, kinds, errors
-    ├── use-memory-traverse.test.ts  # Traverse hook: selectNode, clearNode
-    └── use-context-assembler.test.ts # Context hook: assemble, budget, clear
+│   └── conversations.test.ts   # GET /conversations, /health
+└── helpers.ts                  # Shared test helpers: createTestBridgeDb
 ```
 
 ## Running Tests
@@ -83,11 +53,6 @@ npm run test:watch     # Vitest watch mode
 npm run test:coverage  # Run with coverage report (no threshold enforcement)
 npm run typecheck      # tsc --noEmit
 
-# UI
-cd ui
-npm test               # Vitest single run
-npm run test:watch     # Vitest watch mode
-npm run test:coverage  # Run with coverage report (no threshold enforcement)
 ```
 
 ## Test Patterns
@@ -111,26 +76,6 @@ beforeEach(() => {
 });
 ```
 
-### Memory Database Setup
-
-Memory tests need sqlite-vec loaded:
-
-```ts
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { createMemoryDbClient } from "../src/db/memory-client.js";
-import { MEMORY_MIGRATIONS } from "../src/db/memory-schema.js";
-
-beforeEach(() => {
-  const raw = new Database(":memory:");
-  sqliteVec.load(raw);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  raw.exec(MEMORY_MIGRATIONS);
-  mdb = createMemoryDbClient(raw);
-});
-```
-
 ### AppResult Assertion Pattern
 
 Assert `ok` first, then narrow with a guard:
@@ -144,11 +89,10 @@ expect(result.data.conversation).toBe(conv);
 
 ### Controller Test Pattern
 
-Controllers need a mock EventBus and typed `ApiRequest`:
+Controllers need a typed `ApiRequest`:
 
 ```ts
-const bus = createEventBus();
-const controller = createMessageController(db, bus);
+const controller = createMessageController(db);
 
 const result = await controller.send({
   body: { conversation: "c1", sender: "a", recipient: "b", payload: "hello" },
@@ -163,7 +107,7 @@ const result = await controller.send({
 Route tests use Fastify `inject()` for full HTTP-layer coverage without a live server:
 
 ```ts
-const app = createServer([messageRoutes(db, bus)]);
+const app = createServer([messageRoutes(db)]);
 await app.ready();
 
 const res = await app.inject({
@@ -172,34 +116,6 @@ const res = await app.inject({
   payload: { conversation: "c1", sender: "a", recipient: "b", payload: "hi" },
 });
 expect(res.statusCode).toBe(201);
-```
-
-### SSE Integration Tests
-
-SSE uses `reply.raw.writeHead()` which bypasses Fastify's inject. Tests use real TCP connections:
-
-```ts
-const app = createSseTestServer(eventBus);
-await app.listen({ port: 0, host: "127.0.0.1" });
-const port = (app.server.address() as AddressInfo).port;
-// Use http.get for real TCP connection
-```
-
-### UI Hook Test Pattern
-
-UI tests use happy-dom, `@testing-library/react`, and module mocks:
-
-```ts
-import { renderHook, act } from "@testing-library/react";
-import { useMemorySearch } from "@/hooks/use-memory-search";
-
-vi.mock("@/lib/memory-api", () => ({
-  searchMemory: vi.fn(),
-}));
-
-const { result } = renderHook(() => useMemorySearch("repo"));
-act(() => result.current.setQuery("test"));
-await act(async () => result.current.search());
 ```
 
 ### Coverage Gaps

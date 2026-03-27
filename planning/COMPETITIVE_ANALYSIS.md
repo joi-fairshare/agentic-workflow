@@ -106,7 +106,7 @@ The multi-agent bridge space is emerging rapidly alongside Claude Code and OpenA
 | **REST API** | Yes (Fastify, port 3100) | No | No | No | No | Partial |
 | **Conversation History** | Full (queryable by UUID) | None | Planning history | Session-scoped | None | Limited |
 | **Offline Tolerance** | Yes (store-and-forward) | No (real-time only) | Partial | Session-dependent | No | Orchestrator buffers |
-| **Skill System** | 5 skills + bootstrap | None | Workflow templates | None | None | Agent registry |
+| **Skill System** | 34 skills + bootstrap | None | Workflow templates | None | None | Agent registry |
 | **Multi-Model** | Claude + Codex | Claude + Codex | Claude + Codex | Claude + Codex | Claude only | Claude + Codex + Gemini |
 | **Type Safety** | Full (Zod + AppResult\<T\>) | Runtime only | Partial | TypeScript | TypeScript | TypeScript |
 | **Transaction Safety** | SQLite transactions | N/A | None | None | N/A | None |
@@ -114,6 +114,8 @@ The multi-agent bridge space is emerging rapidly alongside Claude Code and OpenA
 | **Architecture** | Peer-to-peer + shared DB | Relay | Planning coordinator | Session server | Tool server | Central orchestrator |
 
 ## Differentiation Summary
+
+**Note:** Persistent memory, graph visualization, semantic search, and conversation embedding are delegated to prism-mcp. The agentic-bridge is a pure coordination bus (store-and-forward messages, task management, MCP tools).
 
 Agentic-workflow occupies a distinct position in this space through three differentiators:
 
