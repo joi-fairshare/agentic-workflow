@@ -166,7 +166,7 @@ agentic-workflow/
 │       ├── detect-secrets.sh            #     PreToolUse — blocks AWS keys, GitHub tokens, Bearer tokens
 │       ├── rtk-rewrite.sh              #     PreToolUse — rewrites eligible bash commands to rtk equivalents for token compression (runs 4th)
 │       ├── git-context.sh              #     SessionStart — injects current branch, recent commits, working tree status
-│       └── bridge-context.sh           #     SessionStart — queries agentic-bridge memory graph, injects recent decisions/topics/tasks (silent no-op if bridge unreachable)
+│       └── bridge-context.sh           #     SessionStart — silent no-op (memory graph layer removed; exits 0 if bridge unreachable or endpoint missing)
 ├── mcp-bridge/                          # TypeScript MCP bridge server
 │   ├── package.json                     #   Node >=20, Fastify 5, better-sqlite3, Zod 3
 │   ├── tsconfig.json                    #   ES2022, Node16 modules, strict mode
