@@ -1,6 +1,6 @@
 # CLAUDE.md — agentic-workflow
 
-> Portable Claude Code workflow toolkit: 34 custom skills, config archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, a conversation memory system with graph-based retrieval, and token-efficiency tools (rtk + headroom).
+> Portable Claude Code workflow toolkit: 34 custom skills, config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 
 Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
 
@@ -21,14 +21,11 @@ Domain-specific rules are in `.claude/rules/` — they load automatically when w
 | Runtime | Node.js >= 20, ES2022 target |
 | Language | TypeScript 5.7, strict mode |
 | HTTP (bridge) | Fastify 5 |
-| HTTP (UI) | Next.js 15 App Router |
 | Database | SQLite via better-sqlite3, WAL mode |
-| Vector search | sqlite-vec (KNN over node embeddings) |
-| Embeddings | @huggingface/transformers (768-dim, lazy-loaded) |
 | MCP | @modelcontextprotocol/sdk (stdio transport) |
 | LSP (Serena) | Docker (Dockerized Serena MCP server via `scripts/serena-docker`) |
 | Validation | Zod 3 |
-| Test | Vitest (in-memory SQLite; happy-dom for UI hooks) |
+| Test | Vitest (in-memory SQLite) |
 | Build | tsc (ESM, Node16 module resolution) |
 
 ## Directory Structure
@@ -38,14 +35,12 @@ agentic-workflow/
 ├── skills/        # 34 Claude Code custom skills (symlinked to ~/.claude/skills/)
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline script, and safety hooks
-├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite, sqlite-vec)
-├── ui/            # Next.js 15 App Router conversation dashboard
+├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite)
 ├── planning/      # Project documentation
 ├── .claude/rules/ # Glob-scoped domain rules (auto-loaded by Claude Code)
 ├── .serena/       # Serena LSP project configuration
 ├── scripts/       # Utility scripts (serena-docker wrapper)
-├── start.sh       # Start bridge + UI together
-└── setup.sh       # One-command setup: skills, statusline, hooks, config, bridge, Serena, UI
+└── setup.sh       # One-command setup: skills, statusline, hooks, config, bridge, Serena
 ```
 
 ## Commands
@@ -56,20 +51,15 @@ cd mcp-bridge && npm test               # Vitest (all tests, in-memory SQLite)
 cd mcp-bridge && npm run test:coverage  # Run with 100% coverage enforcement
 cd mcp-bridge && npm run build          # TypeScript → dist/
 
-# UI Dashboard
-cd ui && npm test               # Vitest (hooks + lib tests)
-cd ui && npm run test:coverage  # Run with 100% coverage enforcement
-
 # Setup (from repo root)
 ./setup.sh             # Symlink skills, copy config, install statusline, install hooks (safety + rtk), build bridge, build Serena Docker image, register MCP servers (incl. headroom), create output dir
-./start.sh             # Start bridge (:3100) + UI (:3000) together
 ```
 
 ## Merge Gate
 
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
-2. `npm test` passes with all tests green (341 bridge + 67 UI)
+2. `npm test` passes with all tests green (99 bridge)
 3. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
 4. No `any` types outside of Fastify integration boundaries
 
