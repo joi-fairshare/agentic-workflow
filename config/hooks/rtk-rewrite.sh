@@ -49,5 +49,5 @@ fi
 [ -z "$REWRITTEN" ] && exit 0
 
 # Output updated input JSON for Claude Code to apply
-printf '%s\n' "$REWRITTEN" | jq -R '{hookSpecificOutput: {permissionDecision: "allow", updatedInput: {command: .}}}'
+printf '%s\n' "$REWRITTEN" | jq -R '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: {command: .}}}'
 exit 0
