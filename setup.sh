@@ -254,18 +254,11 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
     echo "  hooks.SessionStart: git-context added"
   fi
 
-  # Add bridge-context SessionStart hook if not already present
-  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
-      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    else
-      jq --argjson entries '[{"hooks":[{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]}]' '.hooks.SessionStart = $entries' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    fi
-    echo "  hooks.SessionStart: bridge-context added"
+  # Remove legacy bridge-context SessionStart hook if present
+  if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
+    jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  hooks.SessionStart: removed legacy bridge-context hook"
   fi
 fi
 
@@ -404,19 +397,6 @@ if command -v codex &>/dev/null; then
   fi
 else
   echo "  codex CLI not found, skipping Codex registration"
-fi
-
-# --- UI ---
-echo ""
-echo "Installing UI dependencies..."
-
-UI_DIR="$SCRIPT_DIR/ui"
-
-if [ -f "$UI_DIR/package.json" ]; then
-  (cd "$UI_DIR" && npm install)
-  echo "  UI: dependencies installed"
-else
-  echo "  UI: package.json not found, skipping"
 fi
 
 # --- Serena MCP ---
@@ -714,6 +694,34 @@ if command -v codex &>/dev/null; then
   echo "  headroom: registered with Codex"
 fi
 
+# --- prism-mcp ---
+echo ""
+echo "=== Installing prism-mcp ==="
+
+PRISM_VERSION="5.1.0"  # pin: bump here when upgrading
+
+if command -v claude &>/dev/null; then
+  if claude mcp list 2>&1 | grep -q "prism-mcp"; then
+    echo "  prism-mcp: already registered in Claude Code"
+  else
+    claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+      2>/dev/null || echo "  WARN: prism-mcp registration failed"
+    echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
+  fi
+else
+  echo "  claude CLI not found, skipping prism-mcp registration"
+fi
+
+if command -v codex &>/dev/null; then
+  if codex mcp list 2>&1 | grep -q "prism-mcp"; then
+    echo "  prism-mcp: already registered in Codex"
+  else
+    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+      2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
+    echo "  prism-mcp: registered with Codex"
+  fi
+fi
+
 # --- Output Directory ---
 echo ""
 echo "Creating output directory..."
@@ -741,6 +749,5 @@ echo "Statusline:         $CLAUDE_DIR/statusline.sh"
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
 echo "Rules directory:    .claude/rules/ (auto-loaded by Claude Code)"
 echo "MCP bridge:         $BRIDGE_DIR/"
-echo "MCP registered:     Claude Code + Codex (agentic-bridge)"
+echo "MCP registered:     Claude Code + Codex (agentic-bridge, prism-mcp)"
 echo "Plugins:            github, superpowers, compound-engineering, playwright"
-echo "UI dashboard:       $UI_DIR/ (npm run dev → :3000)"

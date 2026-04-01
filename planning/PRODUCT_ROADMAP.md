@@ -141,6 +141,8 @@ Estimated 2-4 weeks of focused development. Each item is independent and can be 
 
 Extend from a bridge utility into a broader multi-agent development platform.
 
+**Note:** Persistent memory, semantic search, graph visualization, and conversation embedding were originally planned here but are now delegated to prism-mcp. The bridge focuses on coordination: message routing, task management, and MCP tools.
+
 **1. Additional MCP Tools**
 
 Expand the MCP tool surface beyond messaging and task management:
@@ -149,21 +151,9 @@ Expand the MCP tool surface beyond messaging and task management:
 - `search_messages` — Full-text search across message payloads. Useful for agents reviewing historical context.
 - `delete_conversation` — Clean up completed workflows. Currently, data accumulates indefinitely in the SQLite database.
 - `get_task_tree` — Return tasks with their status reports as a nested structure, showing the full lifecycle of a task assignment.
-- `subscribe_updates` — Long-poll or SSE endpoint for real-time notification when new messages arrive for an agent, eliminating the need to poll `get_unread`.
 
-**2. Web Dashboard for Conversations**
 
-Build a lightweight web UI for observing multi-agent workflows:
-
-- Conversation timeline view showing messages between agents with sender/recipient labels
-- Task board view (kanban-style) showing tasks by status (pending, in_progress, completed, failed)
-- Live updates via SSE from the Fastify server
-- Read-only by default — no write operations from the UI to avoid interfering with agent workflows
-- Built with vanilla HTML/CSS/JS or a minimal framework (no heavy SPA framework) to keep the dependency footprint small
-
-Technology considerations: Since the REST API already exists, the dashboard is a static frontend that consumes the existing endpoints. Could be served from Fastify as static files or run separately.
-
-**3. Multi-Model Support**
+**2. Multi-Model Support (was item 3)**
 
 The current implementation is model-agnostic at the protocol level (MCP and REST are not Claude-specific), but the skills and documentation assume Claude Code and Codex. Extend support to:
 
@@ -183,7 +173,6 @@ The setup script references plugin marketplaces (`claude-plugins-official`, `vol
 ### Success Criteria
 
 - [ ] At least 3 new MCP tools shipped and documented
-- [ ] Web dashboard displays live conversation data from the bridge
 - [ ] At least one non-Claude agent successfully communicates through the bridge
 - [ ] Agent identity registry replaces free-form sender/recipient strings
 - [ ] Skill installation supports remote repositories beyond local symlinks
@@ -193,6 +182,5 @@ The setup script references plugin marketplaces (`claude-plugins-official`, `vol
 Estimated 2-3 months. This is a significant scope expansion and should be broken into sub-releases:
 
 - v2.0-alpha: Additional MCP tools + conversation listing (2-3 weeks)
-- v2.0-beta: Web dashboard MVP with conversation timeline (3-4 weeks)
 - v2.0-rc: Multi-model documentation and agent registry (2-3 weeks)
 - v2.0: Skill marketplace integration and polish (2-3 weeks)

@@ -1,17 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { type DbClient } from "../src/db/client.js";
-import { type MemoryDbClient } from "../src/db/memory-client.js";
-import { createSecretFilter } from "../src/ingestion/secret-filter.js";
-import type { EmbeddingService } from "../src/ingestion/embedding.js";
 import { sendContext } from "../src/application/services/send-context.js";
 import { getMessagesByConversation, getUnreadMessages } from "../src/application/services/get-messages.js";
 import { assignTask } from "../src/application/services/assign-task.js";
 import { reportStatus } from "../src/application/services/report-status.js";
-import { searchMemory } from "../src/application/services/search-memory.js";
-import { traverseMemory } from "../src/application/services/traverse-memory.js";
-import { assembleContext } from "../src/application/services/assemble-context.js";
 import { randomUUID } from "node:crypto";
-import { createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
+import { createTestBridgeDb } from "./helpers.js";
 
 // NOTE: resultToContent below mirrors the private helper in mcp.ts.
 // Both implementations must remain in sync. If you change the formatting
@@ -29,13 +23,9 @@ function resultToContent<T>(result: { ok: true; data: T } | { ok: false; error: 
 }
 
 let db: DbClient;
-let mdb: MemoryDbClient;
-let embedService: EmbeddingService;
 
 beforeEach(() => {
   ({ db } = createTestBridgeDb());
-  ({ mdb } = createTestMemoryDb());
-  embedService = createMockEmbeddingService();
 });
 
 describe("resultToContent", () => {
@@ -58,7 +48,6 @@ describe("send_context tool", () => {
     const conv = randomUUID();
     const result = sendContext(db, { conversation: conv, sender: "claude", recipient: "codex", payload: "hello" });
     const content = resultToContent(result);
-
     expect(content).not.toHaveProperty("isError");
     const data = JSON.parse(content.content[0].text);
     expect(data.conversation).toBe(conv);
@@ -69,7 +58,6 @@ describe("get_messages tool", () => {
   it("retrieves messages for a conversation", () => {
     const conv = randomUUID();
     sendContext(db, { conversation: conv, sender: "a", recipient: "b", payload: "msg" });
-
     const result = getMessagesByConversation(db, conv);
     const content = resultToContent(result);
     const data = JSON.parse(content.content[0].text);
@@ -80,13 +68,11 @@ describe("get_messages tool", () => {
 describe("get_unread tool", () => {
   it("returns unread and marks them read", () => {
     sendContext(db, { conversation: randomUUID(), sender: "a", recipient: "bob", payload: "msg" });
-
     const result = getUnreadMessages(db, "bob");
     const content = resultToContent(result);
     const data = JSON.parse(content.content[0].text);
     expect(data).toHaveLength(1);
 
-    // Second call returns empty
     const result2 = getUnreadMessages(db, "bob");
     const data2 = JSON.parse(resultToContent(result2).content[0].text);
     expect(data2).toHaveLength(0);
@@ -108,7 +94,6 @@ describe("report_status tool", () => {
     const conv = randomUUID();
     const taskResult = assignTask(db, { conversation: conv, domain: "x", summary: "s", details: "d" });
     if (!taskResult.ok) return;
-
     const result = reportStatus(db, {
       conversation: conv, sender: "codex", recipient: "claude",
       task_id: taskResult.data.id, status: "completed", payload: "Done",
@@ -116,59 +101,5 @@ describe("report_status tool", () => {
     const content = resultToContent(result);
     const data = JSON.parse(content.content[0].text);
     expect(data.task_updated).toBe(true);
-  });
-});
-
-describe("search_memory tool", () => {
-  it("returns results for keyword search", async () => {
-    mdb.insertNode({ repo: "test", kind: "topic", title: "Searchable", body: "content", meta: "{}", source_id: "s1", source_type: "manual" });
-    const result = await searchMemory(mdb, embedService, { query: "Searchable", repo: "test", mode: "keyword" });
-    const content = resultToContent(result);
-    expect(content).not.toHaveProperty("isError");
-  });
-});
-
-describe("traverse_memory tool", () => {
-  it("traverses from a node", () => {
-    const node = mdb.insertNode({ repo: "test", kind: "topic", title: "Root", body: "", meta: "{}", source_id: "s1", source_type: "manual" });
-    const result = traverseMemory(mdb, { node_id: node.id });
-    const content = resultToContent(result);
-    const data = JSON.parse(content.content[0].text);
-    expect(data.root).toBe(node.id);
-  });
-});
-
-describe("get_context tool", () => {
-  it("assembles context", async () => {
-    const result = await assembleContext(mdb, embedService, { repo: "test", query: "test" });
-    const content = resultToContent(result);
-    expect(content).not.toHaveProperty("isError");
-  });
-});
-
-describe("create_memory_node tool", () => {
-  it("creates a node with secret filtering", () => {
-    const filter = createSecretFilter();
-    // Use a pattern matching the sk- key pattern (requires 20+ alphanumeric chars after sk-)
-    const title = filter.redact("My API Key sk-abc123def456789012345");
-    const node = mdb.insertNode({
-      repo: "test", kind: "topic", title, body: "", meta: "{}",
-      source_id: randomUUID(), source_type: "manual",
-    });
-    expect(node.title).not.toContain("sk-abc123def456789012345");
-  });
-});
-
-describe("create_memory_link tool", () => {
-  it("creates an edge between nodes", () => {
-    const n1 = mdb.insertNode({ repo: "test", kind: "topic", title: "A", body: "", meta: "{}", source_id: "s1", source_type: "manual" });
-    const n2 = mdb.insertNode({ repo: "test", kind: "topic", title: "B", body: "", meta: "{}", source_id: "s2", source_type: "manual" });
-
-    const edge = mdb.insertEdge({
-      repo: "test", from_node: n1.id, to_node: n2.id,
-      kind: "related_to", weight: 1.0, meta: "{}", auto: false,
-    });
-    expect(edge.from_node).toBe(n1.id);
-    expect(edge.to_node).toBe(n2.id);
   });
 });

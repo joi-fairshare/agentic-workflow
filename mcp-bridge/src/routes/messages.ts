@@ -1,5 +1,4 @@
 import type { DbClient } from "../db/client.js";
-import type { EventBus } from "../application/events.js";
 import { createMessageController } from "../transport/controllers/message-controller.js";
 import { defineRoute, type ControllerDefinition, type RouteEntry } from "../transport/types.js";
 import {
@@ -8,8 +7,8 @@ import {
   GetUnreadSchema,
 } from "../transport/schemas/message-schemas.js";
 
-export function createMessageRoutes(db: DbClient, eventBus: EventBus): ControllerDefinition {
-  const handlers = createMessageController(db, eventBus);
+export function createMessageRoutes(db: DbClient): ControllerDefinition {
+  const handlers = createMessageController(db);
 
   return {
     basePath: "/messages",

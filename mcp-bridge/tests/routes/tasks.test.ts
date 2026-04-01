@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { type DbClient } from "../../src/db/client.js";
-import { createEventBus } from "../../src/application/events.js";
 import { createTaskRoutes } from "../../src/routes/tasks.js";
 import { createServer } from "../../src/server.js";
 import type { FastifyInstance } from "fastify";
@@ -12,8 +11,7 @@ let db: DbClient;
 
 beforeEach(async () => {
   ({ db } = createTestBridgeDb());
-  const eventBus = createEventBus();
-  const taskRoutes = createTaskRoutes(db, eventBus);
+  const taskRoutes = createTaskRoutes(db);
   app = createServer([taskRoutes]);
   await app.ready();
 });

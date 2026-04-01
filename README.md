@@ -186,14 +186,6 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - `assign_task` — Assign tasks with domain and implementation details
 - `report_status` — Report back with feedback or completion
 
-**MCP Tools (memory):**
-- `search_memory` — Hybrid FTS5 + vector search across the knowledge graph
-- `traverse_memory` — BFS graph traversal with direction/depth/kind filters
-- `get_context` — Token-budgeted context assembly from memory for an agent
-- `create_memory_link` — Create an edge between two memory nodes
-- `create_memory_node` — Create a topic or decision node in memory
-- `ingest_conversation` — Ingest a conversation payload into the memory graph
-
 **API Endpoints (messaging):**
 - `POST /messages/send` — Send context between agents
 - `GET /messages/conversation/:id` — Retrieve conversation history
@@ -203,19 +195,6 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - `GET /tasks/conversation/:id` — Get all tasks for a conversation
 - `POST /tasks/report` — Report task status
 - `GET /conversations` — Paginated conversation summaries
-- `GET /events` — SSE stream (`message:created`, `task:created`, `task:updated`, heartbeat every 30s)
-
-**API Endpoints (memory):**
-- `GET /memory/search` — Search nodes by keyword, semantic, or hybrid query
-- `GET /memory/node/:id` — Get a memory node by ID
-- `GET /memory/node/:id/edges` — Get all edges for a node
-- `GET /memory/traverse/:id` — BFS graph traversal from a node
-- `GET /memory/context` — Assemble token-budgeted context for a query or node
-- `GET /memory/topics` — List topic nodes for a repo
-- `GET /memory/stats` — Memory graph statistics for a repo
-- `POST /memory/ingest` — Ingest data from a source (bridge, git, transcript)
-- `POST /memory/link` — Create an edge between two nodes
-- `POST /memory/node` — Create a new memory node
 
 **Features:**
 - SQLite store-and-forward (messages queue when recipient is offline)
@@ -223,30 +202,6 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 - Fastify REST API (port 3100) + MCP stdio server
 - Full end-to-end type safety with `AppResult<T>` pattern
 - Atomic transactions for multi-step operations
-- EventBus for real-time SSE push to connected clients
-- CORS enabled for local UI integration
-- Knowledge graph with nodes, edges, FTS5 full-text search, and sqlite-vec embeddings
-- Ingestion pipeline: bridge messages, git metadata (commits/PRs), JSONL transcripts
-- Automatic topic inference via embedding clustering and decision extraction via regex heuristics
-- Secret filtering with regex-based redaction for API keys, tokens, and passwords
-- Bounded async queue for background ingestion with overflow drop
-
-### 5. Conversation Dashboard (UI)
-
-A Next.js 15 App Router web UI for visualising bridge activity in real time.
-
-**Features:**
-- Paginated conversation list with UUID filter and SSE live updates
-- Per-conversation detail view: chronological timeline, directed graph, sequence diagram
-- Mermaid-powered diagrams built from live message + task data
-- Memory Explorer page (`/memory`) with search, graph traversal, context assembly, and interactive MemoryGraph visualisation
-- Reverse-proxies `/api/*` to the bridge REST API (`:3100`)
-
-**Run the dashboard:**
-```bash
-cd ui
-npm run dev    # http://localhost:3000
-```
 
 ## Setup
 
@@ -260,11 +215,10 @@ The setup script:
 - Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
 - Symlinks skills into `~/.claude/skills/`
 - Copies config files (settings, MCP)
-- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`, `bridge-context.sh`) to `~/.claude/hooks/`
+- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`) to `~/.claude/hooks/`
 - Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
 - Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
 - Installs and builds the MCP bridge
-- Installs UI dependencies
 - Builds Serena Docker images (base TS/Python image; opt-in C# extension)
 - Installs the `serena-docker` wrapper script to `~/.local/bin/`
 - Registers `agentic-bridge` and `serena` MCP servers with Claude Code
@@ -272,19 +226,12 @@ The setup script:
 - Registers `xcodebuildmcp` MCP server for iOS simulator automation
 - Installs rtk (Homebrew on macOS, install script on Linux) and wires `rtk-rewrite.sh` into the Bash hook chain for token-efficient command output
 - Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with Claude Code and Codex
-- Installs `bridge-context.sh` SessionStart hook for automatic repo memory injection at session start
+- Registers `prism-mcp` MCP server with Claude Code and Codex (persistent memory via prism-mcp-server, downloads on first use)
 
-### Start the bridge + UI
-
-```bash
-./start.sh         # Bridge on :3100, UI on :3000
-```
-
-Or run them individually:
+### Start the bridge
 
 ```bash
 cd mcp-bridge && npm start    # Fastify on http://127.0.0.1:3100
-cd ui && npm run dev          # Next.js on http://localhost:3000
 ```
 
 ### Environment Variables
@@ -303,33 +250,27 @@ Both packages enforce 100% coverage on all thresholds (statements, branches, fun
 ```bash
 # MCP Bridge (Vitest, in-memory SQLite)
 cd mcp-bridge
-npm test                  # Run all tests (341 tests)
+npm test                  # Run all tests (99 tests)
 npm run test:watch        # Watch mode
-npm run test:coverage     # Enforce 100% coverage thresholds
-
-# UI (Vitest + happy-dom)
-cd ui
-npm test                  # Run all tests (67 tests)
 npm run test:coverage     # Enforce 100% coverage thresholds
 ```
 
-Test coverage spans unit tests (controllers, services, DB client, schemas, utilities), integration tests (all REST routes via Fastify inject, SSE stream, MCP tool handlers), and hook/lib tests for the UI layer.
+Test coverage spans unit tests (controllers, services, DB client, schemas, utilities) and integration tests (all REST routes via Fastify inject and MCP tool handlers).
 
 ## Architecture
 
 ```
 agentic-workflow/
 ├── .claude/
-│   └── rules/                 # Glob-scoped domain rules (9 files, auto-loaded by Claude Code)
-│       ├── bridge-services.md # AppResult, EventBus, MCP tools, memory services
+│   └── rules/                 # Glob-scoped domain rules (auto-loaded by Claude Code)
+│       ├── bridge-services.md # AppResult, EventBus, MCP tools
 │       ├── bridge-transport.md # Typed router, controllers, Zod schemas
-│       ├── database.md        # SQLite schema, DbClient, MemoryDbClient
+│       ├── database.md        # SQLite schema, DbClient
 │       ├── design.md          # Design pipeline, tokens, .impeccable.md
-│       ├── ingestion.md       # Queues, embeddings, secret filter, Claude Code parser
+│       ├── hooks.md           # Hook protocols and installation
 │       ├── mcp-servers.md     # MCP server usage rules (Serena, bridge, context7, etc.)
 │       ├── skills.md          # Skill structure, preamble, pipeline, bootstrap
-│       ├── testing.md         # Test patterns, helpers, coverage policy
-│       └── ui.md              # Next.js App Router, hooks, React Flow graph
+│       └── testing.md         # Test patterns, helpers, coverage policy
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
 ├── skills/                    # 34 Claude Code custom skills
@@ -345,22 +286,13 @@ agentic-workflow/
 │   ├── src/
 │   │   ├── application/       # AppResult<T>, EventBus, services (never throw)
 │   │   ├── db/                # SQLite schema, client interface, transactions
-│   │   │                      #   + memory-schema.ts, memory-client.ts (knowledge graph)
-│   │   ├── ingestion/         # Embedding service, async queue, secret filter, transcript parser
 │   │   ├── transport/         # Typed router, Zod schemas, controllers
-│   │   ├── routes/            # Route factories (messages, tasks, conversations, memory, events)
+│   │   ├── routes/            # Route factories (messages, tasks, conversations)
 │   │   ├── server.ts          # Fastify server factory
-│   │   ├── mcp.ts             # MCP stdio server (11 tools: 5 messaging + 6 memory)
+│   │   ├── mcp.ts             # MCP stdio server (5 coordination tools)
 │   │   └── index.ts           # REST API entry point
 │   └── tests/                 # Vitest suite — unit + integration, 100% coverage
-├── ui/                        # Next.js 15 conversation dashboard
-│   └── src/
-│       ├── app/               # App Router pages (conversations, detail, memory explorer)
-│       ├── components/        # Timeline, DiagramRenderer, CopyButton, MemoryGraph
-│       ├── hooks/             # use-sse, use-memory-search, use-memory-traverse, use-context-assembler
-│       └── lib/               # API client, Mermaid builders, shared types
 ├── Dockerfile.serena           # Serena base image (TypeScript + Python LSPs)
 ├── Dockerfile.serena-csharp    # Serena C# extension image (opt-in)
-├── start.sh                   # Start bridge + UI together
 └── setup.sh                   # One-command setup script
 ```

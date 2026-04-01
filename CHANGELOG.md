@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-27
+
+### Removed
+
+- Memory layer fully removed from agentic-bridge: 6 memory MCP tools (`search_memory`, `traverse_memory`, `get_context`, `create_memory_link`, `create_memory_node`, `ingest_conversation`), memory DB (nodes, edges, embeddings, traversal_logs tables), ingestion pipeline (embedding service, async queue, secret filter, session queue, transcript parser, Claude Code watcher/parser), EventBus, SSE route, and all associated REST endpoints (`/memory/*`, `/events`). Memory and knowledge-graph functionality delegated to prism-mcp.
+- Next.js 15 UI dashboard (`ui/`) fully removed — visualization delegated to prism Mind Palace.
+- `start.sh` removed (previously started bridge + UI together).
+- `config/hooks/bridge-context.sh` SessionStart hook removed — prism-mcp handles session context via its own hook.
+- 242 bridge tests removed (memory, ingestion, and UI layer); 25 test files deleted.
+- `@huggingface/transformers` and `sqlite-vec` removed from bridge dependencies.
+
+### Added
+
+- `setup.sh`: Registers `prism-mcp` MCP server (`prism-mcp-server@5.1.0`) with Claude Code and Codex via `npx -y`. Skips registration if already registered. Final summary updated to show `agentic-bridge, prism-mcp`.
+- `.claude/rules/mcp-servers.md`: Added `prism-mcp` row to the MCP server table.
+
+### Changed
+
+- `mcp-bridge` stripped to 5 coordination MCP tools only: `send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`. No UI. No memory DB. No embedding model.
+- `setup.sh` now removes legacy `bridge-context.sh` SessionStart hook if present (cleanup for existing installations).
+- Test baseline: 99 bridge tests (down from 341); 0 UI tests (down from 67). 100% coverage maintained.
+
+---
+
 ## [Unreleased] - 2026-03-26
 
 ### Added
