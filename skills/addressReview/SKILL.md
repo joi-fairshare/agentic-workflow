@@ -107,11 +107,9 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
-## Memory Recall
+## Session Context
 
-> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
-
-Check for prior discussion context in memory before reading the codebase.
+Load prior work state for this repo from prism-mcp before starting.
 
 **1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
 - `/officeHours add dark mode` → `"dark mode UI feature"`
@@ -119,22 +117,49 @@ Check for prior discussion context in memory before reading the codebase.
 - `/review 42` → use the PR title once fetched: `"PR {title} review"`
 - No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
 
-**2. Search memory:**
+**2. Load context from prism-mcp:**
 ```
-mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
+mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
+  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
 ```
 
-**3. Assemble context:**
-```
-mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
-```
-(Use `token_budget: 1000` for `/review` and `/addressReview`.)
+Store the returned `expected_version` — you will need it at Session Close.
 
-**4. Surface results:**
-- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
-  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+**3. Surface results:**
+- If the response contains a non-empty summary or prior decisions:
+  > **Prior context:** {summary}
   Use this to inform your approach before continuing.
-- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
+- If prism-mcp returns an error, surface it and stop:
+  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
+
+## Session Close
+
+> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
+
+Save a structured ledger entry and update the live handoff state for this repo.
+
+**1. Save ledger entry (immutable audit trail):**
+```
+mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
+  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
+  summary: "<one paragraph describing what was accomplished this session>",
+  todos: ["<any open items left incomplete>", ...],
+  files_changed: ["<paths of files created or modified>", ...],
+  decisions: ["<key decisions made during this skill run>", ...]
+```
+
+**2. Update handoff state (mutable live state for next session):**
+```
+mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
+  expected_version: <value returned by session_load_context>,
+  open_todos: ["<open items not yet completed>", ...],
+  active_branch: "<current git branch from: git branch --show-current>",
+  last_summary: "<one sentence: what this skill just did>",
+  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
+```
+
+If either call fails, surface the error:
+> "prism-mcp session save failed: {error}. Context may not persist to next session."
 
 <!-- === PREAMBLE END === -->
 
