@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Glob, Bash(git *), AskUserQuestion
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 34 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 35 skills available. Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -24,6 +24,7 @@ allowed-tools: Read, Write, Edit, Glob, Bash(git *), AskUserQuestion
 > | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
 > | `/productReview` | Founder/product lens plan review |
 > | `/archReview` | Engineering architecture plan review |
+> | `/withInterview` | Interview user to clarify requirements before executing |
 > | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
 > | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
 > | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
@@ -75,7 +76,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 

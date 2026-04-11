@@ -273,7 +273,7 @@ agentic-workflow/
 │       └── testing.md         # Test patterns, helpers, coverage policy
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
-├── skills/                    # 34 Claude Code custom skills
+├── skills/                    # 35 Claude Code custom skills
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer

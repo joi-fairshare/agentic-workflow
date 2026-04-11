@@ -1,10 +1,14 @@
 ---
-name: postReview
-description: Publish a completed /review to GitHub as batched PR comments. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json and posts one review per agent (minimizing API calls). Use after /review has written a local state file and you are ready to publish.
-argument-hint: [pr-number]
-allowed-tools: Bash(gh *), Bash(git *), Read, Edit
+name: withInterview
+description: "Interview the user to clarify requirements before executing a prompt. Use when the user wants to refine a task through guided questions before implementation."
+argument-hint: "[prompt]"
+disable-model-invocation: true
+allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
 ---
-<!-- MEMORY: SKIP -->
+
+# Interview Before Executing
+
+Runs a structured, multi-round interview to gather requirements and context before executing a task. Surfaces ambiguities, challenges assumptions, and confirms subagent strategy — then proceeds only after explicit user confirmation.
 
 <!-- === PREAMBLE START === -->
 
@@ -109,121 +113,102 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
+## Memory Recall
+
+> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
+
+Check for prior discussion context in memory before reading the codebase.
+
+**1. Derive a topic string** — synthesize 3-5 words from the skill argument and task intent:
+- `/officeHours add dark mode` → `"dark mode UI feature"`
+- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
+- `/review 42` → use the PR title once fetched: `"PR {title} review"`
+- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
+
+**2. Search memory:**
+```
+mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
+```
+
+**3. Assemble context:**
+```
+mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
+```
+
+**4. Surface results:**
+- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
+  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+  Use this to inform your approach before continuing.
+- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
+
 <!-- === PREAMBLE END === -->
 
-# Post Review to GitHub
+## The Task
 
-Reads the local review state file and publishes all findings to GitHub in batched API calls — one review submission per agent.
+$ARGUMENTS
 
-## Step 1: Resolve the PR number
+## Interview Process
 
-**If an argument was provided**, use it.
+### Round 1: Initial Analysis & High-Level Questions
 
-**If no argument**, detect from current branch:
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
+Read the task above carefully. Identify:
+- Ambiguities or underspecified requirements
+- Decisions that have more than one reasonable answer
+- Missing context that would change your approach
+- Scope boundaries that aren't clear
 
-If multiple PRs found, list and ask the user to pick.
+Present your **highest-priority questions first** — the ones whose answers will shape everything else. Group them by theme (e.g. scope, behavior, constraints, testing). Keep each question concise and offer concrete options where possible (e.g. "Should X do A or B?" rather than open-ended "What should X do?").
 
-## Step 2: Load State File
+### Round 2: Subagent Strategy
 
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
+After the user answers Round 1, ask specifically about subagent usage. Present this as a focused follow-up:
 
-If the file does not exist:
-> "No local review found for PR #{number}. Run `/review` first."
+> **Subagent Strategy:** Based on what you've described, here's how I'd recommend using subagents. Let me know what you'd prefer:
+>
+> - **Explore** — for codebase research and file discovery
+> - **Plan** — for designing an implementation strategy before coding
+> - **general-purpose** — for delegating independent subtasks in parallel
+> - **Reviewers** (e.g. Rails, TypeScript, security, performance) — for post-implementation review
+> - **None** — I'll handle everything directly
+>
+> You can pick multiple. I'll also suggest a specific combination if you'd like a recommendation.
 
-If `posted: true`:
-> "PR #{number} was already posted at {posted_at}. Post again anyway? (yes/no)"
-> Wait for confirmation before continuing.
+If the user selects **multiple subagents**, ask follow-up questions about each one:
+- What specific focus or scope should each agent have?
+- Should they run in parallel or sequentially?
+- Are there dependencies between their outputs (e.g. Explore results feeding into Plan)?
 
-## Step 3: Post Each Reviewer's Findings
+### Round 3+: Drill-Down Details
 
-For each entry in `reviewers`, post **one batched GitHub review** containing all that agent's inline comments plus a top-level summary body. This is a single API call per reviewer.
+Continue asking follow-up rounds as needed. Each round should:
+- Reference the user's previous answers ("You mentioned X — does that mean...?")
+- Go deeper on areas that are still underspecified
+- Surface edge cases and error handling questions
+- Clarify testing expectations and acceptance criteria
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{number}/reviews \
-  --method POST \
-  --field commit_id="{commit_sha}" \
-  --field body="{review_body}" \
-  --field event="COMMENT" \
-  --field "comments[]={inline_comments_json}"
-```
+Keep going until you have no remaining ambiguities. Each round should be a focused set of 2-5 questions, not a wall of text.
 
-Where:
-- `{review_body}` is the reviewer's human-readable summary (see format below)
-- `{inline_comments_json}` is a JSON array of all `type: "inline"` issues for this reviewer
+### Final Round: Summarize and Confirm
 
-### Review body format
+Once all details are gathered, present a complete summary:
 
-```markdown
-## {agent} Review
-**Focus:** {focus}
+1. **Task understanding** — what you'll build, with all clarifications incorporated
+2. **Approach** — the implementation strategy step by step
+3. **Subagent plan** — which agents will be used, in what order, with what focus
+4. **Scope boundaries** — what's explicitly in and out of scope
+5. **Acceptance criteria** — how you'll know the task is done
 
-{summary}
+Ask: **"Does this look right? Any changes before I start?"**
 
-### Findings
+### Execute
 
-| Severity | File | Issue |
-|----------|------|-------|
-| blocking | `src/auth.ts` | JWT not verified before use |
-| issue | `src/api.ts` | SQL injection risk |
+Only after explicit confirmation, begin the work.
 
-{top_level_issue_bodies}
+## Rules
 
-<!-- review-data
-{
-  "agent": "{agent}",
-  "focus": "{focus}",
-  "issues": [ ... full issues array from state file ... ]
-}
--->
-```
-
-`{top_level_issue_bodies}` — append the full `body` text of any `type: "top-level"` issues directly into the review body.
-
-### Inline comment format
-
-Each `type: "inline"` issue maps to:
-```json
-{
-  "path": "src/auth.ts",
-  "position": 42,
-  "body": "**[blocking] JWT not verified**\n\nFull comment text..."
-}
-```
-
-### Capture posted comment IDs
-
-Parse the response to get the review ID and individual comment IDs:
-```bash
-RESPONSE=$(gh api repos/{owner}/{repo}/pulls/{number}/reviews \
-  --method POST ... )
-
-REVIEW_ID=$(echo $RESPONSE | jq '.id')
-```
-
-Store each returned comment ID back against the issue in the state file (`posted_comment_id`).
-
-## Step 4: Update State File
-
-After all reviews are posted, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
-- Set `"posted": true`
-- Set `"posted_at"` to current ISO timestamp
-- Fill in `posted_comment_id` for each issue
-
-Use the Edit tool to update the file.
-
-## Step 5: Report
-
-```
-Posted to PR #{number}: "{title}"
-
-  • security-sentinel — 3 comments (2 inline, 1 top-level)
-  • kieran-typescript-reviewer — 2 comments (2 inline)
-  • performance-oracle — 1 comment (1 top-level)
-
-Total: 6 comments · 2 API calls
-
-View: {pr_url}
-```
+- Do NOT write any code or make any changes until the interview is complete and confirmed.
+- This is a **multi-round conversation**. Do NOT try to ask everything in one message. Start broad, then drill down based on answers.
+- Each round should be focused: 2-5 questions max per round.
+- Always reference previous answers when asking follow-ups to show you're building understanding.
+- The subagent question always gets its own dedicated round.
+- If the task is trivial and truly has no ambiguity, you may collapse to fewer rounds, but still ask the subagent question and get confirmation before proceeding.
