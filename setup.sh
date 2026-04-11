@@ -23,6 +23,25 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+# Check for native build tools (required by better-sqlite3 when no prebuilt binary exists)
+if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║                  MISSING BUILD TOOLS                        ║"
+  echo "║                                                              ║"
+  echo "║  make and g++ are required to compile native Node addons    ║"
+  echo "║  (better-sqlite3, sqlite-vec). Prebuilt binaries may not    ║"
+  echo "║  be available for your Node version.                        ║"
+  echo "║                                                              ║"
+  echo "║  Install build tools, then re-run setup:                    ║"
+  echo "║    xcode-select --install          (macOS)                  ║"
+  echo "║    sudo apt-get install build-essential  (Debian/Ubuntu)    ║"
+  echo "║    sudo dnf groupinstall 'Development Tools'  (Fedora)     ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
+  echo ""
+  exit 1
+fi
+
 # Canonical list of skills managed by this toolkit.
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
 # It is not symlinked directly — each skill accesses it via path traversal
