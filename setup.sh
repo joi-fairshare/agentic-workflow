@@ -627,7 +627,7 @@ echo "Installing Impeccable skills..."
 
 IMPECCABLE_VERSION="d6b1a56bc5b79e9375be0f8508b4daa1678fb058"
 IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
-IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/dist/claude-code"
+IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/.claude/skills"
 
 if [ -d "$IMPECCABLE_DIR/.git" ]; then
   echo "  impeccable: cache exists, checking for updates..."
@@ -698,7 +698,8 @@ for _py in python3.13 python3.12 python3.11 python3.10; do
 done
 
 if [ -z "$HEADROOM_PYTHON" ]; then
-  echo "FATAL: Python 3.10+ is required for headroom-ai. Install via: brew install python@3.13"
+  echo "FATAL: Python 3.10+ is required for headroom-ai."
+  echo "  Install via: sudo apt-get install python3 (Debian/Ubuntu) or brew install python@3.13 (macOS)"
   exit 1
 fi
 
@@ -711,6 +712,16 @@ if command -v headroom &>/dev/null; then
 elif [ -x "$HEADROOM_BIN" ]; then
   echo "  headroom: already installed at $HEADROOM_BIN ($("$HEADROOM_BIN" --version 2>/dev/null || echo 'unknown version'))"
 else
+  # On Debian/Ubuntu, pip may not be bundled — try ensurepip bootstrap first
+  if ! "$HEADROOM_PYTHON" -m pip --version &>/dev/null; then
+    "$HEADROOM_PYTHON" -m ensurepip --user 2>/dev/null \
+      || { echo "FATAL: pip is not installed for $HEADROOM_PYTHON and ensurepip is unavailable."
+           echo "  Install pip, then re-run setup:"
+           echo "    sudo apt-get install python3-pip          (Debian/Ubuntu)"
+           echo "    sudo dnf install python3-pip              (Fedora/RHEL)"
+           echo "    brew install python@3.13                  (macOS)"
+           exit 1; }
+  fi
   "$HEADROOM_PYTHON" -m pip install --break-system-packages --user "headroom-ai[all]" 2>/dev/null \
     || "$HEADROOM_PYTHON" -m pip install --user "headroom-ai[all]" \
     || { echo "FATAL: headroom installation failed."; exit 1; }
