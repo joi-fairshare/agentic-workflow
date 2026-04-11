@@ -525,9 +525,22 @@ mkdir -p "$HOME/.local/bin"
 cp "$(dirname "$0")/scripts/serena-docker" "$HOME/.local/bin/serena-docker"
 chmod +x "$HOME/.local/bin/serena-docker"
 
+# Ensure ~/.local/bin is in PATH for the rest of this script and future shells
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
-  echo "WARN: ~/.local/bin is not in \$PATH. Add to your shell profile:"
-  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  export PATH="$HOME/.local/bin:$PATH"
+  LOCAL_BIN_LINE='export PATH="$HOME/.local/bin:$PATH"'
+  _added_local_bin=false
+  for _rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$_rc" ] && ! grep -qF '.local/bin' "$_rc" 2>/dev/null; then
+      printf '\n# Added by agentic-workflow setup.sh\n%s\n' "$LOCAL_BIN_LINE" >> "$_rc"
+      _added_local_bin=true
+    fi
+  done
+  if [ "$_added_local_bin" = true ]; then
+    echo "  ~/.local/bin added to PATH (updated shell profile)"
+  else
+    echo "  ~/.local/bin added to PATH (this session only)"
+  fi
 fi
 
 echo "=== Registering Serena MCP (global) ==="
@@ -616,11 +629,13 @@ IMPECCABLE_VERSION="d6b1a56bc5b79e9375be0f8508b4daa1678fb058"
 IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
 IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/dist/claude-code"
 
-if [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
+if [ -d "$IMPECCABLE_DIR/.git" ]; then
   echo "  impeccable: cache exists, checking for updates..."
   (cd "$IMPECCABLE_DIR" && git fetch origin && git checkout "$IMPECCABLE_VERSION") || \
     echo "  Warning: Could not update Impeccable cache. Using existing version."
 else
+  # Clean up any partial clone (non-git directory left behind)
+  [ -d "$IMPECCABLE_DIR" ] && rm -rf "$IMPECCABLE_DIR"
   echo "  impeccable: cloning pbakaus/impeccable..."
   git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 && \
     (cd "$IMPECCABLE_DIR" && git checkout "$IMPECCABLE_VERSION") || {
@@ -650,6 +665,8 @@ echo ""
 echo "=== Installing rtk ==="
 if command -v rtk &>/dev/null; then
   echo "  rtk: already installed ($(rtk --version 2>/dev/null || echo 'unknown version'))"
+elif [ -x "$HOME/.local/bin/rtk" ]; then
+  echo "  rtk: already installed at ~/.local/bin/rtk ($("$HOME/.local/bin/rtk" --version 2>/dev/null || echo 'unknown version'))"
 else
   if [ "$(uname)" = "Darwin" ]; then
     brew install rtk || { echo "FATAL: rtk installation failed. Install Homebrew and re-run."; exit 1; }
@@ -657,7 +674,10 @@ else
     curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
       || { echo "FATAL: rtk installation failed."; exit 1; }
   fi
-  rtk --version &>/dev/null || { echo "FATAL: rtk not found after installation."; exit 1; }
+  # The installer may place rtk in ~/.local/bin which isn't necessarily in PATH
+  if ! command -v rtk &>/dev/null && ! [ -x "$HOME/.local/bin/rtk" ]; then
+    echo "FATAL: rtk not found after installation."; exit 1
+  fi
   echo "  rtk: installed"
 fi
 
