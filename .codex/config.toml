@@ -1,0 +1,18 @@
+[mcp_servers.agentic-bridge]
+# Codex can inherit a different PATH than the interactive shell; pick a stable
+# Node binary first so better-sqlite3 loads with the same ABI it was built for.
+command = "/bin/sh"
+args = ["-lc", "if [ -x /opt/homebrew/bin/node ]; then NODE_BIN=/opt/homebrew/bin/node; elif [ -x /usr/local/bin/node ]; then NODE_BIN=/usr/local/bin/node; else NODE_BIN=\"$(command -v node)\"; fi && cd \"$(git rev-parse --show-toplevel)\" && exec \"$NODE_BIN\" mcp-bridge/dist/mcp.js"]
+required = true
+startup_timeout_ms = 20000
+
+[mcp_servers.prism-mcp]
+# The globally installed prism-mcp-server binary is a symlink named
+# "prism-mcp-server"; Prism only auto-starts when Node executes dist/server.js
+# directly, so launch the real entrypoint through a stable Node binary.
+command = "/bin/sh"
+args = ["-lc", "if [ -x /opt/homebrew/bin/node ]; then NODE_BIN=/opt/homebrew/bin/node; elif [ -x /usr/local/bin/node ]; then NODE_BIN=/usr/local/bin/node; else NODE_BIN=\"$(command -v node)\"; fi && if [ -f /opt/homebrew/lib/node_modules/prism-mcp-server/dist/server.js ]; then PRISM_ENTRY=/opt/homebrew/lib/node_modules/prism-mcp-server/dist/server.js; elif [ -f /usr/local/lib/node_modules/prism-mcp-server/dist/server.js ]; then PRISM_ENTRY=/usr/local/lib/node_modules/prism-mcp-server/dist/server.js; else PRISM_ENTRY=\"$(dirname \"$(dirname \"$(command -v prism-mcp-server)\")\")/lib/node_modules/prism-mcp-server/dist/server.js\"; fi && exec \"$NODE_BIN\" \"$PRISM_ENTRY\""]
+startup_timeout_ms = 20000
+
+[mcp_servers.prism-mcp.env]
+PRISM_STORAGE = "local"

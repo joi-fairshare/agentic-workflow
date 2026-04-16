@@ -152,6 +152,5 @@ No circular dependencies exist. The application layer never imports from the tra
 |--------|---------|-------------|
 | SQLite (via better-sqlite3) | File-based, default `./bridge.db` | MCP bridge data persistence |
 | GitHub CLI (`gh`) | Shell command | Skills (review, postReview, addressReview) |
-| Claude Code | CLI tool | Skills execution, MCP server registration |
+| Claude Code / Codex | CLI tools | Skills execution, MCP server registration |
 | Node.js native modules | `node:crypto` (randomUUID), `node:path` (join) | db/client.ts, db/schema.ts |
-

@@ -6,7 +6,7 @@
 |-------------|----------------|---------|
 | Node.js | >= 20 | Runtime for MCP bridge and build tooling |
 | GitHub CLI (`gh`) | Latest | Required by review skills for PR interaction |
-| Claude Code | Latest | Host for skills and MCP server registration |
+| AI Client (`claude` and/or `codex`) | Latest | Host for skills and MCP server registration |
 | npm | Bundled with Node | Dependency management |
 
 ## Initial Setup
@@ -26,11 +26,13 @@ cd ~/repos/agentic-workflow
 
 The setup script performs the following:
 
-1. **Symlinks skills** into `~/.claude/skills/`:
+1. **Symlinks skills** into selected agent homes:
+   - Claude: `~/.claude/skills/`
+   - Codex: `$CODEX_HOME/skills/` (fallback `~/.codex/skills/`)
    - `review`, `postReview`, `addressReview`, `enhancePrompt`, `bootstrap`
    - If a directory already exists (not a symlink), it prompts before replacing.
 
-2. **Copies config files** to `~/.claude/`:
+2. **Copies config files** to Claude home (`~/.claude/`) when Claude is targeted:
    - `settings.json` -- only if no existing file (will not overwrite).
    - `mcp.json` -- only if no existing file (will not overwrite).
    - If files exist, it prints a `diff` command for manual comparison.
@@ -47,13 +49,14 @@ npm run build
 
 This runs `tsc` and outputs compiled JavaScript to `mcp-bridge/dist/`.
 
-### 4. Register the MCP Server with Claude Code
+### 4. Register the MCP Server
 
 ```bash
-claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+claude mcp add --scope user agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
-This registers the bridge as a stdio-based MCP server that Claude Code can invoke.
+This registers the bridge as a stdio-based MCP server that Claude Code and/or Codex can invoke.
 
 ## Environment Configuration
 
@@ -102,8 +105,9 @@ cd ~/repos/agentic-workflow/mcp-bridge
 npm run build
 npm run mcp
 
-# Normal usage: Claude Code spawns it via the registered MCP config
-claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+# Normal usage: Claude/Codex spawn it via registered MCP config
+claude mcp add --scope user agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
 The MCP server exposes five tools: `send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`.
@@ -151,7 +155,7 @@ The build compiles `src/**/*` to `dist/`, excluding `node_modules`, `dist`, and 
 
 ```
 agentic-workflow/
-├── skills/                    # Claude Code custom skills (symlinked to ~/.claude/skills/)
+├── skills/                    # Portable skills (symlinked to ~/.claude/skills/ and/or ~/.codex/skills/)
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer

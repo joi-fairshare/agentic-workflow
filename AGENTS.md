@@ -1,4 +1,4 @@
-# CLAUDE.md — agentic-workflow
+# AGENTS.md — agentic-workflow
 
 > Portable AI-agent workflow toolkit (optimized for ChatGPT Codex + Claude Code): 34 custom skills, config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 

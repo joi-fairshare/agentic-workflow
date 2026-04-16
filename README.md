@@ -1,6 +1,6 @@
 # Agentic Workflow
 
-A portable Claude Code workflow toolkit: custom skills, configuration archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, and token-efficiency tools (rtk command rewriter, headroom context compressor).
+A portable AI-agent workflow toolkit optimized for ChatGPT Codex and Claude Code: custom skills, configuration archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, and token-efficiency tools (rtk command rewriter, headroom context compressor).
 
 ## Workflow: Product Vision → Ship
 
@@ -80,7 +80,9 @@ The officeHours MD files are **ephemeral** — once context is in GitHub issues,
 
 - Node.js >= 20
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running (required for Serena LSP)
-- [Claude Code](https://claude.com/claude-code) installed
+- At least one client installed:
+  - [Claude Code](https://claude.com/claude-code), and/or
+  - ChatGPT Codex CLI (`codex`)
 - [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (required by review skills)
 - [`jq`](https://jqlang.github.io/jq/) installed (required by the statusline; `brew install jq` on macOS)
 - [`rtk`](https://github.com/rtk-ai/rtk) — token-compressing CLI proxy (`brew install rtk` on macOS; installed automatically by `setup.sh`)
@@ -91,7 +93,7 @@ The officeHours MD files are **ephemeral** — once context is in GitHub issues,
 
 ### 1. Skills & Config Archive
 
-Extracted from `~/.claude/` for replication on any machine.
+Extracted from real daily workflows and installable for both Claude and Codex homes.
 
 | Skill | Purpose |
 |-------|---------|
@@ -134,7 +136,7 @@ Extracted from `~/.claude/` for replication on any machine.
 
 ### 2. Statusline
 
-`config/statusline.sh` is an adaptive two-line statusline for Claude Code sessions. It is installed to `~/.claude/statusline.sh` and wired into `settings.json` automatically by `setup.sh`.
+`config/statusline.sh` is an adaptive two-line statusline for Claude Code sessions. It is installed to `~/.claude/statusline.sh` and wired into Claude `settings.json` automatically by `setup.sh` when Claude setup is enabled.
 
 **Columns (left → right, highest priority leftmost):**
 
@@ -163,7 +165,7 @@ Extracted from `~/.claude/` for replication on any machine.
 
 Terminal width is read from `~/.claude/terminal_width` (written by the shell integration on every prompt and on `SIGWINCH`), which is the only reliable source because Claude Code runs the statusline in a subprocess where `/dev/tty` is inaccessible and `$COLUMNS` is 0.
 
-**Shell integration** is installed by `setup.sh` to `~/.claude/shell-integration.sh` and sourced from `~/.zshrc` / `~/.bashrc`. It keeps `~/.claude/terminal_width` current and writes `~/.claude/shell_pid` so resize events propagate mid-session via `SIGWINCH`.
+**Shell integration** is installed by `setup.sh` to `~/.claude/shell-integration.sh` (Claude target only) and sourced from `~/.zshrc` / `~/.bashrc`. It keeps `~/.claude/terminal_width` current and writes `~/.claude/shell_pid` so resize events propagate mid-session via `SIGWINCH`.
 
 ### 3. Bootstrap Skill
 
@@ -172,10 +174,10 @@ Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
 - Detects which of 17 Pivot-pattern docs exist (BUSINESS_PLAN, ARCHITECTURE, ERD, etc.)
 - Generates missing docs adapted to the target repo's tech stack
 - Creates a trimmed CLAUDE.md (navigation doc only, under 80 lines) if none exists
-- Creates a `.claude/rules/` directory with glob-scoped rule files inferred from the repo's structure
+- Creates AI rule directories (`.claude/rules/`, `.codex/rules/`/`.Codex/rules/`) with glob-scoped rule files inferred from the repo's structure
 - Handles bare repos, partially documented repos, and well-documented repos
 
-### 4. MCP Bridge (Claude Code / Codex)
+### 4. MCP Bridge (AI-Agnostic)
 
 A TypeScript MCP server for bidirectional multi-agent communication.
 
@@ -209,30 +211,40 @@ A TypeScript MCP server for bidirectional multi-agent communication.
 git clone https://github.com/joi-fairshare/agentic-workflow.git ~/repos/agentic-workflow
 cd ~/repos/agentic-workflow
 ./setup.sh
+# Optional target selection:
+#   AI_TARGETS=both   (default)
+#   AI_TARGETS=claude
+#   AI_TARGETS=codex
 ```
 
 The setup script:
-- Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
-- Symlinks skills into `~/.claude/skills/`
+- Checks for Docker (hard prerequisite — aborts with install instructions if missing)
+- Checks for `jq` when Claude setup is enabled (required for Claude statusline wiring)
+- Symlinks skills into selected agent homes:
+  - Claude: `~/.claude/skills/`
+  - Codex: `$CODEX_HOME/skills/` (fallback `~/.codex/skills/`)
 - Copies config files (settings, MCP)
-- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`) to `~/.claude/hooks/`
-- Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
-- Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
+- Installs Claude safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`) to `~/.claude/hooks/` when Claude is targeted
+- Installs Claude statusline and shell integration when Claude is targeted
 - Installs and builds the MCP bridge
 - Builds Serena Docker images (base TS/Python image; opt-in C# extension)
 - Installs the `serena-docker` wrapper script to `~/.local/bin/`
-- Registers `agentic-bridge` and `serena` MCP servers with Claude Code
-- Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright)
-- Registers `xcodebuildmcp` MCP server for iOS simulator automation
+- Registers `agentic-bridge` and `serena` MCP servers for selected targets (Claude and/or Codex)
+- Refreshes existing Serena registrations so updated wrapper args and context env vars actually take effect
+- Starts Serena with a client-specific `SERENA_CONTEXT` and tolerates repos that do not already have `.serena/project.yml`
+- Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright) when Claude is targeted
+- Registers `xcodebuildmcp` MCP server for iOS simulator automation on selected targets
 - Installs rtk (Homebrew on macOS, install script on Linux) and wires `rtk-rewrite.sh` into the Bash hook chain for token-efficient command output
-- Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with Claude Code and Codex
-- Registers `prism-mcp` MCP server with Claude Code and Codex (persistent memory via prism-mcp-server, downloads on first use)
+- Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with selected targets
+- Registers `prism-mcp` MCP server with selected targets (persistent memory via prism-mcp-server, downloads on first use)
 
-### Start the bridge
+### Start the bridge (optional REST API)
 
 ```bash
 cd mcp-bridge && npm start    # Fastify on http://127.0.0.1:3100
 ```
+
+The MCP bridge is already usable after `setup.sh` because Claude/Codex talk to `agentic-bridge` over stdio MCP. Run the REST API only if you specifically need the HTTP endpoints on port `3100`.
 
 ### Environment Variables
 
@@ -263,6 +275,8 @@ Test coverage spans unit tests (controllers, services, DB client, schemas, utili
 agentic-workflow/
 ├── .claude/
 │   └── rules/                 # Glob-scoped domain rules (auto-loaded by Claude Code)
+├── .codex/
+│   └── rules/                 # Glob-scoped domain rules (auto-loaded by Codex when present)
 │       ├── bridge-services.md # AppResult, EventBus, MCP tools
 │       ├── bridge-transport.md # Typed router, controllers, Zod schemas
 │       ├── database.md        # SQLite schema, DbClient
@@ -273,7 +287,7 @@ agentic-workflow/
 │       └── testing.md         # Test patterns, helpers, coverage policy
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
-├── skills/                    # 34 Claude Code custom skills
+├── skills/                    # 34 portable skills (Claude + Codex)
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer

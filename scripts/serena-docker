@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
-# Serena MCP wrapper — mounts current repo into the container at invocation time.
-# Claude Code spawns this from the project directory, so $(pwd) == repo root.
+# Serena MCP wrapper — mounts the current repo into the container at invocation time.
+# AI clients usually spawn this from the project directory, but the repo path and
+# Serena context can also be provided explicitly via environment variables.
 # To upgrade: update BASE_VERSION= here and ARG BASE_TAG in Dockerfile.serena — one each.
 # Note: ghcr.io/oraios/serena only publishes :latest (no versioned tags). BASE_VERSION
 # controls the local image name (serena-local:$BASE_VERSION) for cache invalidation.
 set -euo pipefail
 
-REPO_PATH="$(pwd)"
+REPO_PATH="${SERENA_REPO_PATH:-$(pwd)}"
 REPO_NAME="$(printf '%s' "$(basename "$REPO_PATH")" | tr -c '[:alnum:]-_.' '-')"   # sanitize; printf avoids trailing newline → trailing '-' bug
 CONTAINER_NAME="serena-${REPO_NAME}"                 # stable name enables pre-flight eviction on restart
 BASE_VERSION="latest"                                 # single source of truth for version
+SERENA_CONTEXT="${SERENA_CONTEXT:-claude-code}"
+PROJECT_CONFIG_PATH="${REPO_PATH}/.serena/project.yml"
+
+if [ ! -d "${REPO_PATH}" ]; then
+  echo "ERROR: Serena repo path does not exist: ${REPO_PATH}" >&2
+  echo "       Set SERENA_REPO_PATH to the target project root before launching Serena." >&2
+  exit 1
+fi
 
 # Select image based on repo's declared languages in .serena/project.yml
 # Repos with 'csharp' in their languages list use the C# extension image
 IMAGE="serena-local:${BASE_VERSION}"
-if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space:]]*csharp([[:space:]]|$)' "${REPO_PATH}/.serena/project.yml"; then
+if [ -f "${PROJECT_CONFIG_PATH}" ] && grep -qE '^[[:space:]]*-[[:space:]]*csharp([[:space:]]|$)' "${PROJECT_CONFIG_PATH}"; then
   IMAGE="serena-local:${BASE_VERSION}-csharp"
 fi
 
@@ -46,7 +55,7 @@ mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/
 SWIFT_SOCAT_PID=""
 SOCKET_PATH=""
 
-if [ -f "${REPO_PATH}/.serena/project.yml" ] && grep -qE '^[[:space:]]*-[[:space:]]*swift([[:space:]]|$)' "${REPO_PATH}/.serena/project.yml"; then
+if [ -f "${PROJECT_CONFIG_PATH}" ] && grep -qE '^[[:space:]]*-[[:space:]]*swift([[:space:]]|$)' "${PROJECT_CONFIG_PATH}"; then
   if ! command -v socat &>/dev/null; then
     echo "WARN: 'socat' not found — Swift LSP bridge disabled. Install with: brew install socat" >&2
     echo "WARN: Serena will start without Swift LSP support." >&2
@@ -123,11 +132,13 @@ trap cleanup EXIT
 DOCKER_OPTS=(
   "--name" "${CONTAINER_NAME}" "--rm" "-i"
   "-v" "${REPO_PATH}:/workspaces/projects/${REPO_NAME}:ro"
-  "-v" "${REPO_PATH}/.serena/project.yml:/workspaces/projects/${REPO_NAME}/.serena/project.yml"
   "-v" "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache"
   "-v" "${REPO_PATH}/.serena/logs:/workspaces/projects/${REPO_NAME}/.serena/logs"
   "-v" "${REPO_PATH}/.serena/memory:/workspaces/projects/${REPO_NAME}/.serena/memory"
 )
+if [ -f "${PROJECT_CONFIG_PATH}" ]; then
+  DOCKER_OPTS+=("-v" "${PROJECT_CONFIG_PATH}:/workspaces/projects/${REPO_NAME}/.serena/project.yml")
+fi
 if [ -n "${SOCKET_PATH}" ]; then
   DOCKER_OPTS+=("-v" "${SOCKET_PATH}:/tmp/sourcekit-lsp.sock")
 fi
@@ -135,5 +146,5 @@ fi
 docker run "${DOCKER_OPTS[@]}" \
   "${IMAGE}" \
   serena start-mcp-server \
-  --context claude-code \
+  --context "${SERENA_CONTEXT}" \
   --project "/workspaces/projects/${REPO_NAME}"

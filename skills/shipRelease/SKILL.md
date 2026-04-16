@@ -82,21 +82,37 @@ echo "repo-slug: $REPO_SLUG"
 # Check bootstrap status
 SKILLS_OK=true
 for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+  if [ -d "$HOME/.claude/skills/$s" ] || [ -d "${CODEX_HOME:-$HOME/.codex}/skills/$s" ] || [ -d "$HOME/.Codex/skills/$s" ]; then
+    true
+  else
+    SKILLS_OK=false
+  fi
 done
 
 BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
+if command -v claude &>/dev/null && claude mcp list 2>/dev/null | grep -q "agentic-bridge"; then
+  BRIDGE_OK=true
+elif command -v codex &>/dev/null && codex mcp list 2>/dev/null | grep -q "agentic-bridge"; then
+  BRIDGE_OK=true
+elif lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null; then
+  BRIDGE_OK=true
+fi
 
 RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
+if [ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+elif [ -d ".codex/rules" ] && [ -n "$(ls -A .codex/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+elif [ -d ".Codex/rules" ] && [ -n "$(ls -A .Codex/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+fi
 
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+Domain rules in `.claude/rules/`, `.codex/rules/`, or `.Codex/rules/` load automatically per glob — no action needed if `rules-directory: true`.
 
 If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
@@ -105,7 +121,7 @@ If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from th
 If **no**: warn that some features may not work, then continue.
 
 If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
+> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` plus `.codex/rules/` (or `.Codex/rules/`) for this repo."
 
 Create the output directory for this repo:
 ```bash

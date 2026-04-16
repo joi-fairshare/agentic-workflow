@@ -2,40 +2,40 @@
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with three independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent coordination, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously.
+Agentic Workflow is a portable AI-agent toolkit optimized for ChatGPT Codex and Claude Code with three independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent coordination, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into agent homes (`~/.claude/skills/` and/or `~/.codex/skills/`) and invoked as slash commands inside supported AI client sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add` or `codex mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously.
 
 ```mermaid
 graph TD
-    subgraph "Claude Code Session — Planning"
+    subgraph "AI Client Session — Planning"
         User --> |"/officeHours"| OfficeHours[officeHours skill]
         User --> |"/productReview"| ProductReview[productReview skill]
         User --> |"/archReview"| ArchReview[archReview skill]
     end
 
-    subgraph "Claude Code Session — Review"
+    subgraph "AI Client Session — Review"
         User --> |"/review 42"| Review[review skill]
         User --> |"/postReview"| PostReview[postReview skill]
         User --> |"/addressReview"| AddressReview[addressReview skill]
     end
 
-    subgraph "Claude Code Session — QA & Debug"
+    subgraph "AI Client Session — QA & Debug"
         User --> |"/rootCause"| RootCause[rootCause skill]
         User --> |"/bugHunt"| BugHunt[bugHunt skill]
         User --> |"/bugReport"| BugReport[bugReport skill]
     end
 
-    subgraph "Claude Code Session — Ship & Retro"
+    subgraph "AI Client Session — Ship & Retro"
         User --> |"/shipRelease"| ShipRelease[shipRelease skill]
         User --> |"/syncDocs"| SyncDocs[syncDocs skill]
         User --> |"/weeklyRetro"| WeeklyRetro[weeklyRetro skill]
     end
 
-    subgraph "Claude Code Session — Utilities"
+    subgraph "AI Client Session — Utilities"
         User --> |"/enhancePrompt"| EnhancePrompt[enhancePrompt skill]
         User --> |"/bootstrap"| Bootstrap[bootstrap skill]
     end
 
-    subgraph "Claude Code Session — Design"
+    subgraph "AI Client Session — Design"
         User --> |"/design-analyze"| DesignAnalyze[design-analyze skill]
         User --> |"/design-language"| DesignLanguage[design-language skill]
         User --> |"/design-evolve"| DesignEvolve[design-evolve skill]
@@ -99,7 +99,7 @@ Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream 
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills (34)
+├── skills/                              # Portable AI client slash-command skills (34)
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -121,7 +121,7 @@ agentic-workflow/
 │   ├── shipRelease/                     # /shipRelease — sync, test, push, PR
 │   │   └── SKILL.md                     #   pre-flight → sync → test → push → PR → syncDocs
 │   ├── syncDocs/                        # /syncDocs — post-ship doc updater
-│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/
+│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md, and rule directories
 │   ├── weeklyRetro/                     # /weeklyRetro — weekly retrospective
 │   │   └── SKILL.md                     #   per-person breakdown, shipping streaks, insights
 │   ├── officeHours/                     # /officeHours — YC-style brainstorming
@@ -156,7 +156,7 @@ agentic-workflow/
 │       └── skill-lock.sh               # Shared lock script sourced by platform sub-skills to prevent concurrent runs
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
-├── config/                              # Claude Code configuration archive
+├── config/                              # AI client configuration archive
 │   ├── settings.json                    #   model, plugins, permissions, statusLine command, PreToolUse + SessionStart hook registrations
 │   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
 │   ├── mcp.json                         #   MCP server registrations (xcodebuildmcp)
@@ -221,7 +221,7 @@ agentic-workflow/
 ├── .serena/                             # Serena LSP per-repo configuration
 │   └── project.yml                      #   Language servers, ignored_paths, read_only flag
 ├── .claude/
-│   ├── rules/                           # Glob-scoped domain rules (auto-loaded by Claude Code)
+│   ├── rules/                           # Glob-scoped domain rules (Claude client)
 │   │   ├── bridge-services.md           #   AppResult pattern, MCP tools, service contracts
 │   │   ├── bridge-transport.md          #   Typed router, controller factories, Zod schema conventions
 │   │   ├── database.md                  #   DbClient, schema reference, idempotency
@@ -231,6 +231,8 @@ agentic-workflow/
 │   │   ├── skills.md                    #   Skill structure, preamble format, repo slug, output dirs
 │   │   └── testing.md                   #   Test infrastructure, shared helpers, coverage policy
 │   └── settings.json                    #   disableBypassPermissionsMode, enabledMcpjsonServers
+├── .codex/
+│   └── rules -> ../.claude/rules       # Codex rule mirror (symlink)
 ├── .dockerignore                        # Excludes node_modules, dist, *.db from Docker build context
 ├── setup.sh                             # One-command installer: skills, config, statusline, hooks, Serena Docker images, MCP registration
 ├── .gitignore                           # Ignores node_modules, dist, *.db, .env, .review-cache
@@ -256,7 +258,7 @@ The repo slug is derived from `git remote get-url origin` (e.g., `org-name-repo-
 
 ### Overview
 
-Thirty-four Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 34 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
+Thirty-four portable AI client skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that the AI client executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 34 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
 
 ### Review Pipeline (skills/review/, postReview/, addressReview/)
 
@@ -280,7 +282,7 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 **`/shipRelease`** — Pre-flight checks (clean tree, branch exists), fetch and rebase on base, run tests, audit coverage, push, open PR via `gh`, then auto-invoke `/syncDocs`. Writes release report to `releases/`.
 
-**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and the `.claude/rules/` rule files with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
+**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and rule files (`.claude/rules/`, `.codex/rules/`) with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
 
 **`/weeklyRetro`** — Analyzes git history for per-person breakdowns (commits, lines, areas of activity), shipping streaks, test health trends, and generates actionable insights. Compares to previous retros if available. Writes retrospective to `retros/`.
 
@@ -328,22 +330,22 @@ A utility skill that discovers project documentation files (CLAUDE.md, planning/
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 34-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), rule directories (`.claude/rules/` and `.codex/rules/`) inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 34-skill pipeline as next steps.
 
 ### Serena LSP Integration
 
-Serena is a Dockerized LSP MCP server that provides symbol navigation (find definitions, usages, call hierarchy) for any repo. It is registered globally via `claude mcp add --scope user` and is available in every Claude Code session. Prerequisite: Docker Desktop must be installed and running.
+Serena is a Dockerized LSP MCP server that provides symbol navigation (find definitions, usages, call hierarchy) for any repo. It is registered globally via `claude mcp add --scope user` or `codex mcp add` and is available in every Claude Code or Codex session. Prerequisite: Docker Desktop must be installed and running.
 
-- **`scripts/serena-docker`** — Wrapper script that launches the Serena Docker container, mounting the repo root read-only with writable bind mounts for `.serena/cache`, `.serena/logs`, and `.serena/memory`. Auto-selects the C# image when `.serena/project.yml` declares `csharp` in its languages list. Installed to `~/.local/bin/serena-docker` by `setup.sh`.
+- **`scripts/serena-docker`** — Wrapper script that launches the Serena Docker container, mounting the repo root read-only with writable bind mounts for `.serena/cache`, `.serena/logs`, and `.serena/memory`. It accepts `SERENA_CONTEXT` / `SERENA_REPO_PATH` overrides, only mounts `.serena/project.yml` when the file exists, and auto-selects the C# image when that config declares `csharp`. Installed to `~/.local/bin/serena-docker` by `setup.sh`.
 - **`.serena/project.yml`** — Per-repo config (language servers, `ignored_paths`, `read_only: true`). Generated by `/bootstrap` and committed to the repo. `ignored_paths` controls LSP indexing only — Serena's `read_file` tool is not constrained by it.
-- **`.claude/rules/mcp-servers.md`** — Project-scoped rule loaded into every Claude Code session. Documents all registered MCP servers and provides a decision table for when to use Serena vs Grep/Read.
+- **Rule files (`.claude/rules/` + `.codex/rules/`)** — Project-scoped guidance loaded by each client. Includes MCP server usage guidance and decision tables for when to use Serena vs Grep/Read.
 - **Two-image strategy** — The base image (`serena-local:latest`) supports TypeScript, Python, Go, Rust, and most other languages. The C# extension image (`serena-local:latest-csharp`) adds OmniSharp and .NET SDK; it is auto-built by `setup.sh` when `.csproj`/`.cs` files are detected, or manually via `BUILD_CSHARP=1 ./setup.sh`.
 
 ## Component 2: MCP Bridge (mcp-bridge/)
 
 ### Overview
 
-A TypeScript application providing two transport layers over the same business logic: a Fastify REST API (for HTTP clients) and an MCP stdio server (for Claude Code tool calls). Both transports share the same `DbClient` and application services. The bridge enables asynchronous message-passing between AI agents using a SQLite store-and-forward pattern.
+A TypeScript application providing two transport layers over the same business logic: a Fastify REST API (for HTTP clients) and an MCP stdio server (for AI client tool calls). Both transports share the same `DbClient` and application services. The bridge enables asynchronous message-passing between AI agents using a SQLite store-and-forward pattern.
 
 ### Layered Architecture
 
@@ -394,22 +396,22 @@ Nine endpoints on Fastify (default `127.0.0.1:3100`):
 
 The server refuses to bind to non-loopback addresses unless `ALLOW_REMOTE=1` is set, since the API has no authentication.
 
-## Component 3: Config Archive (config/, .claude/)
+## Component 3: Config Archive (config/, .claude/, .codex/)
 
-Archived Claude Code configuration for replication across machines:
+Archived AI client configuration for replication across machines:
 
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
 - **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@2.3.0 mcp`) for iOS Simulator control.
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
-- **`.claude/rules/`** — Glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `hooks.md`, `mcp-servers.md`, `skills.md`, `testing.md`.
+- **Rule directories (`.claude/rules/`, `.codex/rules/`)** — Glob-scoped rule files auto-loaded by each client when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `hooks.md`, `mcp-servers.md`, `skills.md`, `testing.md`.
 
 ## Key Rules
 
-1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt — Claude Code executes it step-by-step. No runtime code, no build step.
+1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt — the AI client executes it step-by-step. No runtime code, no build step.
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, rule directories present (`.claude/rules/` or `.codex/rules/`)). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 
@@ -421,7 +423,7 @@ Archived Claude Code configuration for replication across machines:
 
 8. **Subagents run in parallel via the Agent tool.** Both `/review` (reviewer subagents) and `/addressReview` (implementer subagents) spawn all agents simultaneously in a single message. Triage always runs sequentially first to determine the agent assignments.
 
-9. **Setup is symlink-based.** `setup.sh` creates symlinks from `~/.claude/skills/` into this repo rather than copying files. Changes to skill definitions take effect immediately without re-running setup. Setup also creates the `~/.agentic-workflow/` base directory, builds the Serena Docker image(s), installs the `serena-docker` wrapper to `~/.local/bin/`, and registers Serena as a global MCP server via `claude mcp add --scope user`.
+9. **Setup is symlink-based.** `setup.sh` creates symlinks from `~/.claude/skills/` and/or `~/.codex/skills/` into this repo rather than copying files. Changes to skill definitions take effect immediately without re-running setup. Setup also creates the `~/.agentic-workflow/` base directory, builds the Serena Docker image(s), installs the `serena-docker` wrapper to `~/.local/bin/`, and registers Serena as a global MCP server via `claude mcp add --scope user` or `codex mcp add`.
 
 10. **The MCP server and REST API share identical business logic.** `mcp.ts` calls the same service functions as the Fastify controllers. The only difference is transport: stdio with `resultToContent()` formatting vs. HTTP with `ApiResponse<T>` envelopes.
 

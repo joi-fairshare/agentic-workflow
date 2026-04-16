@@ -1,8 +1,8 @@
 ---
 name: bootstrap
-description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
-argument-hint: [--force] [--product-docs <url-or-path>]...
-allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
+description: "Analyze a repository's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents."
+argument-hint: "[--force] [--product-docs <url-or-path>]..."
+allowed-tools: "Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill"
 ---
 
 <!-- === PREAMBLE START === -->
@@ -77,21 +77,31 @@ echo "repo-slug: $REPO_SLUG"
 # Check bootstrap status
 SKILLS_OK=true
 for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+  if [ -d "$HOME/.claude/skills/$s" ] || [ -d "${CODEX_HOME:-$HOME/.codex}/skills/$s" ] || [ -d "$HOME/.Codex/skills/$s" ]; then
+    true
+  else
+    SKILLS_OK=false
+  fi
 done
 
 BRIDGE_OK=false
 lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
+if [ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+elif [ -d ".codex/rules" ] && [ -n "$(ls -A .codex/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+elif [ -d ".Codex/rules" ] && [ -n "$(ls -A .Codex/rules/ 2>/dev/null)" ]; then
+  RULES_OK=true
+fi
 
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+Domain rules in `.claude/rules/`, `.codex/rules/`, or `.Codex/rules/` load automatically per glob — no action needed if `rules-directory: true`.
 
 If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
@@ -100,7 +110,7 @@ If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from th
 If **no**: warn that some features may not work, then continue.
 
 If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
+> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` plus `.codex/rules/` (or `.Codex/rules/`) for this repo."
 
 Create the output directory for this repo:
 ```bash
@@ -345,7 +355,7 @@ Check for each of the 17 Pivot-pattern documents. Search flexibly — docs may e
 | `COMPETITIVE_ANALYSIS` | `*competitive*`, `*competitor*`, `*market*analysis*` |
 | `GO_TO_MARKET` | `*go*to*market*`, `*gtm*`, `*launch*`, `*marketing*` |
 
-Also check if a `CLAUDE.md` exists and whether a `.claude/rules/` directory already exists (and if so, how many files it contains).
+Also check if a `CLAUDE.md` exists and whether `.claude/rules/` and/or `.codex/rules/` (`.Codex/rules/`) directories already exist (and if so, how many files they contain).
 
 Report findings:
 ```
@@ -375,6 +385,8 @@ Missing (M/17):
 
 CLAUDE.md:       [exists / missing]
 .claude/rules/:  [exists (N files) / missing]
+.codex/rules/:   [exists (N files) / missing]
+.Codex/rules/:   [exists (N files) / missing]
 ```
 
 If `--force` was passed, treat all docs as missing and regenerate.
@@ -423,7 +435,7 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
 
 5. **Place docs in `planning/`.** Create the directory if it doesn't exist. Use UPPER_SNAKE_CASE filenames with `.md` extension.
 
-## Step 6: Generate CLAUDE.md + .claude/rules/ (if missing)
+## Step 6: Generate CLAUDE.md + AI Rule Directories (if missing)
 
 ### Step 6a: Generate CLAUDE.md
 
@@ -434,7 +446,7 @@ Create a trimmed CLAUDE.md (under 80 lines) that serves as a navigation document
 
 > {one-line tagline describing the project}
 
-Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
+Domain-specific rules are in `.claude/rules/` and `.codex/rules/` (`.Codex/rules/`) — they load automatically when working on matching files.
 
 ## Required Context
 
@@ -481,11 +493,11 @@ Format: `type: short description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 ```
 
-Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in `.claude/rules/` files.
+Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in rule files.
 
-### Step 6b: Generate .claude/rules/
+### Step 6b: Generate `.claude/rules/` and `.codex/rules/` (`.Codex/rules/`)
 
-After generating CLAUDE.md, inspect the target repo's directory structure and tech stack to generate a `.claude/rules/` directory with glob-scoped rule files. Each rule file loads automatically when Claude Code works on matching files.
+After generating CLAUDE.md, inspect the target repo's directory structure and tech stack to generate both `.claude/rules/` and `.codex/rules/` (`.Codex/rules/`) directories with matching glob-scoped rule files.
 
 **Infer rule file groupings from what directories actually exist.** Examples by tech stack:
 
@@ -540,16 +552,18 @@ After generating docs and CLAUDE.md, configure Serena LSP for the repo.
 - `swift` — sourcekit-lsp is a macOS binary; Serena runs in a Linux Docker container. Swift LSP requires the separate `serena-local:latest-swift` image and host-side socket bridge. Add manually after running `BUILD_SWIFT=1 ./setup.sh`.
 - `csharp` — requires the `-csharp` image variant. Add manually after running `BUILD_CSHARP=1 ./setup.sh`.
 
-**Sensitive path audit:** flag `.claude/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
+**Sensitive path audit:** flag `.claude/`, `.Codex/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
 
 **RULES_OK check:**
 ```bash
 RULES_OK=false
 [ -d ".claude/rules" ] && RULES_OK=true
+[ -d ".codex/rules" ] && RULES_OK=true
+[ -d ".Codex/rules" ] && RULES_OK=true
 echo "rules-directory: $RULES_OK"
 ```
 If `RULES_OK=false`, print:
-> "WARN: .claude/rules/ not found — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
+> "WARN: No rule directory found (`.claude/rules/`, `.codex/rules/`, or `.Codex/rules/`) — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
 
 **Derive repo name for project_name field:**
 ```bash
@@ -659,11 +673,11 @@ Existing (unchanged):
   planning/API_CONTRACT.md
   planning/ERD.md
 
-Total: 17/17 docs + CLAUDE.md + .claude/rules/ + design language
+Total: 17/17 docs + CLAUDE.md + `.claude/rules/` + `.codex/rules/` (`.Codex/rules/`) + design language
 
 Next steps:
   1. Review generated docs for accuracy
-  2. Commit: git add planning/ CLAUDE.md .claude/ && git commit -m "docs: bootstrap planning documents"
+  2. Commit: git add planning/ CLAUDE.md .claude/ .Codex/ && git commit -m "docs: bootstrap planning documents"
   3. Refine any docs that need domain-specific detail
 
 Suggested workflow:

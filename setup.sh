@@ -2,10 +2,45 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
-# Check for jq (required by statusline install and runtime)
-if ! command -v jq &>/dev/null; then
+if [ -n "${CODEX_HOME:-}" ]; then
+  CODEX_DIR="$CODEX_HOME"
+elif [ -d "$HOME/.codex" ]; then
+  CODEX_DIR="$HOME/.codex"
+else
+  CODEX_DIR="$HOME/.Codex"
+fi
+
+AI_TARGETS_RAW="${AI_TARGETS:-both}"
+AI_TARGETS=$(echo "$AI_TARGETS_RAW" | tr '[:upper:]' '[:lower:]')
+
+INSTALL_CLAUDE=false
+INSTALL_CODEX=false
+case "$AI_TARGETS" in
+  both | all)
+    INSTALL_CLAUDE=true
+    INSTALL_CODEX=true
+    ;;
+  claude | anthropic)
+    INSTALL_CLAUDE=true
+    ;;
+  codex | chatgpt | openai)
+    INSTALL_CODEX=true
+    ;;
+  *)
+    echo "WARN: Unknown AI_TARGETS='$AI_TARGETS_RAW'. Falling back to 'both'."
+    INSTALL_CLAUDE=true
+    INSTALL_CODEX=true
+    ;;
+esac
+
+SKILL_ROOTS=()
+$INSTALL_CLAUDE && SKILL_ROOTS+=("$CLAUDE_DIR/skills")
+$INSTALL_CODEX && SKILL_ROOTS+=("$CODEX_DIR/skills")
+
+# Check for jq when Claude setup is enabled (required by statusline install and runtime)
+if $INSTALL_CLAUDE && ! command -v jq &>/dev/null; then
   echo ""
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                  MISSING REQUIRED DEPENDENCY                ║"
@@ -26,7 +61,7 @@ fi
 # Canonical list of skills managed by this toolkit.
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
 # It is not symlinked directly — each skill accesses it via path traversal
-# from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
+# from its own symlink: $(dirname "$(readlink -f "<agent-home>/skills/<name>/SKILL.md")")/../_shared
 MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
 
 echo "=== Agentic Workflow Setup ==="
@@ -110,166 +145,173 @@ install_skill() {
   fi
 }
 
-# --- Skills ---
-echo "Installing skills..."
-mkdir -p "$CLAUDE_DIR/skills"
+install_managed_skills_for_root() {
+  local skills_root="$1"
 
-for skill in "${MANAGED_SKILLS[@]}"; do
-  install_skill "$skill" "$CLAUDE_DIR/skills/$skill" "$SCRIPT_DIR/skills/$skill"
-done
+  echo ""
+  echo "Installing skills into $skills_root..."
+  mkdir -p "$skills_root"
 
-# --- Bootstrap Skill (separate dir) ---
-echo ""
-echo "Installing bootstrap skill..."
-install_skill "bootstrap" "$CLAUDE_DIR/skills/bootstrap" "$SCRIPT_DIR/bootstrap"
+  for skill in "${MANAGED_SKILLS[@]}"; do
+    install_skill "$skill" "$skills_root/$skill" "$SCRIPT_DIR/skills/$skill"
+  done
 
-# --- Clean up stale skills from previous versions ---
-echo ""
-echo "Checking for stale skills..."
+  echo ""
+  echo "Installing bootstrap skill into $skills_root..."
+  install_skill "bootstrap" "$skills_root/bootstrap" "$SCRIPT_DIR/bootstrap"
 
-# Build a lookup of current managed skills (including bootstrap)
-ALL_MANAGED=("${MANAGED_SKILLS[@]}" "bootstrap")
+  echo ""
+  echo "Checking for stale skills in $skills_root..."
 
-for existing in "$CLAUDE_DIR/skills"/*/; do
-  [ -d "$existing" ] || continue
-  skill_name=$(basename "$existing")
+  local all_managed
+  all_managed=("${MANAGED_SKILLS[@]}" "bootstrap")
 
-  # Skip if it's in our managed list
-  is_managed=false
-  for managed in "${ALL_MANAGED[@]}"; do
-    if [ "$skill_name" = "$managed" ]; then
-      is_managed=true
-      break
+  for existing in "$skills_root"/*/; do
+    [ -d "$existing" ] || continue
+    skill_name=$(basename "$existing")
+
+    # Skip if it's in our managed list
+    is_managed=false
+    for managed in "${all_managed[@]}"; do
+      if [ "$skill_name" = "$managed" ]; then
+        is_managed=true
+        break
+      fi
+    done
+    $is_managed && continue
+
+    # Only flag symlinks that point into our repo as stale
+    if [ -L "$existing" ]; then
+      link_target=$(readlink "$existing" 2>/dev/null || echo "")
+      if [[ "$link_target" == *"/agentic-workflow/"* ]] || [[ "$link_target" == *"/agentic-workflow-"* ]]; then
+        echo "  ⚠ STALE: $skill_name → $link_target"
+        echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
+        echo "    Remove it? (y/n)"
+        read -r answer
+        if [ "$answer" = "y" ]; then
+          rm "$existing"
+          echo "  $skill_name: removed"
+        else
+          echo "  $skill_name: kept"
+        fi
+      fi
     fi
   done
-  $is_managed && continue
+}
 
-  # Only flag symlinks that point into our repo as stale
-  if [ -L "$existing" ]; then
-    link_target=$(readlink "$existing" 2>/dev/null || echo "")
-    if [[ "$link_target" == *"/agentic-workflow/"* ]] || [[ "$link_target" == *"/agentic-workflow-"* ]]; then
-      echo "  ⚠ STALE: $skill_name → $link_target"
-      echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
-      echo "    Remove it? (y/n)"
-      read -r answer
-      if [ "$answer" = "y" ]; then
-        rm "$existing"
-        echo "  $skill_name: removed"
-      else
-        echo "  $skill_name: kept"
+for skills_root in "${SKILL_ROOTS[@]}"; do
+  install_managed_skills_for_root "$skills_root"
+done
+
+if $INSTALL_CLAUDE; then
+  # --- Settings ---
+  echo ""
+  echo "Installing Claude settings..."
+
+  SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+  if [ -f "$SETTINGS_FILE" ]; then
+    echo "  settings.json already exists."
+    echo "  Current file will NOT be overwritten."
+    echo "  Compare manually: diff $SETTINGS_FILE $SCRIPT_DIR/config/settings.json"
+  else
+    cp "$SCRIPT_DIR/config/settings.json" "$SETTINGS_FILE"
+    echo "  settings.json: copied"
+  fi
+
+  # --- Statusline ---
+  echo ""
+  echo "Installing Claude statusline..."
+  cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/statusline.sh"
+  chmod +x "$CLAUDE_DIR/statusline.sh"
+  echo "  statusline script installed"
+
+  # Merge statusLine into existing settings.json if absent
+  if [ -f "$SETTINGS_FILE" ]; then
+    if command -v jq &>/dev/null; then
+      # Add statusLine key if absent (use has() so null values are not re-merged)
+      if ! jq -e 'has("statusLine")' "$SETTINGS_FILE" &>/dev/null; then
+        jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
+          "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+        echo "  statusLine config added to existing settings.json"
+      fi
+
+      # Merge Stop hook if not already present
+      if ! jq -e 'has("hooks") and (.hooks | has("Stop"))' "$SETTINGS_FILE" &>/dev/null; then
+        STOP_HOOK='[{"hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; sleep 0.05; true"}]}]'
+        jq --argjson stop "$STOP_HOOK" '.hooks.Stop = $stop' \
+          "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+        echo "  hooks.Stop added to existing settings.json"
+      fi
+
+      # Merge PreToolUse hook if not already present
+      if ! jq -e 'has("hooks") and (.hooks | has("PreToolUse"))' "$SETTINGS_FILE" &>/dev/null; then
+        PRETOOLUSE_HOOK='[{"matcher":".*","hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; true"}]}]'
+        jq --argjson ptu "$PRETOOLUSE_HOOK" '.hooks.PreToolUse = $ptu' \
+          "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+        echo "  hooks.PreToolUse added to existing settings.json"
       fi
     fi
   fi
-done
 
-# --- Settings ---
-echo ""
-echo "Installing settings..."
+  # --- Safety Hooks ---
+  echo ""
+  echo "Installing Claude safety hooks..."
 
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-if [ -f "$SETTINGS_FILE" ]; then
-  echo "  settings.json already exists."
-  echo "  Current file will NOT be overwritten."
-  echo "  Compare manually: diff $SETTINGS_FILE $SCRIPT_DIR/config/settings.json"
-else
-  cp "$SCRIPT_DIR/config/settings.json" "$SETTINGS_FILE"
-  echo "  settings.json: copied"
-fi
+  HOOKS_DIR="$CLAUDE_DIR/hooks"
+  mkdir -p "$HOOKS_DIR"
 
-# --- Statusline ---
-echo ""
-echo "Installing statusline..."
-cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/statusline.sh"
-chmod +x "$CLAUDE_DIR/statusline.sh"
-echo "  statusline script installed"
+  for hook_file in "$SCRIPT_DIR/config/hooks/"*.sh; do
+    [ -f "$hook_file" ] || continue
+    hook_name="$(basename "$hook_file")"
+    cp "$hook_file" "$HOOKS_DIR/$hook_name"
+    chmod +x "$HOOKS_DIR/$hook_name"
+    echo "  $hook_name: installed"
+  done
 
-# Merge statusLine into existing settings.json if absent
-if [ -f "$SETTINGS_FILE" ]; then
-  if command -v jq &>/dev/null; then
-    # Add statusLine key if absent (use has() so null values are not re-merged)
-    if ! jq -e 'has("statusLine")' "$SETTINGS_FILE" &>/dev/null; then
-      jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  statusLine config added to existing settings.json"
+  # Merge safety hooks into existing settings.json
+  if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
+    # Replace any existing Bash matcher entry with the canonical one (fully idempotent, handles version drift)
+    HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"},{"type":"command","command":"~/.claude/hooks/rtk-rewrite.sh"}]}'
+    jq --argjson entry "$HOOK_BASH_ENTRY" \
+      '.hooks.PreToolUse = ([.hooks.PreToolUse[]? | select(.matcher != "Bash")] + [$entry])' \
+      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+      && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo "  hooks.PreToolUse: Bash safety hooks installed (idempotent replace)"
+
+    # Add git-context SessionStart hook if not already present
+    if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("git-context"))' "$SETTINGS_FILE" &>/dev/null; then
+      HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}]'
+      if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
+        jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
+          "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      else
+        jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
+          "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      fi
+      echo "  hooks.SessionStart: git-context added"
     fi
 
-    # Merge Stop hook if not already present
-    if ! jq -e 'has("hooks") and (.hooks | has("Stop"))' "$SETTINGS_FILE" &>/dev/null; then
-      STOP_HOOK='[{"hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; sleep 0.05; true"}]}]'
-      jq --argjson stop "$STOP_HOOK" '.hooks.Stop = $stop' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  hooks.Stop added to existing settings.json"
-    fi
-
-    # Merge PreToolUse hook if not already present
-    if ! jq -e 'has("hooks") and (.hooks | has("PreToolUse"))' "$SETTINGS_FILE" &>/dev/null; then
-      PRETOOLUSE_HOOK='[{"matcher":".*","hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; true"}]}]'
-      jq --argjson ptu "$PRETOOLUSE_HOOK" '.hooks.PreToolUse = $ptu' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  hooks.PreToolUse added to existing settings.json"
+    # Remove legacy bridge-context SessionStart hook if present
+    if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
+      jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      echo "  hooks.SessionStart: removed legacy bridge-context hook"
     fi
   fi
-fi
 
-# --- Safety Hooks ---
-echo ""
-echo "Installing safety hooks..."
+  # --- Shell Integration (terminal width sync for statusline) ---
+  echo ""
+  echo "Installing Claude shell integration..."
 
-HOOKS_DIR="$CLAUDE_DIR/hooks"
-mkdir -p "$HOOKS_DIR"
-
-for hook_file in "$SCRIPT_DIR/config/hooks/"*.sh; do
-  [ -f "$hook_file" ] || continue
-  hook_name="$(basename "$hook_file")"
-  cp "$hook_file" "$HOOKS_DIR/$hook_name"
-  chmod +x "$HOOKS_DIR/$hook_name"
-  echo "  $hook_name: installed"
-done
-
-# Merge safety hooks into existing settings.json
-if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
-  # Replace any existing Bash matcher entry with the canonical one (fully idempotent, handles version drift)
-  HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"},{"type":"command","command":"~/.claude/hooks/rtk-rewrite.sh"}]}'
-  jq --argjson entry "$HOOK_BASH_ENTRY" \
-    '.hooks.PreToolUse = ([.hooks.PreToolUse[]? | select(.matcher != "Bash")] + [$entry])' \
-    "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-    && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-  echo "  hooks.PreToolUse: Bash safety hooks installed (idempotent replace)"
-
-  # Add git-context SessionStart hook if not already present
-  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("git-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}]'
-    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
-      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    else
-      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    fi
-    echo "  hooks.SessionStart: git-context added"
-  fi
-
-  # Remove legacy bridge-context SessionStart hook if present
-  if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \
-      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    echo "  hooks.SessionStart: removed legacy bridge-context hook"
-  fi
-fi
-
-# --- Shell Integration (terminal width sync for statusline) ---
-echo ""
-echo "Installing shell integration..."
-
-SHELL_INTEGRATION_FILE="$CLAUDE_DIR/shell-integration.sh"
-# Write integration content to a temp file first; skip overwrite if identical
-_SI_TMP="$(mktemp)"
-cat > "$_SI_TMP" << 'SHELL_EOF'
+  SHELL_INTEGRATION_FILE="$CLAUDE_DIR/shell-integration.sh"
+  # Write integration content to a temp file first; skip overwrite if identical
+  _SI_TMP="$(mktemp)"
+  cat > "$_SI_TMP" << 'SHELL_EOF'
 # Claude Code shell integration — written by agentic-workflow setup.sh
 # Keeps ~/.claude/terminal_width updated so statusline.sh can read the actual
 # terminal width. Claude Code subprocesses cannot access /dev/tty or $COLUMNS,
@@ -302,60 +344,64 @@ fi
 _claude_update_width
 SHELL_EOF
 
-if cmp -s "$_SI_TMP" "$SHELL_INTEGRATION_FILE" 2>/dev/null; then
-  echo "  shell-integration.sh: already up to date (skipped)"
-else
-  mv "$_SI_TMP" "$SHELL_INTEGRATION_FILE"
-  echo "  shell-integration.sh: written"
-fi
-rm -f "$_SI_TMP"
-
-# Add one source line to shell config if not already present
-INTEGRATION_LINE='[ -f ~/.claude/shell-integration.sh ] && source ~/.claude/shell-integration.sh'
-SHELL_CONFIGS=("$HOME/.zshrc" "$HOME/.bashrc")
-ADDED_TO=()
-
-for shell_config in "${SHELL_CONFIGS[@]}"; do
-  if [ -f "$shell_config" ]; then
-    if ! grep -qF 'source ~/.claude/shell-integration.sh' "$shell_config" 2>/dev/null; then
-      printf '\n# Claude Code statusline width sync\n%s\n' "$INTEGRATION_LINE" >> "$shell_config"
-      ADDED_TO+=("$shell_config")
-      echo "  Added to $shell_config"
-    else
-      echo "  Already in $shell_config"
-    fi
+  if cmp -s "$_SI_TMP" "$SHELL_INTEGRATION_FILE" 2>/dev/null; then
+    echo "  shell-integration.sh: already up to date (skipped)"
+  else
+    mv "$_SI_TMP" "$SHELL_INTEGRATION_FILE"
+    echo "  shell-integration.sh: written"
   fi
-done
+  rm -f "$_SI_TMP"
 
-# Initialize the width file immediately from the current interactive shell's tty.
-# Running shell-integration.sh in a non-interactive subshell leaves $COLUMNS unset,
-# causing tput to return 80 regardless of actual terminal size. Reading from /dev/tty
-# directly via stty gives the real dimensions of the parent terminal.
-CURRENT_WIDTH=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
-CURRENT_WIDTH="${CURRENT_WIDTH:-${COLUMNS:-80}}"
-printf '%s\n' "$CURRENT_WIDTH" > "$CLAUDE_DIR/terminal_width"
-echo "  terminal_width initialized: $CURRENT_WIDTH cols"
+  # Add one source line to shell config if not already present
+  INTEGRATION_LINE='[ -f ~/.claude/shell-integration.sh ] && source ~/.claude/shell-integration.sh'
+  SHELL_CONFIGS=("$HOME/.zshrc" "$HOME/.bashrc")
+  ADDED_TO=()
 
-if [ "${#ADDED_TO[@]}" -gt 0 ]; then
-  echo ""
-  echo "  Shell integration added. To enable width sync in this session:"
-  for config in "${ADDED_TO[@]}"; do
-    echo "    source $config"
+  for shell_config in "${SHELL_CONFIGS[@]}"; do
+    if [ -f "$shell_config" ]; then
+      if ! grep -qF 'source ~/.claude/shell-integration.sh' "$shell_config" 2>/dev/null; then
+        printf '\n# Claude Code statusline width sync\n%s\n' "$INTEGRATION_LINE" >> "$shell_config"
+        ADDED_TO+=("$shell_config")
+        echo "  Added to $shell_config"
+      else
+        echo "  Already in $shell_config"
+      fi
+    fi
   done
-fi
 
-# --- MCP Config ---
-echo ""
-echo "Installing MCP config..."
+  # Initialize the width file immediately from the current interactive shell's tty.
+  # Running shell-integration.sh in a non-interactive subshell leaves $COLUMNS unset,
+  # causing tput to return 80 regardless of actual terminal size. Reading from /dev/tty
+  # directly via stty gives the real dimensions of the parent terminal.
+  CURRENT_WIDTH=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+  CURRENT_WIDTH="${CURRENT_WIDTH:-${COLUMNS:-80}}"
+  printf '%s\n' "$CURRENT_WIDTH" > "$CLAUDE_DIR/terminal_width"
+  echo "  terminal_width initialized: $CURRENT_WIDTH cols"
 
-MCP_FILE="$CLAUDE_DIR/mcp.json"
-if [ -f "$MCP_FILE" ]; then
-  echo "  mcp.json already exists."
-  echo "  Current file will NOT be overwritten."
-  echo "  Compare manually: diff $MCP_FILE $SCRIPT_DIR/config/mcp.json"
+  if [ "${#ADDED_TO[@]}" -gt 0 ]; then
+    echo ""
+    echo "  Shell integration added. To enable width sync in this session:"
+    for config in "${ADDED_TO[@]}"; do
+      echo "    source $config"
+    done
+  fi
+
+  # --- MCP Config ---
+  echo ""
+  echo "Installing Claude MCP config..."
+
+  MCP_FILE="$CLAUDE_DIR/mcp.json"
+  if [ -f "$MCP_FILE" ]; then
+    echo "  mcp.json already exists."
+    echo "  Current file will NOT be overwritten."
+    echo "  Compare manually: diff $MCP_FILE $SCRIPT_DIR/config/mcp.json"
+  else
+    cp "$SCRIPT_DIR/config/mcp.json" "$MCP_FILE"
+    echo "  mcp.json: copied"
+  fi
 else
-  cp "$SCRIPT_DIR/config/mcp.json" "$MCP_FILE"
-  echo "  mcp.json: copied"
+  echo ""
+  echo "Skipping Claude config/statusline/hooks setup (AI_TARGETS=$AI_TARGETS_RAW)"
 fi
 
 # --- MCP Bridge: Install, Build, Register ---
@@ -374,29 +420,37 @@ fi
 # Register with Claude Code
 echo ""
 echo "Registering MCP bridge with Claude Code..."
-if command -v claude &>/dev/null; then
-  if claude mcp list 2>&1 | grep -q "agentic-bridge"; then
-    echo "  agentic-bridge: already registered in Claude Code"
+if $INSTALL_CLAUDE; then
+  if command -v claude &>/dev/null; then
+    if claude mcp list 2>&1 | grep -q "agentic-bridge"; then
+      echo "  agentic-bridge: already registered in Claude Code"
+    else
+      claude mcp add --scope user agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
+      echo "  agentic-bridge: registered in Claude Code"
+    fi
   else
-    claude mcp add --scope user agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
-    echo "  agentic-bridge: registered in Claude Code"
+    echo "  claude CLI not found, skipping Claude Code registration"
   fi
 else
-  echo "  claude CLI not found, skipping Claude Code registration"
+  echo "  skipped (AI_TARGETS excludes Claude)"
 fi
 
 # Register with Codex
 echo ""
 echo "Registering MCP bridge with Codex..."
-if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "agentic-bridge"; then
-    echo "  agentic-bridge: already registered in Codex"
+if $INSTALL_CODEX; then
+  if command -v codex &>/dev/null; then
+    if codex mcp list 2>&1 | grep -q "agentic-bridge"; then
+      echo "  agentic-bridge: already registered in Codex"
+    else
+      codex mcp add agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
+      echo "  agentic-bridge: registered in Codex"
+    fi
   else
-    codex mcp add agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
-    echo "  agentic-bridge: registered in Codex"
+    echo "  codex CLI not found, skipping Codex registration"
   fi
 else
-  echo "  codex CLI not found, skipping Codex registration"
+  echo "  skipped (AI_TARGETS excludes Codex)"
 fi
 
 # --- Serena MCP ---
@@ -512,30 +566,69 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
 fi
 
 echo "=== Registering Serena MCP (global) ==="
-claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
-  2>/dev/null \
-  || echo "WARN: Serena already registered (or claude CLI not found)"
+if $INSTALL_CLAUDE; then
+  if command -v claude &>/dev/null; then
+    if claude mcp list 2>/dev/null | grep -q "serena"; then
+      claude mcp remove serena >/dev/null 2>&1 || true
+    fi
+    claude mcp add --scope user serena --env SERENA_CONTEXT=claude-code -- "$HOME/.local/bin/serena-docker"
+  else
+    echo "WARN: claude CLI not found, skipping Serena registration for Claude"
+  fi
+fi
+
+if $INSTALL_CODEX; then
+  if command -v codex &>/dev/null; then
+    if codex mcp list 2>/dev/null | grep -q "serena"; then
+      codex mcp remove serena >/dev/null 2>&1 || true
+    fi
+    codex mcp add serena --env SERENA_CONTEXT=codex -- "$HOME/.local/bin/serena-docker"
+  else
+    echo "WARN: codex CLI not found, skipping Serena registration for Codex"
+  fi
+fi
 
 if [ "$(uname)" = "Darwin" ]; then
   echo "=== Registering XcodeBuildMCP (macOS only) ==="
   XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
-  claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
-    2>/dev/null \
-    || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
+
+  if $INSTALL_CLAUDE; then
+    if command -v claude &>/dev/null; then
+      claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
+        2>/dev/null \
+        || echo "WARN: xcodebuildmcp already registered in Claude Code"
+    else
+      echo "WARN: claude CLI not found, skipping xcodebuildmcp registration for Claude"
+    fi
+  fi
+
+  if $INSTALL_CODEX; then
+    if command -v codex &>/dev/null; then
+      codex mcp add xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
+        2>/dev/null \
+        || echo "WARN: xcodebuildmcp already registered in Codex"
+    else
+      echo "WARN: codex CLI not found, skipping xcodebuildmcp registration for Codex"
+    fi
+  fi
 else
   echo "=== Skipping XcodeBuildMCP (macOS only — not Darwin) ==="
 fi
 
-echo "=== Security check ==="
-if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
-  echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
+if $INSTALL_CLAUDE; then
+  echo "=== Security check ==="
+  if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
+    echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
+  fi
 fi
 
 # --- Claude Code Plugins ---
 echo ""
 echo "Installing Claude Code plugins..."
 
-if command -v claude &>/dev/null; then
+if ! $INSTALL_CLAUDE; then
+  echo "  skipped (AI_TARGETS excludes Claude)"
+elif command -v claude &>/dev/null; then
   # Marketplaces
   MARKETPLACES=(
     "anthropics/claude-plugins-official"
@@ -594,33 +687,66 @@ echo ""
 echo "Installing Impeccable skills..."
 
 IMPECCABLE_VERSION="d6b1a56bc5b79e9375be0f8508b4daa1678fb058"
-IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
-IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/dist/claude-code"
+IMPECCABLE_DIR="$HOME/.agentic-workflow/impeccable-cache"
+IMPECCABLE_SKILLS_SRC=""
 
-if [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
+resolve_impeccable_skills_src() {
+  local candidate
+  for candidate in \
+    "$IMPECCABLE_DIR/dist/claude-code" \
+    "$IMPECCABLE_DIR/.claude/skills" \
+    "$IMPECCABLE_DIR/source/skills"; do
+    if [ -d "$candidate" ]; then
+      IMPECCABLE_SKILLS_SRC="$candidate"
+      return 0
+    fi
+  done
+  IMPECCABLE_SKILLS_SRC=""
+  return 1
+}
+
+if [ -d "$IMPECCABLE_DIR/.git" ]; then
   echo "  impeccable: cache exists, checking for updates..."
   (cd "$IMPECCABLE_DIR" && git fetch origin && git checkout "$IMPECCABLE_VERSION") || \
     echo "  Warning: Could not update Impeccable cache. Using existing version."
-else
-  echo "  impeccable: cloning pbakaus/impeccable..."
-  git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 && \
-    (cd "$IMPECCABLE_DIR" && git checkout "$IMPECCABLE_VERSION") || {
-    echo "  impeccable: failed to clone (non-fatal)"
-    IMPECCABLE_SKILLS_SRC=""
-  }
+fi
+
+resolve_impeccable_skills_src || true
+
+if [ -z "$IMPECCABLE_SKILLS_SRC" ]; then
+  if [ -d "$IMPECCABLE_DIR" ]; then
+    stale_backup="${IMPECCABLE_DIR}.stale.$(date +%Y%m%d%H%M%S)"
+    echo "  impeccable: cache missing expected files, moving stale cache to $stale_backup"
+    mv "$IMPECCABLE_DIR" "$stale_backup" 2>/dev/null || {
+      echo "  impeccable: failed to move stale cache (non-fatal)"
+      IMPECCABLE_SKILLS_SRC=""
+    }
+  fi
+
+  if [ -z "$IMPECCABLE_SKILLS_SRC" ]; then
+    echo "  impeccable: cloning pbakaus/impeccable..."
+    git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 && \
+      (cd "$IMPECCABLE_DIR" && git checkout "$IMPECCABLE_VERSION") && \
+      resolve_impeccable_skills_src || {
+      echo "  impeccable: failed to clone (non-fatal)"
+      IMPECCABLE_SKILLS_SRC=""
+    }
+  fi
 fi
 
 if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
   for skill_dir in "$IMPECCABLE_SKILLS_SRC"/*/; do
     [ -d "$skill_dir" ] || continue
     skill_name=$(basename "$skill_dir")
-    target="$CLAUDE_DIR/skills/$skill_name"
-    # Always copy from cache (overwrite existing) — content is deterministic because
-    # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
-    [ -L "$target" ] && rm "$target"
-    [ -d "$target" ] && rm -rf "$target"
-    cp -r "$skill_dir" "$target"
-    echo "  impeccable/$skill_name: installed"
+    for skills_root in "${SKILL_ROOTS[@]}"; do
+      target="$skills_root/$skill_name"
+      # Always copy from cache (overwrite existing) — content is deterministic because
+      # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
+      [ -L "$target" ] && rm "$target"
+      [ -d "$target" ] && rm -rf "$target"
+      cp -r "$skill_dir" "$target"
+      echo "  impeccable/$skill_name: installed -> $skills_root"
+    done
   done
 else
   echo "  impeccable: skipped (source not available)"
@@ -663,33 +789,57 @@ if [ -z "$HEADROOM_PYTHON" ]; then
   exit 1
 fi
 
-# Derive user-install bin dir (e.g. ~/Library/Python/3.13/bin on macOS)
-HEADROOM_BIN_DIR=$("$HEADROOM_PYTHON" -m site --user-base 2>/dev/null)/bin
-HEADROOM_BIN="$HEADROOM_BIN_DIR/headroom"
+# Install in an isolated venv so headroom does not inherit globally installed
+# scientific/ML packages from Homebrew or user site-packages.
+HEADROOM_VENV_DIR="$HOME/.agentic-workflow/venvs/headroom"
+HEADROOM_VENV_PY="$HEADROOM_VENV_DIR/bin/python"
+HEADROOM_CMD="$HEADROOM_VENV_DIR/bin/headroom"
 
-if command -v headroom &>/dev/null; then
-  echo "  headroom: already installed ($(headroom --version 2>/dev/null || echo 'unknown version'))"
-elif [ -x "$HEADROOM_BIN" ]; then
-  echo "  headroom: already installed at $HEADROOM_BIN ($("$HEADROOM_BIN" --version 2>/dev/null || echo 'unknown version'))"
-else
-  "$HEADROOM_PYTHON" -m pip install --break-system-packages --user "headroom-ai[all]" 2>/dev/null \
-    || "$HEADROOM_PYTHON" -m pip install --user "headroom-ai[all]" \
-    || { echo "FATAL: headroom installation failed."; exit 1; }
-  [ -x "$HEADROOM_BIN" ] || { echo "FATAL: headroom binary not found after installation at $HEADROOM_BIN."; exit 1; }
-  echo "  headroom: installed"
+if [ ! -x "$HEADROOM_VENV_PY" ]; then
+  "$HEADROOM_PYTHON" -m venv "$HEADROOM_VENV_DIR" \
+    || { echo "FATAL: failed to create headroom venv at $HEADROOM_VENV_DIR"; exit 1; }
+  echo "  headroom: created isolated venv at $HEADROOM_VENV_DIR"
 fi
 
-# Use full path when headroom is not on PATH (common after --user install)
-HEADROOM_CMD=$(command -v headroom 2>/dev/null || echo "$HEADROOM_BIN")
+if "$HEADROOM_VENV_PY" -m pip show headroom-ai >/dev/null 2>&1 && [ -x "$HEADROOM_CMD" ]; then
+  echo "  headroom: already installed in isolated venv ($HEADROOM_VENV_DIR)"
+else
+  "$HEADROOM_VENV_PY" -m pip install -U pip >/dev/null 2>&1 || true
+  "$HEADROOM_VENV_PY" -m pip install "headroom-ai[mcp]" 2>/dev/null \
+    || "$HEADROOM_VENV_PY" -m pip install "headroom-ai" \
+    || { echo "FATAL: headroom installation failed in isolated venv."; exit 1; }
+  [ -x "$HEADROOM_CMD" ] || { echo "FATAL: headroom binary not found after venv install at $HEADROOM_CMD."; exit 1; }
+  echo "  headroom: installed in isolated venv ($HEADROOM_VENV_DIR)"
+fi
 
-if command -v claude &>/dev/null; then
-  claude mcp add --scope user headroom -- "$HEADROOM_CMD" mcp serve \
-    2>/dev/null || echo "  WARN: headroom already registered (or claude CLI not found)"
+HEADROOM_WRAPPER_DIR="$HOME/.agentic-workflow/bin"
+HEADROOM_WRAPPER="$HEADROOM_WRAPPER_DIR/headroom-safe"
+HEADROOM_CMD_ESCAPED=$(printf '%q' "$HEADROOM_CMD")
+
+mkdir -p "$HEADROOM_WRAPPER_DIR"
+cat > "$HEADROOM_WRAPPER" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Avoid known macOS OpenMP duplicate runtime aborts when torch and Homebrew libs
+# are both present in the same Python process.
+unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
+export PYTHONNOUSERSITE=1
+export KMP_DUPLICATE_LIB_OK=TRUE
+
+exec $HEADROOM_CMD_ESCAPED "\$@"
+EOF
+chmod +x "$HEADROOM_WRAPPER"
+echo "  headroom: launcher wrapper installed at $HEADROOM_WRAPPER"
+
+if $INSTALL_CLAUDE && command -v claude &>/dev/null; then
+  claude mcp add --scope user headroom -- "$HEADROOM_WRAPPER" mcp serve \
+    2>/dev/null || echo "  WARN: headroom already registered in Claude Code"
   echo "  headroom: registered with Claude Code"
 fi
 
-if command -v codex &>/dev/null; then
-  codex mcp add headroom -- "$HEADROOM_CMD" mcp serve \
+if $INSTALL_CODEX && command -v codex &>/dev/null; then
+  codex mcp add headroom -- "$HEADROOM_WRAPPER" mcp serve \
     2>/dev/null || echo "  WARN: headroom Codex registration skipped"
   echo "  headroom: registered with Codex"
 fi
@@ -700,25 +850,29 @@ echo "=== Installing prism-mcp ==="
 
 PRISM_VERSION="5.1.0"  # pin: bump here when upgrading
 
-if command -v claude &>/dev/null; then
-  if claude mcp list 2>&1 | grep -q "prism-mcp"; then
-    echo "  prism-mcp: already registered in Claude Code"
+if $INSTALL_CLAUDE; then
+  if command -v claude &>/dev/null; then
+    if claude mcp list 2>&1 | grep -q "prism-mcp"; then
+      echo "  prism-mcp: already registered in Claude Code"
+    else
+      claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+        2>/dev/null || echo "  WARN: prism-mcp registration failed"
+      echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
+    fi
   else
-    claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
-      2>/dev/null || echo "  WARN: prism-mcp registration failed"
-    echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
+    echo "  claude CLI not found, skipping prism-mcp registration"
   fi
-else
-  echo "  claude CLI not found, skipping prism-mcp registration"
 fi
 
-if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "prism-mcp"; then
-    echo "  prism-mcp: already registered in Codex"
-  else
-    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
-      2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
-    echo "  prism-mcp: registered with Codex"
+if $INSTALL_CODEX; then
+  if command -v codex &>/dev/null; then
+    if codex mcp list 2>&1 | grep -q "prism-mcp"; then
+      echo "  prism-mcp: already registered in Codex"
+    else
+      codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+        2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
+      echo "  prism-mcp: registered with Codex"
+    fi
   fi
 fi
 
@@ -744,10 +898,18 @@ echo "                    design-refine, design-verify [web|ios]"
 echo "  Verification:     verify-app, verify-web, verify-ios"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
-echo "Config location:    $CLAUDE_DIR/"
-echo "Statusline:         $CLAUDE_DIR/statusline.sh"
+echo "AI targets:         $AI_TARGETS_RAW"
+if $INSTALL_CLAUDE; then
+  echo "Claude config:      $CLAUDE_DIR/"
+  echo "Statusline:         $CLAUDE_DIR/statusline.sh"
+fi
+if $INSTALL_CODEX; then
+  echo "Codex skills:       $CODEX_DIR/skills/"
+fi
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
-echo "Rules directory:    .claude/rules/ (auto-loaded by Claude Code)"
+echo "Rules directories:  .claude/rules/ + .codex/rules/ (.Codex/rules/ also supported)"
 echo "MCP bridge:         $BRIDGE_DIR/"
-echo "MCP registered:     Claude Code + Codex (agentic-bridge, prism-mcp)"
-echo "Plugins:            github, superpowers, compound-engineering, playwright"
+echo "MCP registered:     Targets selected via AI_TARGETS (agentic-bridge, prism-mcp)"
+if $INSTALL_CLAUDE; then
+  echo "Plugins:            github, superpowers, compound-engineering, playwright"
+fi

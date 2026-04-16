@@ -6,16 +6,16 @@
 
 The initial release provides three core capabilities:
 
-1. **Skills Archive** — Five Claude Code custom skills (`/review`, `/postReview`, `/addressReview`, `/enhancePrompt`, `/bootstrap`) version-controlled and installable via symlink. Configuration archive for `settings.json` and `mcp.json`.
+1. **Skills Archive** — Five portable skills (`/review`, `/postReview`, `/addressReview`, `/enhancePrompt`, `/bootstrap`) version-controlled and installable via symlink. Configuration archive for `settings.json` and `mcp.json`.
 
 2. **Bootstrap Skill** — Repo documentation generator that detects which of 17 Pivot-pattern documents exist, generates missing ones adapted to the target repo's tech stack, and creates a `CLAUDE.md` if none exists.
 
-3. **MCP Bridge** — TypeScript MCP server for bidirectional multi-agent communication with five tools (`send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`). Dual transport: MCP stdio for Claude Code integration and Fastify REST API on port 3100. SQLite store-and-forward persistence with WAL mode.
+3. **MCP Bridge** — TypeScript MCP server for bidirectional multi-agent communication with five tools (`send_context`, `get_messages`, `get_unread`, `assign_task`, `report_status`). Dual transport: MCP stdio for Claude Code and Codex integration plus Fastify REST API on port 3100. SQLite store-and-forward persistence with WAL mode.
 
 ### Success Criteria
 
 - [x] One-command setup via `./setup.sh` that symlinks skills, copies config, and installs npm dependencies
-- [x] MCP server registers with Claude Code via `claude mcp add`
+- [x] MCP server registers with Claude Code and Codex via CLI (`claude mcp add`, `codex mcp add`)
 - [x] REST API starts on loopback with safety check for non-loopback binding
 - [x] Full end-to-end type safety with `AppResult<T>` pattern (services never throw)
 - [x] Atomic transactions for multi-step operations (assign_task, report_status, get_unread)
@@ -42,7 +42,7 @@ Expand from 5 to 14 skills covering the entire development lifecycle, add a cent
 | `/bugHunt` | QA | Fix-and-verify loop with 3 tiers, atomic commits, regression tests |
 | `/bugReport` | QA | Read-only health audit with weighted health scores |
 | `/shipRelease` | Release | Sync, test, coverage audit, push, open PR, auto-invoke /syncDocs |
-| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/ |
+| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md, and rule directories |
 | `/weeklyRetro` | Retrospective | Per-person breakdowns, shipping streaks, test health, insights |
 | `/officeHours` | Planning | YC-style brainstorming with 6 forcing questions → design doc |
 | `/productReview` | Planning | Founder/product lens review with 4 modes (mvp/growth/scale/pivot) |
@@ -66,7 +66,7 @@ Every skill includes a shared preamble that lists all 14 skills, points to the c
 
 - `setup.sh` — symlinks all 14 skills, creates `~/.agentic-workflow/` base directory
 - `/bootstrap` — references full 14-skill inventory, suggests pipeline skills as next steps
-- `CLAUDE.md` + `.claude/rules/` — trimmed CLAUDE.md (navigation only) + glob-scoped rule files for domain-specific guidance
+- `CLAUDE.md` + rule directories — trimmed CLAUDE.md (navigation only) + glob-scoped rule files for domain-specific guidance
 - `ARCHITECTURE.md` — updated directory tree, mermaid diagram, component descriptions, key rules
 
 ### Success Criteria
@@ -79,7 +79,7 @@ Every skill includes a shared preamble that lists all 14 skills, points to the c
 - [x] Verbose camelCase naming throughout
 - [x] `setup.sh` updated with all new skill symlinks and output directory creation
 - [x] `/bootstrap` references full 14-skill inventory
-- [x] `CLAUDE.md` + `.claude/rules/` reflect complete architecture with all skills and output directory
+- [x] `CLAUDE.md` + rule directories reflect complete architecture with all skills and output directory
 - [x] `ARCHITECTURE.md` has updated directory tree, mermaid diagram, and key rules
 
 ### Timeline
@@ -155,7 +155,7 @@ Expand the MCP tool surface beyond messaging and task management:
 
 **2. Multi-Model Support (was item 3)**
 
-The current implementation is model-agnostic at the protocol level (MCP and REST are not Claude-specific), but the skills and documentation assume Claude Code and Codex. Extend support to:
+The current implementation is model-agnostic at the protocol level (MCP and REST are not vendor-specific), but the skills and documentation remain partially CLI-assumption-heavy. Extend support to:
 
 - **OpenAI Codex** — Already partially supported via the MCP bridge. Document the integration pattern.
 - **Gemini CLI** — If/when Google ships MCP support, add configuration templates.
@@ -173,7 +173,7 @@ The setup script references plugin marketplaces (`claude-plugins-official`, `vol
 ### Success Criteria
 
 - [ ] At least 3 new MCP tools shipped and documented
-- [ ] At least one non-Claude agent successfully communicates through the bridge
+- [ ] At least one non-Anthropic agent successfully communicates through the bridge
 - [ ] Agent identity registry replaces free-form sender/recipient strings
 - [ ] Skill installation supports remote repositories beyond local symlinks
 

@@ -2,7 +2,7 @@
 
 ## Deployment Model
 
-This project runs **locally only**. There is no cloud deployment, no containerization, and no remote hosting. The MCP bridge runs on the developer's machine alongside Claude Code and Codex CLI.
+This project runs **locally only**. There is no cloud deployment, no containerization, and no remote hosting. The MCP bridge runs on the developer's machine alongside AI clients such as Claude Code and ChatGPT Codex.
 
 ## Building for Production
 
@@ -35,7 +35,7 @@ The UI reverse-proxies `/api/*` to `http://localhost:3100/*` (configured in `nex
 ### Claude Code
 
 ```bash
-claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+claude mcp add --scope user agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
 This registers `agentic-bridge` as a stdio MCP server. Claude Code will spawn the process on demand and communicate via stdin/stdout. The server exposes five tools:
@@ -46,17 +46,17 @@ This registers `agentic-bridge` as a stdio MCP server. Claude Code will spawn th
 - `assign_task` -- Assign tasks with domain and implementation details
 - `report_status` -- Report back with feedback or completion status
 
-### Codex CLI
+### ChatGPT Codex
 
 ```bash
 codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
-Same registration pattern. Both Claude Code and Codex share the same SQLite database file, enabling bidirectional communication between the two agents.
+Same registration pattern. Claude Code and Codex share the same SQLite database file, enabling bidirectional communication between agents.
 
 ### MCP Config File
 
-The setup script copies `config/mcp.json` to `~/.claude/mcp.json` if one does not already exist. This file can also contain the MCP server registration. To check or update the config manually:
+The setup script copies `config/mcp.json` to `~/.claude/mcp.json` if one does not already exist (Claude target). Codex registration is handled via CLI (`codex mcp add ...`). To check or update the Claude config manually:
 
 ```bash
 diff ~/.claude/mcp.json ~/repos/agentic-workflow/config/mcp.json
@@ -126,7 +126,7 @@ To start fresh, simply delete the database file. It will be recreated with the s
 
 ## Skills Deployment
 
-Skills are deployed via **symlinks** managed by `setup.sh`. The script links directories from the repo into `~/.claude/skills/`:
+Skills are deployed via **symlinks** managed by `setup.sh`. The script links directories from the repo into selected agent homes:
 
 ```
 ~/.claude/skills/review        -> ~/repos/agentic-workflow/skills/review
@@ -134,6 +134,8 @@ Skills are deployed via **symlinks** managed by `setup.sh`. The script links dir
 ~/.claude/skills/addressReview -> ~/repos/agentic-workflow/skills/addressReview
 ~/.claude/skills/enhancePrompt -> ~/repos/agentic-workflow/skills/enhancePrompt
 ~/.claude/skills/bootstrap     -> ~/repos/agentic-workflow/bootstrap
+~/.codex/skills/review         -> ~/repos/agentic-workflow/skills/review
+...                            -> ...
 ```
 
 Because these are symlinks, any changes to skill files in the repo are immediately reflected -- no reinstallation needed. The symlink approach means:
@@ -167,23 +169,21 @@ cd ~/repos/agentic-workflow
 cd mcp-bridge
 npm run build
 
-# 4. Register the MCP server with Claude Code
-claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
-
-# 5. (Optional) Register with Codex CLI
+# 4. Register the MCP server with AI clients
+claude mcp add --scope user agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 
-# 6. (Optional) Start the REST API server
+# 5. (Optional) Start the REST API server
 npm start
 
-# 7. (Optional) Start the UI dashboard
+# 6. (Optional) Start the UI dashboard
 cd ~/repos/agentic-workflow/ui
 npm run dev    # http://localhost:3000
 ```
 
 The setup script handles:
-- Symlinking all skills to `~/.claude/skills/`
-- Copying `settings.json` and `mcp.json` to `~/.claude/` (non-destructive -- skips if files exist)
+- Symlinking all skills to selected homes (`~/.claude/skills/` and/or `~/.codex/skills/`)
+- Copying `settings.json` and `mcp.json` to `~/.claude/` when Claude is targeted (non-destructive -- skips if files exist)
 - Running `npm install` in `mcp-bridge/`
 - Running `npm install` in `ui/`
 
