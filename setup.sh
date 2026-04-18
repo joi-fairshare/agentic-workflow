@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CODEX_DIR="$HOME/.codex"
 CLAUDE_DIR="$HOME/.claude"
 
 # Check for jq (required by statusline install and runtime)
@@ -45,13 +46,25 @@ fi
 # Canonical list of skills managed by this toolkit.
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
 # It is not symlinked directly — each skill accesses it via path traversal
-# from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
+# from its own symlink: $(dirname "$(readlink -f "$HOME/.codex/skills/<name>/SKILL.md")")/../_shared
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt Blogger LinkedinBlogger create-ads rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
 
 echo "=== Agentic Workflow Setup ==="
 echo ""
 
 # --- Helper: install or refresh a skill symlink ---
+is_agentic_workflow_path() {
+  local path="$1"
+  case "$path" in
+    *"/agentic-workflow/"*|*"/agentic-workflow-"*|*"/Agentic-Workflow/"*|*"/Agentic-Workflow-"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 install_skill() {
   local skill="$1"
   local target="$2"
@@ -63,7 +76,7 @@ install_skill() {
 
     if [ "$current_target" = "$source" ]; then
       echo "  $skill: up to date"
-    elif [[ "$current_target" == *"/agentic-workflow/"* ]] || [[ "$current_target" == *"/agentic-workflow-"* ]]; then
+    elif is_agentic_workflow_path "$current_target"; then
       # Symlink points to a previous agentic-workflow install — refresh it
       rm "$target"
       ln -s "$source" "$target"
@@ -129,57 +142,72 @@ install_skill() {
   fi
 }
 
-# --- Skills ---
-echo "Installing skills..."
-mkdir -p "$CLAUDE_DIR/skills"
+install_managed_skills() {
+  local label="$1"
+  local skill_root="$2"
 
-for skill in "${MANAGED_SKILLS[@]}"; do
-  install_skill "$skill" "$CLAUDE_DIR/skills/$skill" "$SCRIPT_DIR/skills/$skill"
-done
+  echo "Installing $label skills..."
+  mkdir -p "$skill_root"
 
-# --- Bootstrap Skill (separate dir) ---
-echo ""
-echo "Installing bootstrap skill..."
-install_skill "bootstrap" "$CLAUDE_DIR/skills/bootstrap" "$SCRIPT_DIR/bootstrap"
-
-# --- Clean up stale skills from previous versions ---
-echo ""
-echo "Checking for stale skills..."
-
-# Build a lookup of current managed skills (including bootstrap)
-ALL_MANAGED=("${MANAGED_SKILLS[@]}" "bootstrap")
-
-for existing in "$CLAUDE_DIR/skills"/*/; do
-  [ -d "$existing" ] || continue
-  skill_name=$(basename "$existing")
-
-  # Skip if it's in our managed list
-  is_managed=false
-  for managed in "${ALL_MANAGED[@]}"; do
-    if [ "$skill_name" = "$managed" ]; then
-      is_managed=true
-      break
-    fi
+  for skill in "${MANAGED_SKILLS[@]}"; do
+    install_skill "$skill" "$skill_root/$skill" "$SCRIPT_DIR/skills/$skill"
   done
-  $is_managed && continue
 
-  # Only flag symlinks that point into our repo as stale
-  if [ -L "$existing" ]; then
-    link_target=$(readlink "$existing" 2>/dev/null || echo "")
-    if [[ "$link_target" == *"/agentic-workflow/"* ]] || [[ "$link_target" == *"/agentic-workflow-"* ]]; then
-      echo "  ⚠ STALE: $skill_name → $link_target"
-      echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
-      echo "    Remove it? (y/n)"
-      read -r answer
-      if [ "$answer" = "y" ]; then
-        rm "$existing"
-        echo "  $skill_name: removed"
-      else
-        echo "  $skill_name: kept"
+  echo ""
+  echo "Installing $label bootstrap skill..."
+  install_skill "bootstrap" "$skill_root/bootstrap" "$SCRIPT_DIR/bootstrap"
+}
+
+cleanup_stale_skills() {
+  local label="$1"
+  local skill_root="$2"
+
+  [ -d "$skill_root" ] || return 0
+
+  echo ""
+  echo "Checking for stale $label skills..."
+
+  # Build a lookup of current managed skills (including bootstrap)
+  ALL_MANAGED=("${MANAGED_SKILLS[@]}" "bootstrap")
+
+  for existing in "$skill_root"/*/; do
+    [ -d "$existing" ] || continue
+    skill_name=$(basename "$existing")
+
+    # Skip if it's in our managed list
+    is_managed=false
+    for managed in "${ALL_MANAGED[@]}"; do
+      if [ "$skill_name" = "$managed" ]; then
+        is_managed=true
+        break
+      fi
+    done
+    $is_managed && continue
+
+    # Only flag symlinks that point into our repo as stale
+    if [ -L "$existing" ]; then
+      link_target=$(readlink "$existing" 2>/dev/null || echo "")
+      if is_agentic_workflow_path "$link_target"; then
+        echo "  ⚠ STALE: $skill_name → $link_target"
+        echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
+        echo "    Remove it? (y/n)"
+        read -r answer
+        if [ "$answer" = "y" ]; then
+          rm "$existing"
+          echo "  $skill_name: removed"
+        else
+          echo "  $skill_name: kept"
+        fi
       fi
     fi
-  fi
-done
+  done
+}
+
+# --- Skills ---
+install_managed_skills "Codex" "$CODEX_DIR/skills"
+install_managed_skills "Claude compatibility" "$CLAUDE_DIR/skills"
+cleanup_stale_skills "Codex" "$CODEX_DIR/skills"
+cleanup_stale_skills "Claude compatibility" "$CLAUDE_DIR/skills"
 
 # --- Settings ---
 echo ""
@@ -408,10 +436,13 @@ fi
 echo ""
 echo "Registering MCP bridge with Codex..."
 if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "agentic-bridge"; then
+  AGENTIC_BRIDGE_PATH="$BRIDGE_DIR/dist/mcp.js"
+  EXISTING_CODEX_BRIDGE=$(codex mcp get agentic-bridge 2>/dev/null || true)
+  if printf '%s\n' "$EXISTING_CODEX_BRIDGE" | grep -Fq "args: $AGENTIC_BRIDGE_PATH"; then
     echo "  agentic-bridge: already registered in Codex"
   else
-    codex mcp add agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
+    codex mcp remove agentic-bridge 2>/dev/null || true
+    codex mcp add agentic-bridge -- node "$AGENTIC_BRIDGE_PATH"
     echo "  agentic-bridge: registered in Codex"
   fi
 else
@@ -648,13 +679,16 @@ if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
   for skill_dir in "$IMPECCABLE_SKILLS_SRC"/*/; do
     [ -d "$skill_dir" ] || continue
     skill_name=$(basename "$skill_dir")
-    target="$CLAUDE_DIR/skills/$skill_name"
-    # Always copy from cache (overwrite existing) — content is deterministic because
-    # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
-    [ -L "$target" ] && rm "$target"
-    [ -d "$target" ] && rm -rf "$target"
-    cp -r "$skill_dir" "$target"
-    echo "  impeccable/$skill_name: installed"
+    for skill_root in "$CODEX_DIR/skills" "$CLAUDE_DIR/skills"; do
+      mkdir -p "$skill_root"
+      target="$skill_root/$skill_name"
+      # Always copy from cache (overwrite existing) — content is deterministic because
+      # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
+      [ -L "$target" ] && rm "$target"
+      [ -d "$target" ] && rm -rf "$target"
+      cp -r "$skill_dir" "$target"
+    done
+    echo "  impeccable/$skill_name: installed for Codex + Claude"
   done
 else
   echo "  impeccable: skipped (source not available)"
@@ -749,6 +783,11 @@ echo ""
 echo "=== Installing prism-mcp ==="
 
 PRISM_VERSION="5.1.0"  # pin: bump here when upgrading
+PRISM_DASHBOARD_PORT="3011"
+PRISM_SERVER_JS=""
+if command -v prism-mcp-server &>/dev/null; then
+  PRISM_SERVER_JS=$(node -p "require('fs').realpathSync(process.argv[1])" "$(command -v prism-mcp-server)" 2>/dev/null || true)
+fi
 
 if command -v claude &>/dev/null; then
   if claude mcp list 2>&1 | grep -q "prism-mcp"; then
@@ -763,12 +802,21 @@ else
 fi
 
 if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "prism-mcp"; then
+  EXISTING_CODEX_PRISM=$(codex mcp get prism-mcp 2>/dev/null || true)
+  if [ -n "$PRISM_SERVER_JS" ] && [ -f "$PRISM_SERVER_JS" ] && \
+    printf '%s\n' "$EXISTING_CODEX_PRISM" | grep -Fq "args: $PRISM_SERVER_JS" && \
+    printf '%s\n' "$EXISTING_CODEX_PRISM" | grep -Fq "PRISM_DASHBOARD_PORT"; then
     echo "  prism-mcp: already registered in Codex"
   else
-    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
-      2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
-    echo "  prism-mcp: registered with Codex"
+    codex mcp remove prism-mcp 2>/dev/null || true
+    if [ -n "$PRISM_SERVER_JS" ] && [ -f "$PRISM_SERVER_JS" ]; then
+      codex mcp add prism-mcp --env PRISM_STORAGE=local --env "PRISM_DASHBOARD_PORT=$PRISM_DASHBOARD_PORT" -- node "$PRISM_SERVER_JS" \
+        2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
+    else
+      codex mcp add prism-mcp --env PRISM_STORAGE=local --env "PRISM_DASHBOARD_PORT=$PRISM_DASHBOARD_PORT" -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+        2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
+    fi
+    echo "  prism-mcp: registered with Codex on dashboard port $PRISM_DASHBOARD_PORT"
   fi
 fi
 
@@ -781,7 +829,7 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (34):"
+echo "Skills installed (36):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
@@ -792,12 +840,14 @@ echo "  Design:           design-analyze [web|ios], design-language, design-evol
 echo "                    design-mockup [web|ios], design-implement [web|ios],"
 echo "                    design-refine, design-verify [web|ios]"
 echo "  Verification:     verify-app, verify-web, verify-ios"
-echo "  Utilities:        enhancePrompt, bootstrap"
+echo "  Utilities:        enhancePrompt, Blogger, LinkedinBlogger, withInterview, bootstrap"
 echo ""
+echo "Codex skills:       $CODEX_DIR/skills/"
+echo "Claude skills:      $CLAUDE_DIR/skills/ (compatibility)"
 echo "Config location:    $CLAUDE_DIR/"
 echo "Statusline:         $CLAUDE_DIR/statusline.sh"
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
-echo "Rules directory:    .claude/rules/ (auto-loaded by Claude Code)"
+echo "Rules directory:    .Codex/rules/ (auto-loaded by Codex)"
 echo "MCP bridge:         $BRIDGE_DIR/"
 echo "MCP registered:     Claude Code + Codex (agentic-bridge, prism-mcp)"
 echo "Plugins:            github, superpowers, compound-engineering, playwright"

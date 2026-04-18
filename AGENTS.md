@@ -1,8 +1,8 @@
-# CLAUDE.md — agentic-workflow
+# AGENTS.md — agentic-workflow
 
-> Portable Claude Code workflow toolkit: 36 custom skills, config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
+> Portable Codex workflow toolkit: 36 custom skills, config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 
-Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
+Domain-specific rules are in `.Codex/rules/` — they load automatically when working on matching files.
 
 ## Required Context
 
@@ -32,12 +32,12 @@ Domain-specific rules are in `.claude/rules/` — they load automatically when w
 
 ```
 agentic-workflow/
-├── skills/        # 36 Claude Code custom skills (symlinked to ~/.claude/skills/)
+├── skills/        # 36 Codex custom skills (symlinked to ~/.Codex/skills/)
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline script, and safety hooks
 ├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite)
 ├── planning/      # Project documentation
-├── .claude/rules/ # Glob-scoped domain rules (auto-loaded by Claude Code)
+├── .Codex/rules/ # Glob-scoped domain rules (auto-loaded by Codex)
 ├── .serena/       # Serena LSP project configuration
 ├── scripts/       # Utility scripts (serena-docker wrapper)
 └── setup.sh       # One-command setup: skills, statusline, hooks, config, bridge, Serena
