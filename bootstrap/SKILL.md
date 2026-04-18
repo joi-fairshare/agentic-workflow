@@ -1,168 +1,11 @@
 ---
 name: bootstrap
-description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
-argument-hint: [--force] [--product-docs <url-or-path>]...
-allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
+description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + AGENTS.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
 ---
 
-<!-- === PREAMBLE START === -->
+## Shared Setup
 
-> **Agentic Workflow** — 35 skills available. Run any as `/<name>`.
->
-> | Skill | Purpose |
-> |-------|---------|
-> | `/review` | Multi-agent PR code review |
-> | `/postReview` | Publish review findings to GitHub |
-> | `/addressReview` | Implement review fixes in parallel |
-> | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
-> | `/rootCause` | 4-phase systematic debugging |
-> | `/bugHunt` | Fix-and-verify loop with regression tests |
-> | `/bugReport` | Structured bug report with health scores |
-> | `/shipRelease` | Sync, test, push, open PR |
-> | `/syncDocs` | Post-ship doc updater |
-> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
-> | `/productReview` | Founder/product lens plan review |
-> | `/archReview` | Engineering architecture plan review |
-> | `/withInterview` | Interview user to clarify requirements before executing |
-> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
-> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
-> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
-> | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
-> | `/design-evolve-web` | Merge new URL into design language (web) |
-> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
-> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
-> | `/design-mockup-web` | Generate HTML mockup from design language |
-> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
-> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
-> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
-> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
-> | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
-> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
-> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
-> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
-> | `/verify-web` | Playwright browser verification of running web app |
-> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
->
-> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
-
-## Codebase Navigation
-
-Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster and more precise than file scanning.
-
-| Task | Tool |
-|------|------|
-| Find a function, class, or symbol | `serena: find_symbol` |
-| What references symbol X? | `serena: find_referencing_symbols` |
-| Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
-
-## Preamble — Bootstrap Check
-
-Before running this skill, verify the environment is set up:
-
-```bash
-# Derive repo slug
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$REMOTE_URL" ]; then
-  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
-else
-  REPO_SLUG=$(basename "$(pwd)")
-fi
-echo "repo-slug: $REPO_SLUG"
-
-# Check bootstrap status
-SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
-done
-
-BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
-
-RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
-
-echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-running: $BRIDGE_OK"
-echo "rules-directory: $RULES_OK"
-```
-
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
-
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
-> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
-
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
-If **no**: warn that some features may not work, then continue.
-
-If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
-
-Create the output directory for this repo:
-```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
-```
-
-## Session Context
-
-Load prior work state for this repo from prism-mcp before starting.
-
-**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
-- `/officeHours add dark mode` → `"dark mode UI feature"`
-- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
-- `/review 42` → use the PR title once fetched: `"PR {title} review"`
-- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
-
-**2. Load context from prism-mcp:**
-```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
-  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
-```
-
-Store the returned `expected_version` — you will need it at Session Close.
-
-**3. Surface results:**
-- If the response contains a non-empty summary or prior decisions:
-  > **Prior context:** {summary}
-  Use this to inform your approach before continuing.
-- If prism-mcp returns an error, surface it and stop:
-  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
-
-## Session Close
-
-> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
-
-Save a structured ledger entry and update the live handoff state for this repo.
-
-**1. Save ledger entry (immutable audit trail):**
-```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
-  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
-  summary: "<one paragraph describing what was accomplished this session>",
-  todos: ["<any open items left incomplete>", ...],
-  files_changed: ["<paths of files created or modified>", ...],
-  decisions: ["<key decisions made during this skill run>", ...]
-```
-
-**2. Update handoff state (mutable live state for next session):**
-```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
-  expected_version: <value returned by session_load_context>,
-  open_todos: ["<open items not yet completed>", ...],
-  active_branch: "<current git branch from: git branch --show-current>",
-  last_summary: "<one sentence: what this skill just did>",
-  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
-```
-
-If either call fails, surface the error:
-> "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->
+Read [the shared Codex skill preamble](../skills/_preamble.md) before proceeding.
 
 > **MCP Servers** — available in every session. Prefer these over built-in tools.
 >
@@ -183,9 +26,9 @@ If the user provides `--product-docs` arguments, parse and classify them before 
 ### Argument Format
 
 ```bash
-/bootstrap --product-docs <url-or-path> [--product-docs <url-or-path>]...
+bootstrap --product-docs <url-or-path> [--product-docs <url-or-path>]...
 # e.g.
-/bootstrap --product-docs https://company.sharepoint.com/.../Roadmap.docx --product-docs ~/docs/strategy.pdf
+bootstrap --product-docs https://company.sharepoint.com/.../Roadmap.docx --product-docs ~/docs/strategy.pdf
 ```
 
 If no `--product-docs` arguments are provided, skip this entire section entirely — no validation, no confirmation, no External References sections added to generated docs.
@@ -286,11 +129,11 @@ Use `⚠️ Not accessible at bootstrap time` for sources that failed the curl/f
 
 # Bootstrap — Repo Documentation Generator
 
-Orchestrates documentation generation for any repository. Detects existing coverage, generates missing docs using Pivot-pattern templates, and creates a CLAUDE.md if none exists.
+Orchestrates documentation generation for any repository. Detects existing coverage, generates missing docs using Pivot-pattern templates, and creates an AGENTS.md if none exists.
 
 ## Step 1: Enhance Context
 
-Construct the `/enhancePrompt` call. If external docs were provided and confirmed in the step above, append external doc context to the base prompt.
+Construct the `enhancePrompt` call. If external docs were provided and confirmed in the step above, append external doc context to the base prompt.
 
 **Base prompt:**
 > "Analyze this repository to understand its tech stack, architecture, domain, and existing documentation. I need to generate comprehensive planning documents."
@@ -298,7 +141,7 @@ Construct the `/enhancePrompt` call. If external docs were provided and confirme
 **If external docs provided, append to prompt:**
 > "External product documentation has been provided: [list classified sources with types and URLs]. When generating product-facing documents (PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET, COMPETITIVE_ANALYSIS), reference these sources and indicate where details should be cross-checked with the external docs."
 
-Invoke `/enhancePrompt` with the constructed prompt. Wait for the enhanced prompt. Proceed with the enriched context.
+Open and follow [enhancePrompt](../skills/enhancePrompt/SKILL.md) with the constructed prompt. Wait for the enhanced prompt, then proceed with the enriched context.
 
 ## Step 2: Gather Repo Intelligence
 
@@ -320,7 +163,7 @@ git remote -v 2>/dev/null
 git log --oneline -10 2>/dev/null
 ```
 
-Read any existing `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`, or files in `docs/`, `planning/`, `.docs/`.
+Read any existing `AGENTS.md`, `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`, or files in `docs/`, `planning/`, `.docs/`.
 
 ## Step 3: Audit Documentation Coverage
 
@@ -346,7 +189,7 @@ Check for each of the 17 Pivot-pattern documents. Search flexibly — docs may e
 | `COMPETITIVE_ANALYSIS` | `*competitive*`, `*competitor*`, `*market*analysis*` |
 | `GO_TO_MARKET` | `*go*to*market*`, `*gtm*`, `*launch*`, `*marketing*` |
 
-Also check if a `CLAUDE.md` exists and whether a `.claude/rules/` directory already exists (and if so, how many files it contains).
+Also check if an `AGENTS.md` exists and whether a `.Codex/rules/` directory already exists (and if so, how many files it contains).
 
 Report findings:
 ```
@@ -374,8 +217,8 @@ Missing (M/17):
   GO_TO_MARKET
   DEPENDENCY_GRAPH
 
-CLAUDE.md:       [exists / missing]
-.claude/rules/:  [exists (N files) / missing]
+AGENTS.md:       [exists / missing]
+.Codex/rules/:  [exists (N files) / missing]
 ```
 
 If `--force` was passed, treat all docs as missing and regenerate.
@@ -383,7 +226,7 @@ If `--force` was passed, treat all docs as missing and regenerate.
 ## Step 4: Handle Each Scenario
 
 ### Bare repo (0–2 docs found)
-Generate all 17 docs + CLAUDE.md. Spawn agents in batches of 4–5 to avoid overwhelming context.
+Generate all 17 docs + AGENTS.md. If the user explicitly asked for delegated or parallel help, you may batch the work across sub-agents; otherwise generate the docs locally.
 
 ### Partially documented (3–14 docs found)
 Generate only missing docs. Read existing docs first to maintain consistency in terminology, formatting, and cross-references.
@@ -393,7 +236,7 @@ Report completeness. For each existing doc, note if it could be improved (missin
 
 ## Step 5: Generate Missing Docs
 
-For each missing doc, spawn an **Explore** agent to research the repo, then a **general-purpose** agent to write the doc.
+For each missing doc, if the user explicitly asked for delegated or parallel help, you may split the work between an explore sub-agent and an implementation sub-agent. Otherwise, research and write the document locally.
 
 ### Generation Rules
 
@@ -406,7 +249,7 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
    - `ERD` — Relationship diagram, collection/table schemas with field tables
    - `DEPENDENCY_GRAPH` — Framework requirements, version constraints, layer dependency map
    - `API_CONTRACT` — Per-endpoint: trigger, path, request/response schemas, error cases, side effects
-   - `DESIGN_SYSTEM` — Design principles, color tokens, typography scale, spacing, components. Points to `.impeccable.md` (brand personality) and `design-tokens.json` (W3C DTCG tokens) as operational artifacts. Run `/design-analyze` and `/design-language` to generate these.
+   - `DESIGN_SYSTEM` — Design principles, color tokens, typography scale, spacing, components. Points to `.impeccable.md` (brand personality) and `design-tokens.json` (W3C DTCG tokens) as operational artifacts. Run `design-analyze` and `design-language` to generate these.
    - `CODE_STYLE` — Linter config, naming conventions, import ordering, patterns
    - `COMMIT_STRATEGY` — Message format template, examples, branch naming table
    - `PR_GUIDE` — Categorized checkbox checklists (architecture, security, testing, etc.)
@@ -424,18 +267,18 @@ For each missing doc, spawn an **Explore** agent to research the repo, then a **
 
 5. **Place docs in `planning/`.** Create the directory if it doesn't exist. Use UPPER_SNAKE_CASE filenames with `.md` extension.
 
-## Step 6: Generate CLAUDE.md + .claude/rules/ (if missing)
+## Step 6: Generate AGENTS.md + .Codex/rules/ (if missing)
 
-### Step 6a: Generate CLAUDE.md
+### Step 6a: Generate AGENTS.md
 
-Create a trimmed CLAUDE.md (under 80 lines) that serves as a navigation document — not a reference manual. Include only:
+Create a trimmed AGENTS.md (under 80 lines) that serves as a navigation document — not a reference manual. Include only:
 
 ```markdown
-# CLAUDE.md — {Project Name}
+# AGENTS.md — {Project Name}
 
 > {one-line tagline describing the project}
 
-Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
+Domain-specific rules are in `.Codex/rules/` — they load automatically when working on matching files.
 
 ## Required Context
 
@@ -482,11 +325,11 @@ Format: `type: short description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 ```
 
-Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in `.claude/rules/` files.
+Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in `.Codex/rules/` files.
 
-### Step 6b: Generate .claude/rules/
+### Step 6b: Generate .Codex/rules/
 
-After generating CLAUDE.md, inspect the target repo's directory structure and tech stack to generate a `.claude/rules/` directory with glob-scoped rule files. Each rule file loads automatically when Claude Code works on matching files.
+After generating AGENTS.md, inspect the target repo's directory structure and tech stack to generate a `.Codex/rules/` directory with glob-scoped rule files. Each rule file loads automatically when Codex works on matching files.
 
 **Infer rule file groupings from what directories actually exist.** Examples by tech stack:
 
@@ -523,11 +366,11 @@ required patterns, things to avoid, code examples from the real code.}
 ...
 ```
 
-Spawn an Explore agent to read representative files in each domain before writing the rules. Rules should reflect what the code actually does, not generic best practices.
+If the user explicitly asked for delegated or parallel help, you may use an explorer sub-agent to read representative files in each domain before writing the rules. Otherwise, do that exploration locally. Rules should reflect what the code actually does, not generic best practices.
 
 ## Step 7: Generate .serena/project.yml
 
-After generating docs and CLAUDE.md, configure Serena LSP for the repo.
+After generating docs and AGENTS.md, configure Serena LSP for the repo.
 
 **Language detection** (check repo root and one level deep):
 - TS/JS: `tsconfig.json` or `package.json` → `typescript`
@@ -541,16 +384,16 @@ After generating docs and CLAUDE.md, configure Serena LSP for the repo.
 - `swift` — sourcekit-lsp is a macOS binary; Serena runs in a Linux Docker container. Swift LSP requires the separate `serena-local:latest-swift` image and host-side socket bridge. Add manually after running `BUILD_SWIFT=1 ./setup.sh`.
 - `csharp` — requires the `-csharp` image variant. Add manually after running `BUILD_CSHARP=1 ./setup.sh`.
 
-**Sensitive path audit:** flag `.claude/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
+**Sensitive path audit:** flag `.Codex/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
 
 **RULES_OK check:**
 ```bash
 RULES_OK=false
-[ -d ".claude/rules" ] && RULES_OK=true
+[ -d ".Codex/rules" ] && RULES_OK=true
 echo "rules-directory: $RULES_OK"
 ```
 If `RULES_OK=false`, print:
-> "WARN: .claude/rules/ not found — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
+> "WARN: .Codex/rules/ not found — domain rules won't load. Consider running bootstrap from the agentic-workflow repo to set up rules."
 
 **Derive repo name for project_name field:**
 ```bash
@@ -575,7 +418,7 @@ read_only: false
 ignore_all_files_in_gitignore: true
 
 ignored_paths:
-- .claude          # if exists
+- .Codex           # if exists
 - config           # if exists and may contain tokens
 - <other-sensitive-paths>
 
@@ -622,7 +465,7 @@ kill $SPID 2>/dev/null || true
 After this, `.serena/project.yml` will be fully expanded with all required fields. Subsequent `serena-docker` invocations mount the project read-only and will start without errors.
 
 If the Docker command fails (image not built, Docker not running), do NOT abort bootstrap — print a warning and continue:
-> `WARN: Could not bootstrap .serena/project.yml via Docker. The config is minimal and Serena may fail to start. Run setup.sh to build the serena-local image, then re-run /bootstrap.`
+> `WARN: Could not bootstrap .serena/project.yml via Docker. The config is minimal and Serena may fail to start. Run setup.sh to build the serena-local image, then re-run bootstrap.`
 
 **Print summary:**
 ```
@@ -640,7 +483,7 @@ If `swift` was detected, append:
 > **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
 
 > **Non-fatal:** If `check_onboarding_performed` fails (e.g., Docker is not running or the Serena image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
-> `WARN: Serena not available — the project.yml must be bootstrapped before Serena will connect. Build the serena-local Docker image with setup.sh, then re-run /bootstrap.`
+> `WARN: Serena not available — the project.yml must be bootstrapped before Serena will connect. Build the serena-local Docker image with setup.sh, then re-run bootstrap.`
 
 ## Step 8: Report
 
@@ -653,34 +496,34 @@ Generated:
   planning/PRODUCT_ROADMAP.md        (new)
   planning/CODE_STYLE.md             (new)
   ...
-  CLAUDE.md                          (new)
+  AGENTS.md                          (new)
 
 Existing (unchanged):
   planning/ARCHITECTURE.md
   planning/API_CONTRACT.md
   planning/ERD.md
 
-Total: 17/17 docs + CLAUDE.md + .claude/rules/ + design language
+Total: 17/17 docs + AGENTS.md + .Codex/rules/ + design language
 
 Next steps:
   1. Review generated docs for accuracy
-  2. Commit: git add planning/ CLAUDE.md .claude/ && git commit -m "docs: bootstrap planning documents"
+  2. Commit: git add planning/ AGENTS.md .Codex/ && git commit -m "docs: bootstrap planning documents"
   3. Refine any docs that need domain-specific detail
 
 Suggested workflow:
-  • /officeHours — brainstorm a feature or problem before planning
-  • /productReview — get founder-lens feedback on a plan
-  • /archReview — get engineering architecture review of a plan
-  • /design-analyze <url> — extract design tokens from reference sites
-  • /design-language — define brand personality and aesthetic direction
-  • /design-mockup <screen> — generate HTML mockup from design language
-  • /design-implement web|swiftui — generate production code from mockup
-  • /design-refine — apply Impeccable design refinements
-  • /design-verify — screenshot diff implementation vs mockup
-  • /review <pr> — run multi-agent code review on a PR
-  • /bugHunt — find and fix bugs with regression tests
-  • /bugReport — audit code health without making changes
-  • /rootCause — systematic 4-phase debugging
-  • /shipRelease — push, open PR, sync docs
-  • /weeklyRetro — generate a weekly retrospective
+  • officeHours — brainstorm a feature or problem before planning
+  • productReview — get founder-lens feedback on a plan
+  • archReview — get engineering architecture review of a plan
+  • design-analyze <url> — extract design tokens from reference sites
+  • design-language — define brand personality and aesthetic direction
+  • design-mockup <screen> — generate HTML mockup from design language
+  • design-implement web|swiftui — generate production code from mockup
+  • design-refine — apply Impeccable design refinements
+  • design-verify — screenshot diff implementation vs mockup
+  • review <pr> — run multi-agent code review on a PR
+  • bugHunt — find and fix bugs with regression tests
+  • bugReport — audit code health without making changes
+  • rootCause — systematic 4-phase debugging
+  • shipRelease — push, open PR, sync docs
+  • weeklyRetro — generate a weekly retrospective
 ```

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with three independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent coordination, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously.
+Agentic Workflow is a portable Claude Code toolkit with three independent components: 36 custom skills spanning the full development lifecycle (planning, writing, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent coordination, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously.
 
 ```mermaid
 graph TD
@@ -32,6 +32,8 @@ graph TD
 
     subgraph "Claude Code Session — Utilities"
         User --> |"/enhancePrompt"| EnhancePrompt[enhancePrompt skill]
+        User --> |"/Blogger"| Blogger[Blogger skill]
+        User --> |"/LinkedinBlogger"| LinkedinBlogger[LinkedinBlogger skill]
         User --> |"/bootstrap"| Bootstrap[bootstrap skill]
     end
 
@@ -99,7 +101,7 @@ Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream 
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills (34)
+├── skills/                              # Claude Code custom slash-command skills (36)
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -112,6 +114,10 @@ agentic-workflow/
 │   │   └── implementer-prompt.md        #   subagent prompt: fix code, commit, reply
 │   ├── enhancePrompt/                   # /enhancePrompt — context-aware prompt rewriter
 │   │   └── SKILL.md                     #   discovers docs, enriches user prompt
+│   ├── Blogger/                         # /Blogger — interview-based project blog ghostwriter
+│   │   └── SKILL.md                     #   proposes angles, outlines, and publish-ready packages
+│   ├── LinkedinBlogger/                 # /LinkedinBlogger — interview-based LinkedIn ghostwriter
+│   │   └── SKILL.md                     #   proposes angles, hooks, and LinkedIn-ready packages
 │   ├── rootCause/                       # /rootCause — 4-phase systematic debugging
 │   │   └── SKILL.md                     #   investigate → analyze → hypothesize → implement
 │   ├── bugHunt/                         # /bugHunt — fix-and-verify loop
@@ -256,7 +262,7 @@ The repo slug is derived from `git remote get-url origin` (e.g., `org-name-repo-
 
 ### Overview
 
-Thirty-four Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 34 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
+Thirty-six Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 36 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
 
 ### Review Pipeline (skills/review/, postReview/, addressReview/)
 
@@ -326,9 +332,17 @@ Design artifacts: `.impeccable.md` (brand context for AI tools), `design-tokens.
 
 A utility skill that discovers project documentation files (CLAUDE.md, planning/, docs/), reads those relevant to the user's current request, and rewrites the prompt with injected context before execution. Used by `/bootstrap` as its first step.
 
+### Blogger (skills/Blogger/)
+
+An interview-based ghostwriting skill for turning real project work into publish-ready blog packages. It starts with a short user interview, then reads only the repo context relevant to the chosen topic, proposes a few narrative angles, pauses for approval, and drafts a complete article package with SEO metadata, tags, CTA suggestions, LinkedIn copy, and image ideas. It defaults to protecting client names, private metrics, and sensitive implementation details unless the user explicitly approves them for publication.
+
+### LinkedinBlogger (skills/LinkedinBlogger/)
+
+An interview-based ghostwriting skill for turning real project work into LinkedIn-native social posts. It starts with a short user interview, then reads only the repo context relevant to the chosen topic, proposes a few social angles, pauses for approval, and drafts a complete LinkedIn package with hook options, a primary post, a shorter variant, CTA options, hashtags, and image or carousel ideas. It defaults to protecting client names, private metrics, and sensitive implementation details unless the user explicitly approves them for publication.
+
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 34-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 36-skill pipeline as next steps.
 
 ### Serena LSP Integration
 
@@ -409,7 +423,7 @@ Archived Claude Code configuration for replication across machines:
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill includes the shared preamble.** The preamble lists all 36 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 

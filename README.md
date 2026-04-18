@@ -99,6 +99,8 @@ Extracted from `~/.claude/` for replication on any machine.
 | `/postReview` | Publish review findings to GitHub as batched comments |
 | `/addressReview` | Implement review fixes with parallel agents |
 | `/enhancePrompt` | Context-aware prompt rewriter |
+| `/Blogger` | Interview-based project blog ghostwriter with SEO and LinkedIn packaging |
+| `/LinkedinBlogger` | Interview-based LinkedIn ghostwriter for project updates and launch posts |
 | `/bootstrap` | Repo documentation generator (see below) |
 | `/rootCause` | 4-phase systematic debugging |
 | `/bugHunt` | Fix-and-verify loop with regression tests |
@@ -273,7 +275,7 @@ agentic-workflow/
 │       └── testing.md         # Test patterns, helpers, coverage policy
 ├── .serena/
 │   └── project.yml            # Serena LSP per-repo config (TypeScript)
-├── skills/                    # 35 Claude Code custom skills
+├── skills/                    # 36 Claude Code custom skills
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Ads"
+  short_description: "Plan and generate project ads"
+  default_prompt: "Use $create-ads to plan or generate a batch of channel-specific image ads for this project."
