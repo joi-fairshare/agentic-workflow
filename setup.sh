@@ -290,6 +290,21 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
     echo "  hooks.SessionStart: git-context added"
   fi
 
+  # Add prism-context SessionStart hook if not already present
+  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("prism-context"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}]'
+    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
+      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    else
+      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    fi
+    echo "  hooks.SessionStart: prism-context added"
+  fi
+
   # Remove legacy bridge-context SessionStart hook if present
   if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
     jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \

@@ -74,6 +74,14 @@
             "command": "~/.claude/hooks/git-context.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/prism-context.sh"
+          }
+        ]
       }
     ]
   }
