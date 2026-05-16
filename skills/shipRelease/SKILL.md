@@ -1,7 +1,7 @@
 ---
 name: shipRelease
-description: Ship a release — sync branch, run tests, audit coverage, push, open PR, then auto-invoke /syncDocs to update documentation.
-argument-hint: "[--base main] [--skip-docs]"
+description: "Ship a release — sync branch, run tests, audit coverage, push, open PR, then auto-chain → /landAndDeploy → /canary → /syncDocs (skip the deploy chain with --no-deploy)."
+argument-hint: "[--base main] [--skip-docs] [--no-deploy]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Read, Glob, Grep, Skill
 ---
 <!-- MEMORY: SKIP -->
@@ -179,7 +179,8 @@ If either call fails, surface the error:
 
 2. Parse arguments:
    - `--base <branch>` — the base branch to rebase onto and target for the PR. Default: `main`.
-   - `--skip-docs` — if present, skip the `/syncDocs` invocation in Step 7.
+   - `--skip-docs` — if present, skip the `/syncDocs` invocation in the final auto-chain step.
+   - `--no-deploy` — if present, skip the `/landAndDeploy` auto-chain (Step 7) and fall through directly to `/syncDocs`. Use for release-branch workflows where merge happens elsewhere or deployment is manual.
 
 3. Derive the current branch name:
    ```bash
@@ -277,19 +278,39 @@ If a PR already exists for this branch, report the existing PR URL instead of cr
 gh pr list --head {branch} --base {base} --json number,url
 ```
 
-Capture the PR URL for the report.
+Capture the PR URL (and the PR number returned by `gh pr create`) for the report and the next step.
 
-## Step 7: Invoke /syncDocs
+## Step 7: Auto-chain `/landAndDeploy`
 
-Unless `--skip-docs` was passed, invoke the `/syncDocs` skill to update documentation:
+Unless `--no-deploy` was passed, invoke `/landAndDeploy --wait` via the `Skill` tool, passing the PR number captured in Step 6.
+
+The `--wait` flag tells `/landAndDeploy` to poll for merge before deploying — so this step works correctly even though the PR may not yet be merged at the moment `shipRelease` completes.
+
+On successful deploy, `/landAndDeploy` auto-chains `/canary`, which on a `HEALTHY` verdict auto-chains `/syncDocs`. The full chain becomes:
+
+```
+shipRelease → landAndDeploy → canary → syncDocs
+```
+
+If `--no-deploy` was passed, skip this step entirely and fall through to Step 8 (direct `/syncDocs` invocation). Use `--no-deploy` for release-branch workflows where merge happens elsewhere or deployment is manual.
+
+Record whether the deploy chain was started or skipped.
+
+## Step 8: Invoke /syncDocs (fallback)
+
+If Step 7 was skipped (because `--no-deploy` was passed) and `--skip-docs` was **not** passed, invoke the `/syncDocs` skill directly to update documentation:
 
 ```
 /syncDocs
 ```
 
-Record whether docs were updated or skipped.
+If Step 7 ran, do **not** invoke `/syncDocs` here — the `canary → syncDocs` chain handles it.
 
-## Step 8: Report
+If `--skip-docs` was passed, skip this step.
+
+Record whether docs were updated, deferred to the canary chain, or skipped.
+
+## Step 9: Report
 
 Write the release report to `~/.agentic-workflow/$REPO_SLUG/releases/{timestamp}-{branch}.md` where `{timestamp}` is `YYYYMMDD-HHmmss` format:
 
@@ -303,7 +324,8 @@ Write the release report to `~/.agentic-workflow/$REPO_SLUG/releases/{timestamp}
 - **Coverage:** {percentage}% (or "not available")
 - **Files below 80%:** {list or "none"}
 - **PR:** {url}
-- **Docs updated:** {yes/no/skipped}
+- **Deploy chain:** {started via /landAndDeploy / skipped (--no-deploy)}
+- **Docs updated:** {yes / deferred-to-canary-chain / skipped}
 ```
 
 Print a summary to the user:
@@ -313,6 +335,13 @@ Release shipped!
   Branch: {branch} → {base}
   Tests:  passed
   PR:     {url}
-  Docs:   {updated/skipped}
+  Deploy: {chained via /landAndDeploy --wait | skipped (--no-deploy)}
+  Docs:   {updated | deferred to canary chain | skipped}
   Report: ~/.agentic-workflow/{repo-slug}/releases/{filename}
 ```
+
+## Next steps
+
+- (auto) `/landAndDeploy` — chained after PR creation, polls for merge then deploys (skip with `--no-deploy`)
+- (auto) `/canary` — chained by `/landAndDeploy` on successful deploy
+- (auto) `/syncDocs` — chained by `/canary` on `HEALTHY` verdict (or directly by `shipRelease` if `--no-deploy`)
