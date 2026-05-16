@@ -205,15 +205,15 @@ Dispatches five subagents in parallel — product, architecture, design, devex, 
 
 3. **Wait for all 5 subagents to complete.** For the `productReview` and `archReview` agents, capture the actual output path each one reports.
 
-4. **Normalize paths into the feature dir.** For the two legacy skills whose outputs land at top-level `plans/`, copy them into the feature dir under their canonical filenames:
+4. **Normalize paths into the feature dir.** For productReview/archReview outputs (which were written to top-level `plans/`), MOVE (not copy) them into the feature dir using their canonical names:
 
    ```bash
    FEATURE_DIR="$HOME/.agentic-workflow/$REPO_SLUG/plans/<feature>"
-   cp "<productReview-reported-path>" "$FEATURE_DIR/product-review.md"
-   cp "<archReview-reported-path>" "$FEATURE_DIR/arch-review.md"
+   mv "<productReview-reported-path>" "$FEATURE_DIR/product-review.md"
+   mv "<archReview-reported-path>" "$FEATURE_DIR/arch-review.md"
    ```
 
-   The new skills (`planDesignReview`, `planDevexReview`, `cso`) already wrote directly to the feature dir via the `--output` flag.
+   Using `mv` (not `cp`) avoids leaving duplicate copies at top-level `plans/`. The new skills (`planDesignReview`, `planDevexReview`, `cso`) already wrote directly to the feature dir via the `--output` flag.
 
 5. Read all 5 review files. Some may be partial if a subagent reported BLOCKED — record but continue.
 

@@ -1,7 +1,7 @@
 ---
 name: landAndDeploy
 description: "Wait for PR merge, run deploy command, poll health, run smoke tests, then auto-chain /canary. Configured by .agentic-workflow/deploy.json."
-argument-hint: "[pr#] [--wait|--no-wait] [--setup] [--skip-docs]"
+argument-hint: "[pr#] [--wait|--no-wait] [--setup] [--skip-docs] [--chained-from-ship]"
 allowed-tools: Bash(gh *), Bash(git *), Bash(curl *), Bash(jq *), Read, Write, Skill
 ---
 
@@ -192,6 +192,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
   - Default `--no-wait` when invoked standalone (user is at the terminal, expects fast feedback)
 - `--setup` flag: run interactive wizard to write `.agentic-workflow/deploy.json`, then exit.
 - `--skip-docs` flag (optional). Propagates from `/shipRelease` and forwards to `/canary` on auto-chain, suppressing the eventual `/syncDocs` invocation downstream. This skill does not call `/syncDocs` directly — it only forwards the flag.
+- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to fold ship-phase metadata (PR url, branch, tip SHA, test results) from the invoking prompt into a `## Ship Phase` subsection at the top of `deploy.md`. Using a CLI flag (rather than an env var) ensures reliable propagation across the Skill tool boundary.
 - Config file: `.agentic-workflow/deploy.json` in project root.
 
 ## Config schema (`.agentic-workflow/deploy.json`)
@@ -237,8 +238,8 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
 
 5. Load `.agentic-workflow/deploy.json`.
    - If present: continue normally.
-   - If missing AND skill was invoked from shipRelease's auto-chain (detect via an env marker `LAND_AND_DEPLOY_CHAINED=1` that shipRelease sets before invoking via Skill): print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success. This lets the canary→syncDocs chain be skipped without a hard error so first-time users aren't blocked.
-   - If missing AND invoked standalone: error and suggest `--setup`.
+   - If missing AND invoked with `--chained-from-ship`: print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success. This lets the canary→syncDocs chain be skipped without a hard error so first-time users aren't blocked. (We use the CLI flag rather than an env var because env-var propagation across the Skill tool boundary is unspecified.)
+   - If missing AND no `--chained-from-ship` flag (standalone invocation): error and suggest `--setup`.
 
 5a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/deploy.json 2>/dev/null` — if it returns 0, error out: "deploy.json is committed; remove and run `/landAndDeploy --setup`. The skill executes `command` and `smokeTests[]` from this file as shell, so a tracked copy is an RCE foot-gun." Recommend adding `.agentic-workflow/deploy.json` to `.gitignore`.
 
@@ -253,7 +254,7 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
 9. Run each `deploy.smokeTests[]` command sequentially. Capture each exit code and stdout.
    - Any non-zero → mark deploy DEGRADED.
 
-10. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`:
+10. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`. When invoked with `--chained-from-ship`, include a `## Ship Phase` subsection at the top capturing the ship-phase metadata (from the invoking prompt and/or `gh pr view`). The merge-SHA-based release-id ensures this file lives in the same subdir as `canary.md`, so the full release (ship + deploy + canary) lives under one folder.
     ```markdown
     # Deploy — <release-id>
     
@@ -261,7 +262,15 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
     **Merge SHA:** <full-sha>
     **Deployed:** <ISO date>
     **Verdict:** SUCCESS | DEGRADED | FAILED
-    
+
+    ## Ship Phase
+    <!-- Only included when invoked with --chained-from-ship. Folds ship-phase info into the release record so ship+deploy+canary all live in this one release-id subdir. -->
+    - **Branch:** <branch> → <base>
+    - **Tip SHA (pre-merge):** <short-sha>
+    - **Test result:** passed (<N> tests)
+    - **Coverage:** <percentage>% (or "not available")
+    - **PR URL:** <url>
+
     ## Deploy command
     `<deploy.command>` — exit <code> in <duration>s
     

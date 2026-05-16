@@ -207,13 +207,14 @@ Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents
    - `glassmorphism` — translucent surfaces, backdrop blur, layered depth
    - `neo-skeuomorphic` — soft shadows, subtle gradients, tactile metaphors
    - `swiss-grid` — strict 12-column grid, Helvetica, asymmetric balance
-6. **Dispatch N subagents in parallel** (single message with N `Agent` tool calls). Each subagent receives:
+6. **Dispatch N subagents in parallel.** Send ONE message containing N `Agent` tool calls. Before dispatching, read `skills/design-shotgun/aesthetics.md` and extract the section matching each chosen aesthetic direction — these are the inline fallback templates. Each subagent receives:
    - Feature brief from the plan
    - `design-tokens.json` content
    - `.impeccable.md` content
    - ONE aesthetic direction (its own; no overlap)
-   - Instruction: invoke `frontend-design` skill with the direction baked in, produce a single self-contained HTML file
+   - **Fallback template** from `skills/design-shotgun/aesthetics.md` for that direction (the entire matching section verbatim)
    - Output path: `~/.agentic-workflow/$REPO_SLUG/design/shotgun/variant-{i}.html` where `i` is the variant number 1..N
+   - **Instruction:** "Prefer invoking `/frontend-design` if available (check `$HOME/.claude/skills/frontend-design/` or the compound-engineering plugin). If not available, use the inline aesthetic template below as system context to produce a single self-contained HTML mockup. Either way, the output must respect the project's design tokens and brand language, biased toward the chosen aesthetic direction." Include the relevant aesthetics.md section verbatim in the subagent prompt as the fallback template.
 7. Wait for all N subagents.
 8. Generate `~/.agentic-workflow/$REPO_SLUG/design/shotgun/contact-sheet.html` — a single HTML page with each variant in an `<iframe>` (or `<details>`-wrapped block) labeled with its aesthetic direction. Mobile-friendly grid layout, max 3 columns on desktop.
 9. **Screenshot each variant** using Playwright MCP at 1280×800 viewport:

@@ -4,6 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
+# Portable canonical path resolver — works on macOS (Python fallback for pre-Big Sur,
+# where BSD readlink lacks -f) and Linux (GNU readlink -f).
+canonicalize() {
+  if command -v readlink &>/dev/null && readlink -f / &>/dev/null; then
+    readlink -f "$1"
+  elif command -v python3 &>/dev/null; then
+    python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$1"
+  else
+    # Fallback: cd into the dir and pwd
+    (cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")")
+  fi
+}
+
 # Check for jq (required by statusline install and runtime)
 if ! command -v jq &>/dev/null; then
   echo ""
@@ -702,7 +715,7 @@ install_external_pack() {
     name="$(basename "$skill_dir")"
     link="$CLAUDE_DIR/skills/$name"
     # Native repo symlinks always win on collision
-    if [ -L "$link" ] && [ -e "$link" ] && { [[ "$(readlink -f "$link")" == */agentic-workflow/* ]] || [[ "$(readlink -f "$link")" == */agentic-workflow-* ]]; }; then
+    if [ -L "$link" ] && [ -e "$link" ] && { [[ "$(canonicalize "$link")" == */agentic-workflow/* ]] || [[ "$(canonicalize "$link")" == */agentic-workflow-* ]]; }; then
       echo "  $name: skipping (native skill takes precedence)"
       continue
     fi
@@ -730,7 +743,9 @@ if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
   read_pin() {
     local key="$1"
     local value
-    value=$(grep "^${key}=" "$SCRIPT_DIR/EXTERNAL_PINS.env" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+    # grep -m1 stops after first match (avoids concatenation on duplicate keys);
+    # cut -d= -f2- preserves everything after the first '=' so values containing '=' survive.
+    value=$(grep -m1 "^${key}=" "$SCRIPT_DIR/EXTERNAL_PINS.env" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
     if [[ "$value" =~ ^[0-9a-f]{7,40}$ ]] || [[ "$value" == "HEAD" ]]; then
       echo "$value"
     else
