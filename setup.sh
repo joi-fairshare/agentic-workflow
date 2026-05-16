@@ -48,6 +48,23 @@ fi
 # from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
 MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
 
+# --- Cleanup: remove deprecated impeccable forks ---
+# These 20 standalone skill dirs in ~/.claude/skills/ are stale copies left over
+# from a previous setup.sh that copied (cp -r) individual impeccable skills.
+# Canonical pbakaus/impeccable v3.1.1+ is a single umbrella skill, fetched via
+# the External Skill Packs section. Idempotent — safe on every run.
+DEPRECATED_SKILLS=(bolder critique audit polish animate distill colorize typeset arrange quieter harden onboard delight clarify normalize extract adapt optimize overdrive teach-impeccable)
+for s in "${DEPRECATED_SKILLS[@]}"; do
+  target="$CLAUDE_DIR/skills/$s"
+  if [ -L "$target" ]; then
+    rm -f "$target"
+    echo "  removed stale symlink: $s"
+  elif [ -d "$target" ]; then
+    rm -rf "$target"
+    echo "  removed deprecated dir: $s"
+  fi
+done
+
 echo "=== Agentic Workflow Setup ==="
 echo ""
 
