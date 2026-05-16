@@ -1,7 +1,7 @@
 ---
 name: cso
 description: "OWASP Top 10 + STRIDE threat model. Runs on a plan (pre-impl mode) or a PR diff (post-impl mode). Outputs severity-rated findings with mitigations."
-argument-hint: "[--plan|--diff] [path-or-pr#]"
+argument-hint: "[--plan|--diff] [path-or-pr#] [--output <path>]"
 allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
@@ -188,6 +188,7 @@ Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan do
 
 - Mode flag: `--plan <path>` or `--diff <pr-or-branch>`
 - Auto-detect: if no flag, try `gh pr view --json number,state` on current branch — if it succeeds, use `--diff <pr#>`; else `--plan` against `ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1`
+- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/security-review.md` to land the review inside the canonical feature dir; without this flag the default `security/<target-slug>-threat-model.md` path is used.
 
 ## Steps
 
@@ -218,8 +219,10 @@ Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan do
 7. Resolve target slug:
    - Plan mode: `<feature>` (parent dir of plan.md)
    - Diff mode: `pr-<pr#>` or `branch-<branch-name>`
-8. Ensure `~/.agentic-workflow/$REPO_SLUG/security/` exists.
-9. Write `security/<target-slug>-threat-model.md`:
+8. Resolve output path:
+   - If `--output <path>` was provided, use it verbatim. Ensure the parent dir exists with `mkdir -p "$(dirname <path>)"`.
+   - Otherwise default to `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`. Ensure `~/.agentic-workflow/$REPO_SLUG/security/` exists.
+9. Write to the resolved output path:
    ```markdown
    # Threat Model — <target>
 
@@ -251,7 +254,18 @@ Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan do
 
 ## Outputs
 
-- `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`
+- Default: `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`
+- When `--output <path>` is supplied: that exact path (used by `/autoplan` to land the review inside `plans/<feature>/security-review.md`)
+
+## Pre-ship integration
+
+`/shipRelease` does NOT currently auto-invoke `/cso`. To enable a security gate, users can:
+
+1. **Manual gate** (recommended for now): run `/cso --diff` before invoking `/shipRelease`. If CRITICAL findings exist, address them before shipping.
+
+2. **Hook gate** (advanced): add a pre-push hook that calls `claude /cso --diff` and exits non-zero on CRITICAL findings. See `.claude/rules/hooks.md` for hook conventions.
+
+Future work: extend `/shipRelease` to optionally auto-invoke `/cso` with a `--cso-gate` flag that blocks ship on CRITICAL findings.
 
 ## Next steps
 

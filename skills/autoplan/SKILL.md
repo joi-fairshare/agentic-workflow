@@ -193,22 +193,31 @@ Dispatches five subagents in parallel — product, architecture, design, devex, 
 
 ## Steps
 
-1. Resolve plan doc path and `$REPO_SLUG` (per `.claude/rules/skills.md` convention). Derive `<feature>` as the parent dir name of the plan.md.
+1. Resolve plan doc path and `$REPO_SLUG` (per `.claude/rules/skills.md` convention). Derive `<feature>` as the parent dir name of the plan.md. Compute the absolute feature dir path: `$HOME/.agentic-workflow/$REPO_SLUG/plans/<feature>/`.
 
-2. **Dispatch 5 subagents in parallel.** Send ONE message containing five `Agent` tool calls (parallel-dispatch pattern from CLAUDE.md). Each subagent gets the plan path and is instructed to:
-   - Invoke its respective skill (`productReview`, `archReview`, `planDesignReview`, `planDevexReview`, or `cso` with `--plan`)
-   - Write its review to its own canonical file under `plans/<feature>/`:
-     - `product-review.md`
-     - `arch-review.md`
-     - `design-review.md`
-     - `devex-review.md`
-     - `security-review.md`
+2. **Dispatch 5 subagents in parallel.** Send ONE message containing five `Agent` tool calls (parallel-dispatch pattern from CLAUDE.md). Each subagent receives the absolute plan.md path, the absolute feature-dir path, and explicit instructions:
 
-3. Wait for all 5 subagents to complete (Agent tool returns when each finishes).
+   - **`productReview` agent** → "Read `<plan-path>`, then invoke the `productReview` skill against it. The skill writes to a top-level `plans/{timestamp}-product-review-<slug>.md` path under `~/.agentic-workflow/$REPO_SLUG/`. After it completes, report back the **exact absolute path** of the file it wrote. Do not move or rename it."
+   - **`archReview` agent** → "Read `<plan-path>`, then invoke the `archReview` skill against it. The skill writes to a top-level `plans/{timestamp}-arch-review-<slug>.md` path under `~/.agentic-workflow/$REPO_SLUG/`. After it completes, report back the **exact absolute path** of the file it wrote. Do not move or rename it."
+   - **`planDesignReview` agent** → "Invoke the `planDesignReview` skill with `--plan <plan-path> --output <feature-dir>/design-review.md`. It will write directly to that path."
+   - **`planDevexReview` agent** → "Invoke the `planDevexReview` skill with `--plan <plan-path> --output <feature-dir>/devex-review.md`. It will write directly to that path."
+   - **`cso --plan` agent** → "Invoke the `cso` skill with `--plan <plan-path> --output <feature-dir>/security-review.md`. It will write directly to that path."
 
-4. Read each output file. Some may be partial if a subagent reported BLOCKED — record but continue.
+3. **Wait for all 5 subagents to complete.** For the `productReview` and `archReview` agents, capture the actual output path each one reports.
 
-5. **Consolidate:** produce `plans/<feature>/consolidated-review.md`:
+4. **Normalize paths into the feature dir.** For the two legacy skills whose outputs land at top-level `plans/`, copy them into the feature dir under their canonical filenames:
+
+   ```bash
+   FEATURE_DIR="$HOME/.agentic-workflow/$REPO_SLUG/plans/<feature>"
+   cp "<productReview-reported-path>" "$FEATURE_DIR/product-review.md"
+   cp "<archReview-reported-path>" "$FEATURE_DIR/arch-review.md"
+   ```
+
+   The new skills (`planDesignReview`, `planDevexReview`, `cso`) already wrote directly to the feature dir via the `--output` flag.
+
+5. Read all 5 review files. Some may be partial if a subagent reported BLOCKED — record but continue.
+
+6. **Consolidate:** produce `plans/<feature>/consolidated-review.md`:
    ```markdown
    # Consolidated Plan Review — <feature>
    
@@ -248,7 +257,7 @@ Dispatches five subagents in parallel — product, architecture, design, devex, 
    | Security | security-review.md | … |
    ```
 
-6. Print a short summary to stdout (5-line table of statuses + top 3 next actions) so the user sees the result without opening the file.
+7. Print a short summary to stdout (5-line table of statuses + top 3 next actions) so the user sees the result without opening the file.
 
 ## Outputs
 

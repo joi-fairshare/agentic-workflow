@@ -1,7 +1,7 @@
 ---
 name: planDesignReview
 description: "Design-lens review of a plan document. Rates information architecture, interaction states, user flows, accessibility, and brand/voice consistency on a 1–5 scale with specific gaps."
-argument-hint: "[plan-path]"
+argument-hint: "[plan-path] [--output <path>]"
 allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
@@ -190,12 +190,13 @@ Reads a plan document (auto-discovers latest if no arg) along with the design la
   ```bash
   ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1
   ```
+- `--output <path>` (optional) — explicit output file path. When `/autoplan` invokes this skill it passes `--output <feature-dir>/design-review.md` so the review lands inside the canonical feature dir.
 - `.impeccable.md` from project root (skip if missing — note in report)
 - `design-tokens.json` from project root (skip if missing — note in report)
 
 ## Steps
 
-1. Resolve the plan doc path.
+1. Resolve the plan doc path. Resolve the output path: if `--output <path>` was provided, use it verbatim; otherwise default to `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md` (where `<feature>` is the parent dir name of the resolved plan.md).
 2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
 3. Read the plan, `.impeccable.md` (if present), `design-tokens.json` (if present).
 4. Review across five dimensions, each rated 1 (severe gap) to 5 (excellent):
@@ -205,7 +206,7 @@ Reads a plan document (auto-discovers latest if no arg) along with the design la
    - **Accessibility** — keyboard nav, screen reader semantics, color contrast, focus management — flag every dimension the plan doesn't address
    - **Brand/voice consistency** — does the plan align with `.impeccable.md` brand personality? Voice and tone of any user-facing copy
 5. For each dimension, write 2–4 bullet evidence lines (quote plan lines + cite line numbers) + a 1–3 bullet "Recommended changes" list.
-6. Write `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md` with this structure:
+6. Write to the resolved output path (default `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md`, or the `--output` value if supplied). Ensure the parent dir exists with `mkdir -p`. Structure:
    ```markdown
    # Plan Design Review — <feature>
    
@@ -235,7 +236,8 @@ Reads a plan document (auto-discovers latest if no arg) along with the design la
 
 ## Outputs
 
-- `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md`
+- Default: `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md`
+- When `--output <path>` is supplied: that exact path (used by `/autoplan` for canonical placement inside the feature dir)
 
 ## Next steps
 

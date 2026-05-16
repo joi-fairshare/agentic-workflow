@@ -90,7 +90,7 @@ officeHours → autoplan ⟨productReview · archReview · planDesignReview · p
    → design-analyze → design-language → design-shotgun → design-mockup → design-implement → design-refine → design-verify
                                         ^                                       (orchestrates impeccable + emil + taste)
                                design-evolve (anytime)
-   → cso (pre-ship security gate)
+   → cso (pre-ship security check — recommended; manual or hook-gated, see skills/cso/SKILL.md § Pre-ship integration)
    → review → rootCause → bugHunt → shipRelease → landAndDeploy → canary → syncDocs → weeklyRetro
    verify-app (anytime — standalone verification of running app)
    prismStatus (anytime — health check for prism-mcp)

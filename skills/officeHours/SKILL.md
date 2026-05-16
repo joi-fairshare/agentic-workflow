@@ -752,6 +752,48 @@ Write the four files to:
 - `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/design-brief.md`
 - `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/TASKS.md`
 
+## Step 7.5: Write the consolidated plan summary
+
+After the four domain docs are written, write `plans/{timestamp}-{slug}/plan.md` — a 1-page consolidated summary that downstream skills (`/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`) auto-discover via `ls -t plans/*/plan.md | head -1`. This file is the canonical handoff — every plan-stage skill reads it first.
+
+Structure:
+
+```markdown
+# Plan: <feature title>
+
+**Generated:** <ISO date> by officeHours
+**Feature dir:** plans/<feature>/
+
+## TL;DR
+<2-3 sentences capturing the feature in plain English>
+
+## Problem
+<from product.md — the why>
+
+## Approach
+<from engineering.md — the how>
+
+## User experience
+<from design-brief.md — the look/feel>
+
+## Open questions
+<bullet list — anything ambiguous>
+
+## Domain documents
+- [Product](product.md) — owner: product
+- [Engineering](engineering.md) — owner: engineering
+- [Design brief](design-brief.md) — owner: design
+- [Tasks](TASKS.md) — owner: tech lead
+
+## Next steps
+- `/autoplan` — fan out reviews across all 5 lenses in parallel
+- `/productReview --mvp` — standalone product lens
+- `/archReview` — standalone engineering lens
+```
+
+Write the file to:
+- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/plan.md`
+
 ## Step 8: Report
 
 Show a summary to the user:
@@ -761,6 +803,7 @@ Office Hours complete!
 
 Plan written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-{slug}/
 
+  plan.md          → Canonical handoff — 1-page consolidated summary for downstream skills
   product.md       → Product Team     — {N} requirements, {N} acceptance criteria, {N} success metrics
   engineering.md   → Engineering Team — {N} ADRs, {N} technical requirements, {N} open questions
   design-brief.md  → Design Team      — {N} key moments, {N} UX principles, {N} design constraints
@@ -797,3 +840,19 @@ Based on response:
 - Product/founder lens → Skill tool: `productReview`
 - Both → invoke in sequence: `archReview` then `productReview`
 - Neither → done
+
+## Outputs
+
+All under `~/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/`:
+
+- `plan.md` — canonical 1-page handoff (auto-discovered by `/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`)
+- `product.md` — Product Team domain doc
+- `engineering.md` — Engineering Team domain doc
+- `design-brief.md` — Design Team domain doc
+- `TASKS.md` — task breakdown (cross-team visibility)
+
+## Next steps
+
+- `/autoplan` — fan out parallel reviews across product, architecture, design, devex, security lenses
+- `/design-shotgun` — generate mockup variants if the feature has a visual surface
+- `/archReview` — standalone deep architecture review (if autoplan feels heavy)

@@ -1,7 +1,7 @@
 ---
 name: planDevexReview
 description: "Developer-experience review of a plan document. Maps friction in API ergonomics, setup, error messages, observability, docs, migration paths, and ramp-up cost."
-argument-hint: "[plan-path]"
+argument-hint: "[plan-path] [--output <path>]"
 allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
@@ -190,11 +190,12 @@ Reads a plan document (auto-discovers latest if no arg) plus the repo's conventi
   ```bash
   ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1
   ```
+- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/devex-review.md`.
 - Repo conventions: `CLAUDE.md`, every `.claude/rules/*.md`
 
 ## Steps
 
-1. Resolve the plan doc.
+1. Resolve the plan doc. Resolve the output path: if `--output <path>` was provided, use it verbatim; otherwise default to `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/devex-review.md`.
 2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
 3. Read the plan + `CLAUDE.md` + each rule file under `.claude/rules/`.
 4. For each of six dimensions, identify findings with severity:
@@ -205,7 +206,7 @@ Reads a plan document (auto-discovers latest if no arg) plus the repo's conventi
    - **Backwards compatibility / migration** — are existing users handled? Versioning? Deprecation path? Schema migration plan?
    - **Ramp-up cost for a new contributor** — would a new dev be blocked without tribal knowledge? Are conventions documented?
 5. For each finding write: dimension, severity, evidence (cite plan line numbers), concrete fix recommendation.
-6. Write `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/devex-review.md`:
+6. Write to the resolved output path (default `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/devex-review.md`, or the `--output` value if supplied). Ensure the parent dir exists with `mkdir -p`. Structure:
    ```markdown
    # Plan Devex Review — <feature>
    
@@ -240,7 +241,8 @@ Reads a plan document (auto-discovers latest if no arg) plus the repo's conventi
 
 ## Outputs
 
-- `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/devex-review.md`
+- Default: `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/devex-review.md`
+- When `--output <path>` is supplied: that exact path (used by `/autoplan` for canonical placement inside the feature dir)
 
 ## Next steps
 
