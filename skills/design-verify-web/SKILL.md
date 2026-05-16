@@ -404,3 +404,8 @@ release_browser_lock
 - For major diffs, suggest the `design-iterator` compound-engineering agent as an automated fix path
 - Do not modify any code — this skill is read-only verification
 - If the dev server is not running, advise the user to start it before re-running
+
+## Next steps
+
+- `/design-refine` — if the Playwright diff surfaced visual gaps
+- `/shipRelease` — if the diff is clean, ship the release

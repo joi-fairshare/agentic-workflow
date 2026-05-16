@@ -331,3 +331,8 @@ Report: ~/.agentic-workflow/{REPO_SLUG}/qa/{filename}
 
 Run /bugHunt to fix individual bugs.
 ```
+
+## Next steps
+
+- `/bugHunt` — auto-fix the reported issues with verification
+- `/rootCause` — deep-dive a specific bug from the report

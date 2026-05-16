@@ -291,3 +291,8 @@ Use the `Read` tool to check for web indicators:
 | Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I generate code for? (web / ios)" → invoke chosen |
 
 Arguments are passed through unchanged. Platform is auto-detected — users no longer need to specify `web` or `swiftui`. To override detection, invoke the sub-skill directly.
+
+## Next steps
+
+- `/design-verify` — screenshot diff implementation vs mockup baseline
+- `/design-refine` — polish the implementation before verification

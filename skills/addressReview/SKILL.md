@@ -305,3 +305,8 @@ Still outstanding (if any):
 
 Run /addressReview again to continue, or /postReview to publish.
 ```
+
+## Next steps
+
+- `/review` — verify fixes don't introduce new issues
+- `/shipRelease` — if all blockers resolved, ship the changes

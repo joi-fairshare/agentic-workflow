@@ -293,3 +293,8 @@ Use the `Read` tool to check for web indicators:
 | Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform? (web / ios)" → invoke chosen |
 
 All user-supplied arguments are passed through to the sub-skill unchanged.
+
+## Next steps
+
+- `/design-mockup` — build a mockup with the updated tokens
+- `/design-refine` — apply the evolved language to existing screens

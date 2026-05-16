@@ -357,3 +357,8 @@ Next steps:
 - Include hover states and interactive affordances in the HTML/CSS
 - If `.impeccable.md` doesn't exist, warn but still allow creation with manual style guidance
 - Save only ONE baseline per screen name — re-running overwrites the previous baseline after confirmation
+
+## Next steps
+
+- `/design-implement-web` — generate CSS/Tailwind/React from the mockup
+- `/design-refine` — iterate the HTML mockup before implementation

@@ -359,3 +359,7 @@ Weekly retro complete ({start_date} to {end_date}).
   Test health:   {pass}/{total} passed
   Report:        ~/.agentic-workflow/{repo-slug}/retros/{filename}
 ```
+
+## Next steps
+
+- `/officeHours` — start the next cycle with a feature spec

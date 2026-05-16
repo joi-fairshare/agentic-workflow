@@ -394,3 +394,8 @@ release_lock
 - Report exact differences (element sizes, colors, spacing) when detectable from the diff
 - Do not modify any code — this skill is read-only verification
 - If the simulator is in an unexpected state (wrong screen, system dialog), note it and ask the user to navigate to the correct screen
+
+## Next steps
+
+- `/design-refine` — if the simulator diff surfaced visual gaps
+- `/shipRelease` — if the diff is clean, ship the release

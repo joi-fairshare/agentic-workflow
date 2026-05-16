@@ -378,3 +378,8 @@ Next steps:
 - If `design-tokens.json` is updated, note that `/design-implement` should be re-run to regenerate platform token files
 - Do not modify `.impeccable.md` during refinement — only `design-tokens.json` may be updated
 - Always append the run to `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md`
+
+## Next steps
+
+- `/design-verify` — verify refinements match the mockup baseline
+- `/design-implement` — if refinements require code-level changes

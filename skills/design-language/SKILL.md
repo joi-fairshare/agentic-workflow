@@ -468,3 +468,8 @@ Incorporate any corrections and re-save.
 - Be specific in descriptions — "clean and minimal" is too vague; "generous whitespace, muted colors, SF Pro typography with tight leading" is useful
 - If `design-tokens.json` exists (and user confirmed overwrite), the new file replaces it entirely — don't partially merge
 - Do not write placeholder values — if a token wasn't determined, omit the key
+
+## Next steps
+
+- `/design-mockup` — build the first mockup from the new language
+- `/design-shotgun` — explore variants before committing to a direction

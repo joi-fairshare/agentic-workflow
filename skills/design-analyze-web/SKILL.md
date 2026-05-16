@@ -366,3 +366,8 @@ Next steps:
 - Do not modify existing `design-tokens.json` without warning — if it exists, ask before overwriting
 - Clean up Dembrandt output files after merging (keep only `design-tokens.json`)
 - If Dembrandt is not installed, advise: "Run `npm install -g dembrandt` or re-run `setup.sh`"
+
+## Next steps
+
+- `/design-language` — define brand from extracted web tokens
+- `/design-evolve-web` — merge new tokens into existing design language

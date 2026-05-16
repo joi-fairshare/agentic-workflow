@@ -250,3 +250,7 @@ Only after explicit confirmation, begin the work.
 - Always reference previous answers when asking follow-ups to show you're building understanding.
 - The subagent question always gets its own dedicated round.
 - If the task is trivial and truly has no ambiguity, you may collapse to fewer rounds, but still ask the subagent question and get confirmation before proceeding.
+
+## Next steps
+
+- run original skill — run the original skill with the gathered requirements

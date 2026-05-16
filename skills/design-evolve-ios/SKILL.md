@@ -350,3 +350,8 @@ Next steps:
 - Show exact before/after values for all changes
 - Preserve token structure — only update values, don't reorganize
 - Tokens in `design-tokens.json` NOT present in the reference are always preserved
+
+## Next steps
+
+- `/design-mockup-ios` — build a SwiftUI mockup with the updated tokens
+- `/design-refine` — apply the evolved language to existing views

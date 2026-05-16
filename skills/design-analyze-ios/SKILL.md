@@ -371,3 +371,8 @@ Next steps:
 - If Swift files use system colors (`Color(.systemBlue)`) without a custom equivalent, note them in the output but do not add a token for them
 - Do not modify existing Swift files — read-only extraction
 - Convert all CGFloat dimensions to `"Npx"` string format for DTCG compatibility
+
+## Next steps
+
+- `/design-language` — define brand from extracted iOS tokens
+- `/design-evolve-ios` — merge Swift reference into existing design language

@@ -298,3 +298,9 @@ Reviewers:
 Run /postReview to publish comments to GitHub.
 Run /addressReview to start implementing fixes.
 ```
+
+## Next steps
+
+- `/postReview` — publish the findings to GitHub as batched comments
+- `/addressReview` — start fixing the issues in parallel
+- `/rootCause` — investigate a specific blocking bug from the review

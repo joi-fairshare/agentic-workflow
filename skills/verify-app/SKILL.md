@@ -210,3 +210,8 @@ Use the `Read` tool to check for web indicators:
 | Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
 
 All user-supplied arguments (e.g., `--visual`, `auto`, explicit criteria) are passed through to the sub-skill unchanged.
+
+## Next steps
+
+- `/design-verify` — if visual gaps surfaced, run design verification
+- `/bugReport` — if functional gaps surfaced, capture them as a bug report

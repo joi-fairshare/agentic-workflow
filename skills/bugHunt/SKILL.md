@@ -372,3 +372,9 @@ If the fix-and-verify loop ends with status `unfixed` (all hypotheses exhausted)
 > Skill tool: `bugReport`
 
 Do not invoke bugReport on success — bugHunt's own Step 8 report is sufficient.
+
+## Next steps
+
+- `/review` — verify fixes pass code review
+- `/shipRelease` — if all bugs are fixed and tests pass
+- `/weeklyRetro` — if this was part of a larger debugging push

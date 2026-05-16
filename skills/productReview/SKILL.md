@@ -351,3 +351,8 @@ Suggested next steps:
   /archReview — Review the engineering architecture
   /officeHours — Brainstorm refinements to address concerns
 ```
+
+## Next steps
+
+- `/autoplan` — run with other plan-review lenses in parallel
+- `/archReview` — engineering architecture perspective on the same plan

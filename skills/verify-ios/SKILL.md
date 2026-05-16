@@ -341,3 +341,8 @@ release_lock
 - **In auto mode, always confirm the plan** before executing.
 - **If simulator isn't running**, ask the user rather than attempting to build the project from scratch.
 - **Always release the simulator lock** — even if verification fails partway through. A leaked lock blocks all future verification sessions.
+
+## Next steps
+
+- `/design-verify-ios` — if visual gaps surfaced, run iOS design verification
+- `/bugReport` — if functional gaps surfaced, capture them as a bug report

@@ -380,3 +380,8 @@ Next steps:
 - If Design Token Bridge MCP is not available, fall back to manual token file generation from `design-tokens.json`
 - Do not modify `design-tokens.json` — it is the source of truth
 - If the mockup HTML is available, use it as the primary reference for layout and structure
+
+## Next steps
+
+- `/design-verify-web` — Playwright diff against mockup baseline
+- `/design-refine` — polish the implementation before verification

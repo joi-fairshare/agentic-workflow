@@ -409,3 +409,8 @@ Next steps:
 - Never hardcode values that exist in `design-tokens.json`
 - Do not modify `design-tokens.json` — it is the source of truth
 - If the project has existing color definitions (Asset catalog, extension), note any conflicts rather than silently overwriting
+
+## Next steps
+
+- `/design-verify-ios` — simulator screenshot diff against mockup baseline
+- `/design-refine` — polish the SwiftUI views before verification

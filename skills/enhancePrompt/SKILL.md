@@ -256,3 +256,7 @@ Do NOT begin executing the task during this skill.
 - Skip docs that aren't relevant — don't dump everything found.
 - If the prompt is already detailed, say so and ask if enhancement is still wanted.
 - If no docs exist, enhance from what's known in the conversation.
+
+## Next steps
+
+- run the enhanced prompt — execute the enhanced prompt directly via the appropriate skill

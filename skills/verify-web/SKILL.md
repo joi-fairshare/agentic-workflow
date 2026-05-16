@@ -360,3 +360,8 @@ release_browser_lock
 - **Respect the running app** — don't restart servers, modify databases, or change app state beyond normal UI interactions.
 - **Keep verification focused** — 3-8 checks is the sweet spot. More than 10 suggests the scope is too broad; suggest splitting into multiple runs.
 - **In auto mode, always confirm the plan** — don't execute without user approval, since diff-inference may miss or misinterpret changes.
+
+## Next steps
+
+- `/design-verify-web` — if visual gaps surfaced, run web design verification
+- `/bugReport` — if functional gaps surfaced, capture them as a bug report

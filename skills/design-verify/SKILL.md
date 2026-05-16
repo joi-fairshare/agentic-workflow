@@ -291,3 +291,8 @@ Use the `Read` tool to check for web indicators:
 | Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
 
 All user-supplied arguments (e.g., `[screen-name]`) are passed through to the sub-skill unchanged.
+
+## Next steps
+
+- `/design-refine` — if the diff surfaced visual gaps
+- `/shipRelease` — if the diff is clean, ship the release

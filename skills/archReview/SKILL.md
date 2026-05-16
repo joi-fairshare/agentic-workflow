@@ -430,3 +430,8 @@ Suggested next steps:
   /productReview — Get founder-lens feedback on the plan
   /officeHours — Brainstorm solutions to identified risks
 ```
+
+## Next steps
+
+- `/autoplan` — run alongside other plan-review lenses in parallel
+- `/review` — deep code review of the implementation

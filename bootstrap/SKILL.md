@@ -696,3 +696,8 @@ Suggested workflow:
   • /shipRelease — push, open PR, sync docs
   • /weeklyRetro — generate a weekly retrospective
 ```
+
+## Next steps
+
+- `/officeHours` — start a feature spec now that planning docs exist
+- `/design-language` — define the visual identity for this repo

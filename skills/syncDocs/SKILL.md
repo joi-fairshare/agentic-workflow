@@ -322,3 +322,7 @@ Docs synced.
   Commit:  {SHA or "no changes"}
   Report:  ~/.agentic-workflow/{repo-slug}/releases/{filename}
 ```
+
+## Next steps
+
+- `/weeklyRetro` — if end of week, run the retrospective

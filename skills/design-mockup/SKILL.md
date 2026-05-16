@@ -291,3 +291,8 @@ Use the `Read` tool to check for web indicators:
 | Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I create a mockup for? (web / ios)" → invoke chosen |
 
 All user-supplied arguments (e.g., `<screen-name>`) are passed through to the sub-skill unchanged.
+
+## Next steps
+
+- `/design-implement` — turn the approved mockup into production code
+- `/design-refine` — iterate the mockup before implementation

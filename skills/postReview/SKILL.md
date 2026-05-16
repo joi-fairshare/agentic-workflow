@@ -293,3 +293,8 @@ Total: 6 comments · 2 API calls
 
 View: {pr_url}
 ```
+
+## Next steps
+
+- `/addressReview` — start implementing the fixes from the published review
+- `/shipRelease` — if the review found nothing blocking, ship the release

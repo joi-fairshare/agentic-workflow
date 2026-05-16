@@ -401,3 +401,8 @@ release_lock
 - Inline all design tokens directly in the file so the preview is self-contained
 - If the project doesn't build, report the error and stop — never write a baseline from a broken build
 - Delete `Mockup.swift` after capturing the baseline (it's a temporary file). Advise the user if the file should be kept for iterative work.
+
+## Next steps
+
+- `/design-implement-ios` — generate SwiftUI components from the mockup
+- `/design-refine` — iterate the SwiftUI preview before implementation

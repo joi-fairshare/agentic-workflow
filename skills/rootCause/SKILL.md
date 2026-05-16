@@ -294,3 +294,8 @@ If Phase 4 ends with status `unfixed` or `scope-breach`:
 > Skill tool: `bugHunt`, args: `"<error slug from Step 1>"`
 
 Do not invoke bugHunt if the fix was verified — rootCause's own report is sufficient on success.
+
+## Next steps
+
+- `/bugHunt` — auto-fix the bug using the diagnosis
+- `/review` — re-review the codebase after applying fixes
