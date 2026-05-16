@@ -73,11 +73,12 @@ Result: `org-repo` (e.g., `myorg-myrepo`). All output paths use `~/.agentic-work
 | Reviews | `/review`, `/postReview`, `/addressReview` | `reviews/` |
 | Investigations | `/rootCause` | `investigations/` |
 | QA | `/bugHunt`, `/bugReport` | `qa/` |
-| Releases | `/shipRelease`, `/syncDocs` | `releases/` |
+| Releases | `/shipRelease`, `/landAndDeploy`, `/canary`, `/syncDocs` | `releases/` |
 | Retrospectives | `/weeklyRetro` | `retros/` |
-| Planning | `/officeHours`, `/productReview`, `/archReview` | `plans/` (`officeHours` writes to `plans/<feature>/`) |
-| Design | `/design-mockup`, `/design-verify` | `design/` |
+| Planning | `/officeHours`, `/productReview`, `/archReview`, `/planDesignReview`, `/planDevexReview`, `/autoplan` | `plans/` (`officeHours` and `autoplan` write to `plans/<feature>/`) |
+| Design | `/design-mockup`, `/design-verify`, `/design-shotgun` | `design/` (`design-shotgun` writes to `design/shotgun/`) |
 | Verification | `/verify-app` | `verification/` |
+| Security | `/cso` | `security/` |
 
 Skills that output files always write to `~/.agentic-workflow/$REPO_SLUG/<domain>/` — never to the project directory.
 
@@ -86,13 +87,27 @@ Skills that output files always write to `~/.agentic-workflow/$REPO_SLUG/<domain
 Skills flow into each other — each writes artifacts that downstream skills auto-discover:
 
 ```
-officeHours → productReview / archReview
-    → design-analyze → design-language → design-mockup → design-implement → design-refine → design-verify
-                                        ^
+officeHours → autoplan ⟨productReview · archReview · planDesignReview · planDevexReview · cso(plan)⟩
+   → design-analyze → design-language → design-shotgun → design-mockup → design-implement → design-refine → design-verify
+                                        ^                                       (orchestrates impeccable + emil + taste)
                                design-evolve (anytime)
-    → review → rootCause → bugHunt → shipRelease → syncDocs → weeklyRetro
-    verify-app (anytime — standalone verification of running app)
+   → cso (pre-ship security gate)
+   → review → rootCause → bugHunt → shipRelease → landAndDeploy → canary → syncDocs → weeklyRetro
+   verify-app (anytime — standalone verification of running app)
+   prismStatus (anytime — health check for prism-mcp)
 ```
+
+## Meta-Orchestration
+
+Three stage orchestrators fan out subagents in parallel and consolidate findings:
+
+| Orchestrator | Stage | Fans out to |
+|---|---|---|
+| `/autoplan` | Plan | `productReview` + `archReview` + `planDesignReview` + `planDevexReview` + `cso(plan)` |
+| `/design-refine` | Design | impeccable (umbrella) + emil-design-eng (reference) + taste-skill family (style packs) |
+| `/shipRelease` | Ship | auto-chains → `landAndDeploy` → `canary` → `syncDocs` |
+
+Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. Skills compose through structured suggestions and filesystem hand-off, not by importing each other's logic.
 
 ## Bootstrap Skill
 
@@ -121,3 +136,5 @@ Skills are installed as symlinks:
 ```
 
 `setup.sh` manages symlinks with collision detection and stale-skill cleanup. The `install_skill()` function handles: up-to-date (skip), same-repo refresh, different-repo collision (prompt), real-directory collision (prompt).
+
+External packs (`pbakaus/impeccable`, `emilkowalski/skill`, `Leonxlnx/taste-skill`) are cloned at pinned commits (per `EXTERNAL_PINS.env`) into `~/.agentic-workflow/external-skills/<repo>/`. Their `skills/*/` (or `.claude/skills/*/`) subdirs are symlinked into `~/.claude/skills/` alongside native ones. Native symlinks pointing into this repo always win on name collision — external pack skills with matching names are skipped with a warning. Use `./scripts/refresh-external-pins.sh` to bump pinned SHAs to upstream HEAD.
