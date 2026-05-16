@@ -1,7 +1,7 @@
 ---
 name: bootstrap
 description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
-argument-hint: [--force] [--product-docs <url-or-path>]...
+argument-hint: "[--force] [--product-docs <url-or-path>]..."
 allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
