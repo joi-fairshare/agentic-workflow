@@ -2,7 +2,7 @@
 name: design-shotgun
 description: "Generate 4–6 mockup variants in parallel with distinct aesthetic directions. Produces a contact sheet for side-by-side comparison and a picked-variant handoff to /design-mockup."
 argument-hint: "[feature-name] [--variants N]"
-allowed-tools: Bash(*), Agent, Read, Write, Glob, Grep, Skill, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_take_screenshot
+allowed-tools: Bash(ls *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_take_screenshot
 ---
 
 # Design Shotgun — Parallel Mockup Variants
@@ -184,6 +184,8 @@ If either call fails, surface the error:
 
 Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents, each with a distinct aesthetic direction (minimalist, brutalist, editorial, glassmorphism, neo-skeuomorphic, swiss-grid). Each subagent invokes the existing `frontend-design` skill with the direction baked into the brief. Outputs all N variants as HTML, plus a contact-sheet HTML embedding them side-by-side, plus Playwright screenshots of each.
 
+**External pack dependency:** design-shotgun delegates variant generation to the `frontend-design` skill (provided by the `compound-engineering` plugin or, when not present, the user's local `frontend-design` if installed via taste-skill or impeccable). If `frontend-design` is not available, the skill falls back to constructing the mockup HTML inline using design tokens + the chosen aesthetic direction's prompt template (see `skills/design-shotgun/aesthetics.md` for fallback templates). This makes design-shotgun self-sufficient even in environments without the external pack.
+
 ## Inputs
 
 - Feature name (positional arg). If omitted, auto-discover from the latest `plans/*` dir.
@@ -196,7 +198,7 @@ Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents
 
 1. Resolve feature name (arg or `ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1` and use its dirname).
 2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
-3. Resolve N (`--variants` flag or 4). Clamp to [2, 6].
+3. Resolve N (`--variants` flag or 4). Clamp to [2, 6]. If N < 4, print a one-line note "generating fewer than 4 variants reduces aesthetic diversity — consider --variants 4+" but proceed. The description advertises 4–6 variants as the recommended range; the hard floor of 2 exists only for users who explicitly want a head-to-head pair.
 4. Read `design-tokens.json` and `.impeccable.md`. Read the plan doc for context.
 5. **Pick N aesthetic directions** from this seed list, choosing the N that most diverge from each other given the brand personality in `.impeccable.md`:
    - `minimalist` — restrained typography, generous whitespace, monochrome accents

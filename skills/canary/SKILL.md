@@ -2,7 +2,7 @@
 name: canary
 description: "Post-deploy monitoring. Watches error rate, latency, logs, and custom probes for a configurable window. Verdict: HEALTHY (chain syncDocs), DEGRADED (warn), UNHEALTHY (alert + rootCause)."
 argument-hint: "[release-id] [--duration <sec>] [--setup]"
-allowed-tools: Bash(curl *), Bash(jq *), Bash(*), Read, Write, Skill
+allowed-tools: Bash(curl *), Bash(jq *), Bash(kubectl *), Bash(grep *), Bash(tail *), Read, Write, Skill
 ---
 
 # Canary — Post-Deploy Monitoring
@@ -192,6 +192,7 @@ Reads `.agentic-workflow/canary.json` for monitoring URLs and probes. Runs minut
   ```
 - `--duration <sec>` (optional). Overrides `canary.duration` from config.
 - `--setup` flag: run interactive wizard to write `.agentic-workflow/canary.json`, then exit.
+- `--skip-docs` flag (optional). When set, the `/syncDocs` auto-chain on HEALTHY verdict is suppressed. The flag also propagates from `/shipRelease` → `/landAndDeploy` → `/canary`, so passing `--skip-docs` to any upstream skill carries through to canary's chain decision.
 - Config file: `.agentic-workflow/canary.json` in project root.
 
 ## Config schema (`.agentic-workflow/canary.json`)
@@ -245,13 +246,15 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
 
 4. Load `.agentic-workflow/canary.json`. If missing, suggest `--setup` and exit.
 
+4a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/canary.json 2>/dev/null` — if this returns 0 (file is tracked), error out with "canary.json is committed to the repo; remove it and run `/canary --setup` to write a local-only copy. The skill executes shell commands from this file and a tracked copy is a foot-gun." Recommend adding `.agentic-workflow/canary.json` to `.gitignore`.
+
 5. Determine duration (`--duration` arg > config `duration` > default 900).
 
 6. Compute baseline values on first probe minute:
    - Initial `errorRateUrl` value → `baseline.errorRate`
    - Initial `latencyUrl` p95 → `baseline.p95`
 
-7. Probe loop — every 60 s for `duration / 60` iterations:
+7. Probe loop — every 60 s for `ceil(duration / 60)` iterations (so the final tail is probed even when duration isn't a multiple of 60):
    - Fetch `errorRateUrl` → current error rate
    - Fetch `latencyUrl` → current p50/p95/p99
    - If `logSource` set: run it; check stdout against `logAnomalyPatterns`. Record any matches.
@@ -297,7 +300,7 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
    ```
 
 10. Branch on verdict:
-    - **HEALTHY:** invoke `/syncDocs` via `Skill` tool.
+    - **HEALTHY:** if `--skip-docs` was passed (directly or propagated from shipRelease/landAndDeploy), print "skipping /syncDocs auto-chain (--skip-docs)" and exit. Otherwise invoke `/syncDocs` via `Skill` tool.
     - **DEGRADED:** print warning to stdout. Do NOT auto-chain.
     - **UNHEALTHY:** print alert + suggest `/rootCause`. Do NOT auto-chain.
 

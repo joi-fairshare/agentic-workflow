@@ -294,11 +294,15 @@ Capture the PR URL (and the PR number returned by `gh pr create`) for the report
 
 ## Step 7: Auto-chain `/landAndDeploy`
 
-Unless `--no-deploy` was passed, invoke `/landAndDeploy --wait` via the `Skill` tool, passing the PR number captured in Step 6.
+Unless `--no-deploy` was passed, invoke `/landAndDeploy --wait` via the `Skill` tool, passing the PR number captured in Step 6. If the user passed `--skip-docs` to `shipRelease`, also pass `--skip-docs` to `/landAndDeploy`.
+
+Before the Skill invocation, set the env marker `LAND_AND_DEPLOY_CHAINED=1` so `/landAndDeploy` can graceful-degrade if `deploy.json` is missing (a first-time user's `shipRelease` shouldn't hard-fail because the deploy wizard hasn't been run yet).
 
 The `--wait` flag tells `/landAndDeploy` to poll for merge before deploying — so this step works correctly even though the PR may not yet be merged at the moment `shipRelease` completes.
 
-On successful deploy, `/landAndDeploy` auto-chains `/canary`, which on a `HEALTHY` verdict auto-chains `/syncDocs`. The full chain becomes:
+The `--skip-docs` flag propagates through the entire chain: `shipRelease → landAndDeploy → canary → syncDocs`. Both `/landAndDeploy` and `/canary` forward the flag; `/canary` suppresses its own auto-`/syncDocs` invocation when the flag is set.
+
+On successful deploy, `/landAndDeploy` auto-chains `/canary`, which on a `HEALTHY` verdict auto-chains `/syncDocs` (unless `--skip-docs` was propagated). The full chain becomes:
 
 ```
 shipRelease → landAndDeploy → canary → syncDocs
@@ -306,7 +310,7 @@ shipRelease → landAndDeploy → canary → syncDocs
 
 If `--no-deploy` was passed, skip this step entirely and fall through to Step 8 (direct `/syncDocs` invocation). Use `--no-deploy` for release-branch workflows where merge happens elsewhere or deployment is manual.
 
-Record whether the deploy chain was started or skipped.
+Record whether the deploy chain was started or skipped, and whether `--skip-docs` was forwarded.
 
 ## Step 8: Invoke /syncDocs (fallback)
 
@@ -324,32 +328,40 @@ Record whether docs were updated, deferred to the canary chain, or skipped.
 
 ## Step 9: Report
 
-Write the release report to `~/.agentic-workflow/$REPO_SLUG/releases/{timestamp}-{branch}.md` where `{timestamp}` is `YYYYMMDD-HHmmss` format:
+Compute a release-id matching the downstream schema used by `/landAndDeploy` and `/canary`: `<ISO-date>-<short-sha>` where `<ISO-date>` is `YYYY-MM-DD` and `<short-sha>` is the first 7 chars of the tip commit SHA (from `git rev-parse --short=7 HEAD` after Step 5's push). Example: `2026-05-15-a1b2c3d`.
+
+Write the release report to `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/ship.md` (release-id subdir, not a flat file). This way `/landAndDeploy` adds `deploy.md` and `/canary` adds `canary.md` to the same `<release-id>/` directory — all three artifacts from the chain live under one folder.
 
 ```markdown
 # Release: {branch}
 
+- **Release ID:** {release-id}
 - **Date:** {ISO timestamp}
 - **Base:** {base}
 - **Branch:** {branch}
+- **Tip SHA:** {short-sha}
 - **Test result:** passed ({N} tests)
 - **Coverage:** {percentage}% (or "not available")
 - **Files below 80%:** {list or "none"}
 - **PR:** {url}
 - **Deploy chain:** {started via /landAndDeploy / skipped (--no-deploy)}
+- **--skip-docs forwarded:** {yes / no}
 - **Docs updated:** {yes / deferred-to-canary-chain / skipped}
 ```
+
+Pass `<release-id>` to `/landAndDeploy` in Step 7 so the entire chain writes to the same subdir. (If the merge SHA differs from the tip SHA when `/landAndDeploy` runs, `/landAndDeploy` recomputes the release-id using the merge SHA and the ship.md may end up in a separate subdir — this is acceptable; both subdirs together describe the release. Prefer the merge-SHA subdir as the canonical release record.)
 
 Print a summary to the user:
 
 ```
 Release shipped!
-  Branch: {branch} → {base}
-  Tests:  passed
-  PR:     {url}
-  Deploy: {chained via /landAndDeploy --wait | skipped (--no-deploy)}
-  Docs:   {updated | deferred to canary chain | skipped}
-  Report: ~/.agentic-workflow/{repo-slug}/releases/{filename}
+  Branch:  {branch} → {base}
+  Release: {release-id}
+  Tests:   passed
+  PR:      {url}
+  Deploy:  {chained via /landAndDeploy --wait | skipped (--no-deploy)}
+  Docs:    {updated | deferred to canary chain | skipped}
+  Report:  ~/.agentic-workflow/{repo-slug}/releases/{release-id}/ship.md
 ```
 
 ## Next steps

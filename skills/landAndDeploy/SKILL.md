@@ -1,7 +1,7 @@
 ---
 name: landAndDeploy
 description: "Wait for PR merge, run deploy command, poll health, run smoke tests, then auto-chain /canary. Configured by .agentic-workflow/deploy.json."
-argument-hint: "[pr#] [--wait|--no-wait] [--setup]"
+argument-hint: "[pr#] [--wait|--no-wait] [--setup] [--skip-docs]"
 allowed-tools: Bash(gh *), Bash(git *), Bash(curl *), Bash(jq *), Read, Write, Skill
 ---
 
@@ -191,6 +191,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
   - Default `--wait` when invoked from `/shipRelease` auto-chain (PR may not yet be merged at chain time)
   - Default `--no-wait` when invoked standalone (user is at the terminal, expects fast feedback)
 - `--setup` flag: run interactive wizard to write `.agentic-workflow/deploy.json`, then exit.
+- `--skip-docs` flag (optional). Propagates from `/shipRelease` and forwards to `/canary` on auto-chain, suppressing the eventual `/syncDocs` invocation downstream. This skill does not call `/syncDocs` directly — it only forwards the flag.
 - Config file: `.agentic-workflow/deploy.json` in project root.
 
 ## Config schema (`.agentic-workflow/deploy.json`)
@@ -234,7 +235,12 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
    - `--wait`: poll `gh pr view --json mergedAt` every 30 s, max 30 min. Stop on merge.
    - `--no-wait`: error: "PR #N not merged; pass `--wait` to poll or merge manually first".
 
-5. Load `.agentic-workflow/deploy.json`. If missing, suggest `--setup` and exit.
+5. Load `.agentic-workflow/deploy.json`.
+   - If present: continue normally.
+   - If missing AND skill was invoked from shipRelease's auto-chain (detect via an env marker `LAND_AND_DEPLOY_CHAINED=1` that shipRelease sets before invoking via Skill): print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success. This lets the canary→syncDocs chain be skipped without a hard error so first-time users aren't blocked.
+   - If missing AND invoked standalone: error and suggest `--setup`.
+
+5a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/deploy.json 2>/dev/null` — if it returns 0, error out: "deploy.json is committed; remove and run `/landAndDeploy --setup`. The skill executes `command` and `smokeTests[]` from this file as shell, so a tracked copy is an RCE foot-gun." Recommend adding `.agentic-workflow/deploy.json` to `.gitignore`.
 
 6. Compute release-id: `<ISO-date>-<short-sha>` where `<short-sha>` is the merge commit SHA.
 
@@ -271,7 +277,7 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
     <last 50 lines of deploy command output, smoke test stdout snippets>
     ```
 
-11. On SUCCESS, auto-invoke `/canary` via the `Skill` tool, passing the release-id.
+11. On SUCCESS, auto-invoke `/canary` via the `Skill` tool, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
 
 ## Outputs
 
