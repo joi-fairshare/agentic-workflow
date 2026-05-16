@@ -797,7 +797,9 @@ if command -v claude &>/dev/null; then
   if claude mcp list 2>&1 | grep -q "prism-mcp"; then
     echo "  prism-mcp: already registered in Claude Code"
   else
-    claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+    claude mcp add --scope user prism-mcp \
+      --env PRISM_DASHBOARD_PORT=7180 \
+      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
       2>/dev/null || echo "  WARN: prism-mcp registration failed"
     echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
   fi
@@ -809,7 +811,9 @@ if command -v codex &>/dev/null; then
   if codex mcp list 2>&1 | grep -q "prism-mcp"; then
     echo "  prism-mcp: already registered in Codex"
   else
-    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+    codex mcp add prism-mcp \
+      --env PRISM_DASHBOARD_PORT=7180 \
+      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
       2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
     echo "  prism-mcp: registered with Codex"
   fi
