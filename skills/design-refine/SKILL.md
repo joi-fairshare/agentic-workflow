@@ -1,6 +1,6 @@
 ---
 name: design-refine
-description: Dispatch Impeccable refinement commands (colorize, animate, polish, typeset, arrange, etc.) with design language context pre-loaded. Suggests which refinements would help most if no command specified.
+description: "Dispatch design refinement from impeccable (umbrella refinement skill), emil-design-eng (design engineering principles reference), and taste-skill (modular style packs) with design language context pre-loaded."
 argument-hint: "[impeccable-command]"
 allowed-tools: Read, Write, Edit, Skill, Glob, AskUserQuestion
 ---
@@ -250,6 +250,26 @@ Design pipeline:
 
 Pre-loads the design language context and dispatches Impeccable refinement commands. If no command specified, analyzes the current implementation and suggests which refinements would be most impactful.
 
+## Pack Selection
+
+`design-refine` orchestrates three external skill packs (all fetched at setup time):
+
+| Pack | Skill name(s) | Use for |
+|---|---|---|
+| `pbakaus/impeccable` | `/impeccable` | Umbrella refinement — audit, polish, bolder, distill, harden, clarify, colorize, animate, etc. The canonical entry point when you know the design needs improvement but want a holistic pass. |
+| `emilkowalski/skill` | `/emil-design-eng` | Design engineering principles — UI polish, component design, animation decisions, the invisible details. Use as **reference context** when explaining or justifying refinements. |
+| `Leonxlnx/taste-skill` | `/taste-skill`, `/brandkit`, `/brutalist-skill`, `/gpt-tasteskill`, `/imagegen-frontend-mobile`, `/imagegen-frontend-web`, `/image-to-code-skill`, `/minimalist-skill`, `/output-skill`, `/redesign-skill`, `/soft-skill`, `/stitch-skill` | Modular style packs. Invoke when the critique calls for a specific style shift (e.g., "make this feel more minimalist" → `/minimalist-skill`; "more brutalist" → `/brutalist-skill`; "needs a brand kit" → `/brandkit`). |
+
+### Sequencing
+
+1. Start with `/impeccable` for a holistic audit and refinement pass — it will identify dimensional issues across typography, color, spacing, motion, interaction, etc.
+2. For each finding, pick the right tool:
+   - **Specific dimension issue** → `/impeccable` covers it (single umbrella skill)
+   - **Style direction shift** → invoke the matching `/Leonxlnx/taste-skill` family member
+   - **Architectural / engineering rationale needed** → load `/emil-design-eng` as reference, cite its principles in the refinement
+3. After a round of fixes, re-run `/impeccable` for a verification pass.
+4. Append every command run to `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md` so future sessions can see what was tried.
+
 ## Step 1: Analyze Current State
 
 If no Impeccable command was specified as argument:
@@ -331,9 +351,18 @@ Next steps:
   • If `design-tokens.json` was updated, run `/design-implement` to regenerate platform token files
 ```
 
+## Outputs
+
+| Path | Description |
+|------|-------------|
+| `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md` | Append-only log of every refinement command run (which pack, which skill, which files touched, outcome). Grows across runs so future sessions can see what was already tried. |
+| `design-tokens.json` | Updated in place when a refinement introduces new token values (see Step 4). |
+
 ## Rules
 
-- Always dispatch via `Skill` tool — never re-implement Impeccable commands inline
-- Design context must be loaded before dispatch — Impeccable commands need `.impeccable.md`
+- Always dispatch via `Skill` tool — never re-implement refinement commands inline
+- Design context must be loaded before dispatch — refinement skills need `.impeccable.md`
+- Choose the right pack per the Pack Selection table — do not invoke a style-shift skill (`/minimalist-skill`, `/brutalist-skill`, etc.) when `/impeccable` would cover the issue holistically
 - If `design-tokens.json` is updated, note that `/design-implement` should be re-run to regenerate platform token files
 - Do not modify `.impeccable.md` during refinement — only `design-tokens.json` may be updated
+- Always append the run to `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md`
