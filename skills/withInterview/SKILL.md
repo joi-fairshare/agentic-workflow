@@ -12,7 +12,7 @@ Runs a structured, multi-round interview to gather requirements and context befo
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 35 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 43 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -51,8 +51,20 @@ Runs a structured, multi-round interview to gather requirements and context befo
 > | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
 > | `/verify-web` | Playwright browser verification of running web app |
 > | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
+> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
+> | `/planDesignReview` | Design-lens review of plan docs |
+> | `/planDevexReview` | DX-lens review of plan docs |
+> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
+> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
+> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
+> | `/canary` | Post-deploy monitoring with custom probes |
+> | `/prismStatus` | Health check for prism-mcp |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+>
+> ### Meta-Orchestration Convention
+>
+> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
 
 ## Codebase Navigation
 
@@ -113,33 +125,59 @@ Create the output directory for this repo:
 mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
 ```
 
-## Memory Recall
+## Session Context
 
-> **Skip if** this skill is marked `<!-- MEMORY: SKIP -->`, or if `BRIDGE_OK=false`.
+Load prior work state for this repo from prism-mcp before starting.
 
-Check for prior discussion context in memory before reading the codebase.
-
-**1. Derive a topic string** — synthesize 3-5 words from the skill argument and task intent:
+**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
 - `/officeHours add dark mode` → `"dark mode UI feature"`
 - `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
 - `/review 42` → use the PR title once fetched: `"PR {title} review"`
 - No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
 
-**2. Search memory:**
+**2. Load context from prism-mcp:**
 ```
-mcp__agentic-bridge__search_memory — query: <topic>, repo: REPO_SLUG, mode: "hybrid", limit: 10
-```
-
-**3. Assemble context:**
-```
-mcp__agentic-bridge__get_context — query: <topic>, repo: REPO_SLUG, token_budget: 2000
+mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
+  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
 ```
 
-**4. Surface results:**
-- If `get_context` returns a non-empty summary or any section with `relevance > 0.3`:
-  > **Prior context:** {summary} *(~{token_estimate} tokens)*
+Store the returned `expected_version` — you will need it at Session Close.
+
+**3. Surface results:**
+- If the response contains a non-empty summary or prior decisions:
+  > **Prior context:** {summary}
   Use this to inform your approach before continuing.
-- If empty, all low-relevance, or any tool error: continue silently — do not mention the search.
+- If prism-mcp returns an error, surface it and stop:
+  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
+
+## Session Close
+
+> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
+
+Save a structured ledger entry and update the live handoff state for this repo.
+
+**1. Save ledger entry (immutable audit trail):**
+```
+mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
+  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
+  summary: "<one paragraph describing what was accomplished this session>",
+  todos: ["<any open items left incomplete>", ...],
+  files_changed: ["<paths of files created or modified>", ...],
+  decisions: ["<key decisions made during this skill run>", ...]
+```
+
+**2. Update handoff state (mutable live state for next session):**
+```
+mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
+  expected_version: <value returned by session_load_context>,
+  open_todos: ["<open items not yet completed>", ...],
+  active_branch: "<current git branch from: git branch --show-current>",
+  last_summary: "<one sentence: what this skill just did>",
+  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
+```
+
+If either call fails, surface the error:
+> "prism-mcp session save failed: {error}. Context may not persist to next session."
 
 <!-- === PREAMBLE END === -->
 

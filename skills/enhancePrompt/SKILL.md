@@ -7,7 +7,7 @@ allowed-tools: Read, Glob, Grep
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 35 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 43 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -46,8 +46,20 @@ allowed-tools: Read, Glob, Grep
 > | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
 > | `/verify-web` | Playwright browser verification of running web app |
 > | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
+> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
+> | `/planDesignReview` | Design-lens review of plan docs |
+> | `/planDevexReview` | DX-lens review of plan docs |
+> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
+> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
+> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
+> | `/canary` | Post-deploy monitoring with custom probes |
+> | `/prismStatus` | Health check for prism-mcp |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+>
+> ### Meta-Orchestration Convention
+>
+> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
 
 ## Codebase Navigation
 
