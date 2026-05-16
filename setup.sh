@@ -621,43 +621,69 @@ else
     echo "  dembrandt: failed to install (non-fatal, install manually: npm install -g dembrandt)"
 fi
 
-# --- Impeccable Skills ---
+# --- External Skill Packs ---
 echo ""
-echo "Installing Impeccable skills..."
+echo "=== Installing external skill packs ==="
 
-IMPECCABLE_VERSION="d6b1a56bc5b79e9375be0f8508b4daa1678fb058"
-IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
-IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/.claude/skills"
+EXTERNAL_DIR="$HOME/.agentic-workflow/external-skills"
+mkdir -p "$EXTERNAL_DIR"
 
-if [ -d "$IMPECCABLE_DIR/.git" ]; then
-  echo "  impeccable: cache exists, checking for updates..."
-  (cd "$IMPECCABLE_DIR" && git fetch origin && git checkout "$IMPECCABLE_VERSION") || \
-    echo "  Warning: Could not update Impeccable cache. Using existing version."
-else
-  # Clean up any partial clone (non-git directory left behind)
-  [ -d "$IMPECCABLE_DIR" ] && rm -rf "$IMPECCABLE_DIR"
-  echo "  impeccable: cloning pbakaus/impeccable..."
-  git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 && \
-    (cd "$IMPECCABLE_DIR" && git checkout "$IMPECCABLE_VERSION") || {
-    echo "  impeccable: failed to clone (non-fatal)"
-    IMPECCABLE_SKILLS_SRC=""
-  }
-fi
+install_external_pack() {
+  local repo="$1"   # e.g. pbakaus/impeccable
+  local pin="$2"    # commit SHA
+  local target="$EXTERNAL_DIR/$(basename "$repo")"
 
-if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
-  for skill_dir in "$IMPECCABLE_SKILLS_SRC"/*/; do
+  if [ ! -d "$target/.git" ]; then
+    echo "  $repo: cloning..."
+    git clone "https://github.com/$repo.git" "$target" 2>&1 \
+      || { echo "  WARN: failed to clone $repo (non-fatal)"; return 1; }
+  fi
+  (cd "$target" && git fetch origin --quiet) || true
+  if [ -n "$pin" ] && [ "$pin" != "HEAD" ]; then
+    (cd "$target" && git checkout "$pin" --quiet) 2>/dev/null \
+      || echo "  WARN: pin $pin not found in $repo, using current HEAD"
+  fi
+
+  # Find the skill source directory — tries both layouts
+  local skills_dir=""
+  if [ -d "$target/skills" ]; then
+    skills_dir="$target/skills"
+  elif [ -d "$target/.claude/skills" ]; then
+    skills_dir="$target/.claude/skills"
+  fi
+
+  if [ -z "$skills_dir" ]; then
+    echo "  WARN: no skills directory found in $(basename "$repo")"
+    return 0
+  fi
+
+  local skill_dir name link
+  for skill_dir in "$skills_dir"/*/; do
     [ -d "$skill_dir" ] || continue
-    skill_name=$(basename "$skill_dir")
-    target="$CLAUDE_DIR/skills/$skill_name"
-    # Always copy from cache (overwrite existing) — content is deterministic because
-    # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
-    [ -L "$target" ] && rm "$target"
-    [ -d "$target" ] && rm -rf "$target"
-    cp -r "$skill_dir" "$target"
-    echo "  impeccable/$skill_name: installed"
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    name="$(basename "$skill_dir")"
+    link="$CLAUDE_DIR/skills/$name"
+    # Native repo symlinks always win on collision
+    if [ -L "$link" ] && [[ "$(readlink "$link")" == */repos/agentic-workflow/* ]]; then
+      echo "  $name: skipping (native skill takes precedence)"
+      continue
+    fi
+    # Clear any stale symlink or plain dir before re-linking
+    [ -L "$link" ] && rm -f "$link"
+    [ -d "$link" ] && [ ! -L "$link" ] && rm -rf "$link"
+    ln -sfn "$skill_dir" "$link"
+    echo "  $name: symlinked from $(basename "$repo")"
   done
+}
+
+if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/EXTERNAL_PINS.env"
+  install_external_pack "pbakaus/impeccable"   "${IMPECCABLE_PIN:-HEAD}"
+  install_external_pack "emilkowalski/skill"   "${EMIL_PIN:-HEAD}"
+  install_external_pack "Leonxlnx/taste-skill" "${TASTE_PIN:-HEAD}"
 else
-  echo "  impeccable: skipped (source not available)"
+  echo "  WARN: EXTERNAL_PINS.env missing at $SCRIPT_DIR; skipping external pack install"
 fi
 
 # --- rtk ---
