@@ -65,6 +65,12 @@ for s in "${DEPRECATED_SKILLS[@]}"; do
   fi
 done
 
+# Also clean up the old impeccable-cache directory from the previous setup.sh era
+if [ -d "$HOME/.claude/impeccable-cache" ]; then
+  rm -rf "$HOME/.claude/impeccable-cache"
+  echo "  removed legacy impeccable-cache directory"
+fi
+
 echo "=== Agentic Workflow Setup ==="
 echo ""
 
@@ -696,24 +702,47 @@ install_external_pack() {
     name="$(basename "$skill_dir")"
     link="$CLAUDE_DIR/skills/$name"
     # Native repo symlinks always win on collision
-    if [ -L "$link" ] && [[ "$(readlink "$link")" == */repos/agentic-workflow/* ]]; then
+    if [ -L "$link" ] && [ -e "$link" ] && { [[ "$(readlink -f "$link")" == */agentic-workflow/* ]] || [[ "$(readlink -f "$link")" == */agentic-workflow-* ]]; }; then
       echo "  $name: skipping (native skill takes precedence)"
       continue
     fi
-    # Clear any stale symlink or plain dir before re-linking
+    # Back up real directories before symlinking; safely remove dangling symlinks
+    if [ -d "$link" ] && [ ! -L "$link" ]; then
+      local backup="$link.bak.$(date +%s)"
+      mv "$link" "$backup"
+      echo "  $name: backed up existing dir to $(basename "$backup") before symlinking"
+    fi
+    if [ -L "$link" ] && [ ! -e "$link" ]; then
+      # dangling symlink (target gone) — safe to remove
+      rm -f "$link"
+    fi
+    # Clear any remaining valid symlink before re-linking
     [ -L "$link" ] && rm -f "$link"
-    [ -d "$link" ] && [ ! -L "$link" ] && rm -rf "$link"
     ln -sfn "$skill_dir" "$link"
     echo "  $name: symlinked from $(basename "$repo")"
   done
 }
 
 if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
-  # shellcheck source=/dev/null
-  source "$SCRIPT_DIR/EXTERNAL_PINS.env"
-  install_external_pack "pbakaus/impeccable"   "${IMPECCABLE_PIN:-HEAD}"
-  install_external_pack "emilkowalski/skill"   "${EMIL_PIN:-HEAD}"
-  install_external_pack "Leonxlnx/taste-skill" "${TASTE_PIN:-HEAD}"
+  # Safe parser: read only well-formed KEY=value lines and validate SHA format.
+  # Avoids `source`'ing the file as bash (which would evaluate arbitrary commands
+  # smuggled in by a malicious commit to EXTERNAL_PINS.env).
+  read_pin() {
+    local key="$1"
+    local value
+    value=$(grep "^${key}=" "$SCRIPT_DIR/EXTERNAL_PINS.env" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+    if [[ "$value" =~ ^[0-9a-f]{7,40}$ ]] || [[ "$value" == "HEAD" ]]; then
+      echo "$value"
+    else
+      echo "HEAD"
+    fi
+  }
+  IMPECCABLE_PIN="$(read_pin IMPECCABLE_PIN)"
+  EMIL_PIN="$(read_pin EMIL_PIN)"
+  TASTE_PIN="$(read_pin TASTE_PIN)"
+  install_external_pack "pbakaus/impeccable"   "$IMPECCABLE_PIN"
+  install_external_pack "emilkowalski/skill"   "$EMIL_PIN"
+  install_external_pack "Leonxlnx/taste-skill" "$TASTE_PIN"
 else
   echo "  WARN: EXTERNAL_PINS.env missing at $SCRIPT_DIR; skipping external pack install"
 fi
@@ -843,17 +872,20 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (34):"
+echo "Skills installed ($((${#MANAGED_SKILLS[@]} + 1)) native = ${#MANAGED_SKILLS[@]} managed + bootstrap):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
-echo "  Release:          shipRelease, syncDocs"
+echo "  Release:          shipRelease, landAndDeploy, canary, syncDocs"
 echo "  Retrospective:    weeklyRetro"
-echo "  Planning:         officeHours, productReview, archReview"
+echo "  Planning:         officeHours, productReview, archReview, withInterview,"
+echo "                    autoplan, planDesignReview, planDevexReview"
+echo "  Security:         cso"
 echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
-echo "                    design-mockup [web|ios], design-implement [web|ios],"
+echo "                    design-mockup [web|ios], design-shotgun, design-implement [web|ios],"
 echo "                    design-refine, design-verify [web|ios]"
 echo "  Verification:     verify-app, verify-web, verify-ios"
+echo "  Memory/Status:    prismStatus"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"
