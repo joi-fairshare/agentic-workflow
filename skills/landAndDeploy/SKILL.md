@@ -1,13 +1,13 @@
 ---
-name: productReview
-description: "Founder/product lens review of plans with 4 scope modes -- mvp, growth, scale, pivot. Challenges assumptions and tightens scope."
-argument-hint: "[--mode mvp|growth|scale|pivot] [plan-file-or-description]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
+name: landAndDeploy
+description: "Wait for PR merge, run deploy command, poll health, run smoke tests, then auto-chain /canary. Configured by .agentic-workflow/deploy.json."
+argument-hint: "[pr#] [--wait|--no-wait] [--setup] [--skip-docs] [--chained-from-ship]"
+allowed-tools: Bash(gh *), Bash(git *), Bash(curl *), Bash(jq *), Read, Write, Skill
 ---
 
-# Product Review — Founder Lens
+# Land and Deploy — Merge, Deploy, Smoke, Chain Canary
 
-Reviews plans through a product/founder lens with four distinct modes. Challenges assumptions, tightens scope, and delivers a verdict.
+Bridges `/shipRelease` and `/canary`. Waits for PR merge, runs the user-defined deploy command, polls health, runs smoke tests, then auto-chains `/canary`.
 
 <!-- === PREAMBLE START === -->
 
@@ -180,179 +180,121 @@ If either call fails, surface the error:
 
 <!-- === PREAMBLE END === -->
 
-## Step 1: Parse Arguments and Resolve Plan
+## Overview
 
-**Parse the mode flag:**
-- Look for `--mode` followed by one of: `mvp`, `growth`, `scale`, `pivot`
-- Default to `mvp` if no mode is specified
+Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke tests, and timeout. On invocation, resolves the target PR (arg or current branch), optionally polls for merge, executes deploy, verifies health, runs smoke tests, writes a release record, and auto-invokes `/canary` on success. Skipped or `--no-deploy` callers from `/shipRelease` bypass this step entirely.
 
-**Resolve the plan to review:**
-1. If a file path or directory path is given as argument, use it directly
-2. If a text description is given, use it directly as the plan content
-3. If neither is provided, auto-discover the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
+## Inputs
 
-```bash
-# Find newest plan directory (SDD format) and newest plan file (legacy format)
-NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
-NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
+- PR number (positional arg). If omitted, detect from current branch via `gh pr view --json number,state,mergedAt`.
+- `--wait` / `--no-wait` flag:
+  - Default `--wait` when invoked from `/shipRelease` auto-chain (PR may not yet be merged at chain time)
+  - Default `--no-wait` when invoked standalone (user is at the terminal, expects fast feedback)
+- `--setup` flag: run interactive wizard to write `.agentic-workflow/deploy.json`, then exit.
+- `--skip-docs` flag (optional). Propagates from `/shipRelease` and forwards to `/canary` on auto-chain, suppressing the eventual `/syncDocs` invocation downstream. This skill does not call `/syncDocs` directly — it only forwards the flag.
+- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to fold ship-phase metadata (PR url, branch, tip SHA, test results) from the invoking prompt into a `## Ship Phase` subsection at the top of `deploy.md`. Using a CLI flag (rather than an env var) ensures reliable propagation across the Skill tool boundary.
+- Config file: `.agentic-workflow/deploy.json` in project root.
 
-# Compare timestamps -- prefer whichever is more recent
-if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
-  if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
-    PLAN_TARGET="$NEWEST_DIR"
-  else
-    PLAN_TARGET="$NEWEST_FILE"
-  fi
-elif [ -n "$NEWEST_DIR" ]; then
-  PLAN_TARGET="$NEWEST_DIR"
-elif [ -n "$NEWEST_FILE" ]; then
-  PLAN_TARGET="$NEWEST_FILE"
-fi
+## Config schema (`.agentic-workflow/deploy.json`)
+
+```json
+{
+  "command": "npm run deploy:prod",
+  "healthUrl": "https://example.com/health",
+  "smokeTests": ["curl -fsS https://example.com/api/ping"],
+  "timeout": 600
+}
 ```
 
-**If `PLAN_TARGET` is a directory** (SDD format), read all three files inside it (`requirements.md`, `design.md`, `TASKS.md`) and review them holistically. The review framework maps naturally:
-- **Scope check** -- `requirements.md` (EARS requirements) + `TASKS.md` (task list)
-- **Persona clarity** -- `requirements.md` (Target User section)
-- **Timeline reality** -- `TASKS.md` (complexity estimates)
-- **Riskiest assumption** -- `design.md` (Architecture Decisions + Open Questions)
+- `command` — shell command to run for deploy. Streamed to stdout.
+- `healthUrl` — URL polled after deploy; expects 200 OK.
+- `smokeTests` — array of shell commands. Each must exit 0.
+- `timeout` — seconds. Used for both deploy command and health polling.
 
-**If `PLAN_TARGET` is a single file** (legacy format), read and review it as before.
+## --setup Wizard
 
-If no plan is found at all, tell the user:
-> "No plan found. Provide a file path, a description, or run `/officeHours` first to generate a design doc."
+When invoked with `--setup`, prompt the user (one question per AskUserQuestion call):
 
-## Step 2: Read Context
+1. Deploy command (e.g., `npm run deploy:prod`)
+2. Health URL (e.g., `https://example.com/health`)
+3. Smoke test commands (comma-separated; can be empty)
+4. Timeout in seconds (default 600)
 
-Read project context to inform the review:
+Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without deploying.
 
-- Read `CLAUDE.md` if it exists
-- Read `README.md` if it exists
-- Use Glob to find relevant planning docs and skim them
+## Steps (normal mode)
 
-## Step 3: Review Through the Mode Lens
+1. If `--setup`: run wizard above and exit.
 
-Apply the selected mode's review framework to the plan:
+2. Resolve target PR:
+   - Arg given → use it.
+   - Else: `gh pr view --json number,state,mergedAt` on current branch. If no PR exists, error: "no PR on this branch; create one with /shipRelease first".
 
-### MVP Mode (default)
+3. Determine wait mode (`--wait` vs `--no-wait`) per defaults above unless explicitly overridden.
 
-Focus on shipping speed and scope discipline:
+4. If PR not merged:
+   - `--wait`: poll `gh pr view --json mergedAt` every 30 s, max 30 min. Stop on merge.
+   - `--no-wait`: error: "PR #N not merged; pass `--wait` to poll or merge manually first".
 
-- **Scope check** — Is this truly minimal? List every feature and challenge whether each one is essential for v1. Identify at least one thing that can be cut.
-- **Persona clarity** — Is there a single, clear user persona? If the plan serves multiple personas, flag it.
-- **Timeline reality** — Can this ship in under 2 weeks of focused effort? If not, what needs to shrink?
-- **Riskiest assumption** — Identify the single biggest assumption. Propose a way to test it before building.
-- **Build vs. skip** — For each component, ask: can we use an existing tool, hardcode it, or skip it entirely for v1?
+5. Load `.agentic-workflow/deploy.json`.
+   - If present: continue normally.
+   - If missing AND invoked with `--chained-from-ship`: print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success. This lets the canary→syncDocs chain be skipped without a hard error so first-time users aren't blocked. (We use the CLI flag rather than an env var because env-var propagation across the Skill tool boundary is unspecified.)
+   - If missing AND no `--chained-from-ship` flag (standalone invocation): error and suggest `--setup`.
 
-### Growth Mode
+5a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/deploy.json 2>/dev/null` — if it returns 0, error out: "deploy.json is committed; remove and run `/landAndDeploy --setup`. The skill executes `command` and `smokeTests[]` from this file as shell, so a tracked copy is an RCE foot-gun." Recommend adding `.agentic-workflow/deploy.json` to `.gitignore`.
 
-Focus on user acquisition and retention:
+6. Compute release-id: `<ISO-date>-<short-sha>` where `<short-sha>` is the merge commit SHA.
 
-- **Growth levers** — What are the 2-3 primary growth mechanisms? Are they built into the product or bolted on?
-- **Activation funnel** — Map the steps from "user discovers this" to "user gets value". Where is the biggest drop-off risk?
-- **10x usage** — What would 10x the current usage look like? Does the current design support or block it?
-- **Retention hooks** — What brings users back? Is there a natural cadence (daily, weekly, per-PR)?
-- **Viral coefficient** — Does usage by one person naturally expose others to the product?
+7. Run `deploy.command`, stream output. Capture exit code.
+   - On non-zero exit: write `releases/<release-id>/deploy.md` with FAILED status, suggest `/rootCause`, exit.
 
-### Scale Mode
+8. Poll `deploy.healthUrl` with exponential backoff (1s, 2s, 4s, … capped at 60s between probes; max total `deploy.timeout` seconds). Stop on 200 OK.
+   - On timeout: mark deploy DEGRADED in the release record. Continue to smoke tests anyway.
 
-Focus on operational sustainability:
+9. Run each `deploy.smokeTests[]` command sequentially. Capture each exit code and stdout.
+   - Any non-zero → mark deploy DEGRADED.
 
-- **100x load** — What breaks at 100x current usage? Identify the first bottleneck.
-- **Unit economics** — What is the cost per user/operation? Does it improve or degrade with scale?
-- **Automation gaps** — What currently requires manual intervention? What is the path to automating it?
-- **Operational bottlenecks** — Where will the team spend most of their time at scale? Is that the right place?
-- **Data gravity** — Where does data accumulate? Does it become an asset or a liability?
+10. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`. When invoked with `--chained-from-ship`, include a `## Ship Phase` subsection at the top capturing the ship-phase metadata (from the invoking prompt and/or `gh pr view`). The merge-SHA-based release-id ensures this file lives in the same subdir as `canary.md`, so the full release (ship + deploy + canary) lives under one folder.
+    ```markdown
+    # Deploy — <release-id>
+    
+    **PR:** #<num>
+    **Merge SHA:** <full-sha>
+    **Deployed:** <ISO date>
+    **Verdict:** SUCCESS | DEGRADED | FAILED
 
-### Pivot Mode
+    ## Ship Phase
+    <!-- Only included when invoked with --chained-from-ship. Folds ship-phase info into the release record so ship+deploy+canary all live in this one release-id subdir. -->
+    - **Branch:** <branch> → <base>
+    - **Tip SHA (pre-merge):** <short-sha>
+    - **Test result:** passed (<N> tests)
+    - **Coverage:** <percentage>% (or "not available")
+    - **PR URL:** <url>
 
-Focus on strategic direction:
+    ## Deploy command
+    `<deploy.command>` — exit <code> in <duration>s
+    
+    ## Health
+    `<deploy.healthUrl>` — first OK at <Ns>, took <total>s
+    
+    ## Smoke tests
+    | Test | Exit | Duration |
+    |---|---|---|
+    | <cmd> | 0 | <s> |
+    
+    ## Output excerpts
+    <last 50 lines of deploy command output, smoke test stdout snippets>
+    ```
 
-- **What's working** — Identify the strongest signal from current usage/design. What should be doubled down on?
-- **What should die** — Identify features or directions that are not earning their complexity. Recommend killing them.
-- **Adjacent opportunity** — Based on the current position, what nearby problem could be solved with minimal additional effort?
-- **Fresh start test** — If starting from scratch today with current knowledge, what would be built differently?
-- **Core value extraction** — What is the one irreducible thing this product does that matters?
+11. On SUCCESS, auto-invoke `/canary` via the `Skill` tool, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
 
-## Step 4: Generate Review
+## Outputs
 
-Produce a structured review document:
-
-```markdown
-# Product Review: {plan title}
-
-_Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
-
-## Verdict: {SHIP | ITERATE | RETHINK}
-
-{One paragraph justification for the verdict}
-
-## Strengths
-1. {What's strong about this plan}
-2. {Another strength}
-3. {Another strength}
-
-## Concerns
-
-| # | Severity | Concern | Recommendation |
-|---|----------|---------|----------------|
-| 1 | {high/medium/low} | {concern} | {what to do} |
-| 2 | {high/medium/low} | {concern} | {what to do} |
-| ... | ... | ... | ... |
-
-## Scope Suggestions
-
-### Cut
-- {feature/element to remove and why}
-
-### Keep
-- {feature/element that's essential and why}
-
-### Add
-- {missing element that would strengthen the plan}
-
-## Key Questions for the Team
-1. {Question that needs answering before proceeding}
-2. {Another question}
-3. {Another question}
-
-## Recommended Next Action
-{Single concrete next step -- be specific}
-```
-
-## Step 5: Write the Review
-
-Generate a URL-safe slug from the plan title (lowercase, hyphens, no special chars). Write the file:
-
-```bash
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-```
-
-Write to: `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-product-review-{slug}.md`
-
-## Step 6: Report
-
-Show a summary to the user:
-
-```
-Product Review complete! ({mode} mode)
-
-Verdict: {SHIP | ITERATE | RETHINK}
-
-Review written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-product-review-{slug}.md
-
-Top concerns:
-  1. [{severity}] {concern summary}
-  2. [{severity}] {concern summary}
-  3. [{severity}] {concern summary}
-
-Recommended next action: {one-line action}
-
-Suggested next steps:
-  /archReview — Review the engineering architecture
-  /officeHours — Brainstorm refinements to address concerns
-```
+- `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`
+- `.agentic-workflow/deploy.json` (only on `--setup`)
 
 ## Next steps
 
-- `/autoplan` — run with other plan-review lenses in parallel
-- `/archReview` — engineering architecture perspective on the same plan
+- `/canary` — auto-chained on SUCCESS
+- `/rootCause` — if deploy or smoke fails
+- `/shipRelease --no-deploy` — for next time if you want to skip the auto-chain (e.g., release-branch workflow)

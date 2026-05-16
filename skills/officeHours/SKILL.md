@@ -11,7 +11,7 @@ Runs a structured brainstorming session and produces four domain-owned outputs �
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 35 skills available. Run any as `/<name>`.
+> **Agentic Workflow** — 43 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -50,8 +50,20 @@ Runs a structured brainstorming session and produces four domain-owned outputs �
 > | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
 > | `/verify-web` | Playwright browser verification of running web app |
 > | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
+> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
+> | `/planDesignReview` | Design-lens review of plan docs |
+> | `/planDevexReview` | DX-lens review of plan docs |
+> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
+> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
+> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
+> | `/canary` | Post-deploy monitoring with custom probes |
+> | `/prismStatus` | Health check for prism-mcp |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
+>
+> ### Meta-Orchestration Convention
+>
+> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
 
 ## Codebase Navigation
 
@@ -81,7 +93,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
@@ -740,6 +752,48 @@ Write the four files to:
 - `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/design-brief.md`
 - `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/TASKS.md`
 
+## Step 7.5: Write the consolidated plan summary
+
+After the four domain docs are written, write `plans/{timestamp}-{slug}/plan.md` — a 1-page consolidated summary that downstream skills (`/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`) auto-discover via `ls -t plans/*/plan.md | head -1`. This file is the canonical handoff — every plan-stage skill reads it first.
+
+Structure:
+
+```markdown
+# Plan: <feature title>
+
+**Generated:** <ISO date> by officeHours
+**Feature dir:** plans/<feature>/
+
+## TL;DR
+<2-3 sentences capturing the feature in plain English>
+
+## Problem
+<from product.md — the why>
+
+## Approach
+<from engineering.md — the how>
+
+## User experience
+<from design-brief.md — the look/feel>
+
+## Open questions
+<bullet list — anything ambiguous>
+
+## Domain documents
+- [Product](product.md) — owner: product
+- [Engineering](engineering.md) — owner: engineering
+- [Design brief](design-brief.md) — owner: design
+- [Tasks](TASKS.md) — owner: tech lead
+
+## Next steps
+- `/autoplan` — fan out reviews across all 5 lenses in parallel
+- `/productReview --mvp` — standalone product lens
+- `/archReview` — standalone engineering lens
+```
+
+Write the file to:
+- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/plan.md`
+
 ## Step 8: Report
 
 Show a summary to the user:
@@ -749,6 +803,7 @@ Office Hours complete!
 
 Plan written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-{slug}/
 
+  plan.md          → Canonical handoff — 1-page consolidated summary for downstream skills
   product.md       → Product Team     — {N} requirements, {N} acceptance criteria, {N} success metrics
   engineering.md   → Engineering Team — {N} ADRs, {N} technical requirements, {N} open questions
   design-brief.md  → Design Team      — {N} key moments, {N} UX principles, {N} design constraints
@@ -785,3 +840,19 @@ Based on response:
 - Product/founder lens → Skill tool: `productReview`
 - Both → invoke in sequence: `archReview` then `productReview`
 - Neither → done
+
+## Outputs
+
+All under `~/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/`:
+
+- `plan.md` — canonical 1-page handoff (auto-discovered by `/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`)
+- `product.md` — Product Team domain doc
+- `engineering.md` — Engineering Team domain doc
+- `design-brief.md` — Design Team domain doc
+- `TASKS.md` — task breakdown (cross-team visibility)
+
+## Next steps
+
+- `/autoplan` — fan out parallel reviews across product, architecture, design, devex, security lenses
+- `/design-shotgun` — generate mockup variants if the feature has a visual surface
+- `/archReview` — standalone deep architecture review (if autoplan feels heavy)

@@ -4,6 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 
+# Portable canonical path resolver — works on macOS (Python fallback for pre-Big Sur,
+# where BSD readlink lacks -f) and Linux (GNU readlink -f).
+canonicalize() {
+  if command -v readlink &>/dev/null && readlink -f / &>/dev/null; then
+    readlink -f "$1"
+  elif command -v python3 &>/dev/null; then
+    python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$1"
+  else
+    # Fallback: cd into the dir and pwd
+    (cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")")
+  fi
+}
+
 # Check for jq (required by statusline install and runtime)
 if ! command -v jq &>/dev/null; then
   echo ""
@@ -46,7 +59,30 @@ fi
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
 # It is not symlinked directly — each skill accesses it via path traversal
 # from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus)
+
+# --- Cleanup: remove deprecated impeccable forks ---
+# These 20 standalone skill dirs in ~/.claude/skills/ are stale copies left over
+# from a previous setup.sh that copied (cp -r) individual impeccable skills.
+# Canonical pbakaus/impeccable v3.1.1+ is a single umbrella skill, fetched via
+# the External Skill Packs section. Idempotent — safe on every run.
+DEPRECATED_SKILLS=(bolder critique audit polish animate distill colorize typeset arrange quieter harden onboard delight clarify normalize extract adapt optimize overdrive teach-impeccable)
+for s in "${DEPRECATED_SKILLS[@]}"; do
+  target="$CLAUDE_DIR/skills/$s"
+  if [ -L "$target" ]; then
+    rm -f "$target"
+    echo "  removed stale symlink: $s"
+  elif [ -d "$target" ]; then
+    rm -rf "$target"
+    echo "  removed deprecated dir: $s"
+  fi
+done
+
+# Also clean up the old impeccable-cache directory from the previous setup.sh era
+if [ -d "$HOME/.claude/impeccable-cache" ]; then
+  rm -rf "$HOME/.claude/impeccable-cache"
+  echo "  removed legacy impeccable-cache directory"
+fi
 
 echo "=== Agentic Workflow Setup ==="
 echo ""
@@ -271,6 +307,21 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
         && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
     fi
     echo "  hooks.SessionStart: git-context added"
+  fi
+
+  # Add prism-context SessionStart hook if not already present
+  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("prism-context"))' "$SETTINGS_FILE" &>/dev/null; then
+    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}]'
+    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
+      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    else
+      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
+        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    fi
+    echo "  hooks.SessionStart: prism-context added"
   fi
 
   # Remove legacy bridge-context SessionStart hook if present
@@ -621,43 +672,94 @@ else
     echo "  dembrandt: failed to install (non-fatal, install manually: npm install -g dembrandt)"
 fi
 
-# --- Impeccable Skills ---
+# --- External Skill Packs ---
 echo ""
-echo "Installing Impeccable skills..."
+echo "=== Installing external skill packs ==="
 
-IMPECCABLE_VERSION="d6b1a56bc5b79e9375be0f8508b4daa1678fb058"
-IMPECCABLE_DIR="$HOME/.claude/impeccable-cache"
-IMPECCABLE_SKILLS_SRC="$IMPECCABLE_DIR/.claude/skills"
+EXTERNAL_DIR="$HOME/.agentic-workflow/external-skills"
+mkdir -p "$EXTERNAL_DIR"
 
-if [ -d "$IMPECCABLE_DIR/.git" ]; then
-  echo "  impeccable: cache exists, checking for updates..."
-  (cd "$IMPECCABLE_DIR" && git fetch origin && git checkout "$IMPECCABLE_VERSION") || \
-    echo "  Warning: Could not update Impeccable cache. Using existing version."
-else
-  # Clean up any partial clone (non-git directory left behind)
-  [ -d "$IMPECCABLE_DIR" ] && rm -rf "$IMPECCABLE_DIR"
-  echo "  impeccable: cloning pbakaus/impeccable..."
-  git clone https://github.com/pbakaus/impeccable.git "$IMPECCABLE_DIR" 2>&1 && \
-    (cd "$IMPECCABLE_DIR" && git checkout "$IMPECCABLE_VERSION") || {
-    echo "  impeccable: failed to clone (non-fatal)"
-    IMPECCABLE_SKILLS_SRC=""
-  }
-fi
+install_external_pack() {
+  local repo="$1"   # e.g. pbakaus/impeccable
+  local pin="$2"    # commit SHA
+  local target="$EXTERNAL_DIR/$(basename "$repo")"
 
-if [ -n "$IMPECCABLE_SKILLS_SRC" ] && [ -d "$IMPECCABLE_SKILLS_SRC" ]; then
-  for skill_dir in "$IMPECCABLE_SKILLS_SRC"/*/; do
+  if [ ! -d "$target/.git" ]; then
+    echo "  $repo: cloning..."
+    git clone "https://github.com/$repo.git" "$target" 2>&1 \
+      || { echo "  WARN: failed to clone $repo (non-fatal)"; return 1; }
+  fi
+  (cd "$target" && git fetch origin --quiet) || true
+  if [ -n "$pin" ] && [ "$pin" != "HEAD" ]; then
+    (cd "$target" && git checkout "$pin" --quiet) 2>/dev/null \
+      || echo "  WARN: pin $pin not found in $repo, using current HEAD"
+  fi
+
+  # Find the skill source directory — tries both layouts
+  local skills_dir=""
+  if [ -d "$target/skills" ]; then
+    skills_dir="$target/skills"
+  elif [ -d "$target/.claude/skills" ]; then
+    skills_dir="$target/.claude/skills"
+  fi
+
+  if [ -z "$skills_dir" ]; then
+    echo "  WARN: no skills directory found in $(basename "$repo")"
+    return 0
+  fi
+
+  local skill_dir name link
+  for skill_dir in "$skills_dir"/*/; do
     [ -d "$skill_dir" ] || continue
-    skill_name=$(basename "$skill_dir")
-    target="$CLAUDE_DIR/skills/$skill_name"
-    # Always copy from cache (overwrite existing) — content is deterministic because
-    # we pin to a specific commit hash, so re-copying is safe and ensures updates propagate.
-    [ -L "$target" ] && rm "$target"
-    [ -d "$target" ] && rm -rf "$target"
-    cp -r "$skill_dir" "$target"
-    echo "  impeccable/$skill_name: installed"
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    name="$(basename "$skill_dir")"
+    link="$CLAUDE_DIR/skills/$name"
+    # Native repo symlinks always win on collision
+    if [ -L "$link" ] && [ -e "$link" ] && { [[ "$(canonicalize "$link")" == */agentic-workflow/* ]] || [[ "$(canonicalize "$link")" == */agentic-workflow-* ]]; }; then
+      echo "  $name: skipping (native skill takes precedence)"
+      continue
+    fi
+    # Back up real directories before symlinking; safely remove dangling symlinks
+    if [ -d "$link" ] && [ ! -L "$link" ]; then
+      local backup="$link.bak.$(date +%s)"
+      mv "$link" "$backup"
+      echo "  $name: backed up existing dir to $(basename "$backup") before symlinking"
+    fi
+    if [ -L "$link" ] && [ ! -e "$link" ]; then
+      # dangling symlink (target gone) — safe to remove
+      rm -f "$link"
+    fi
+    # Clear any remaining valid symlink before re-linking
+    [ -L "$link" ] && rm -f "$link"
+    ln -sfn "$skill_dir" "$link"
+    echo "  $name: symlinked from $(basename "$repo")"
   done
+}
+
+if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
+  # Safe parser: read only well-formed KEY=value lines and validate SHA format.
+  # Avoids `source`'ing the file as bash (which would evaluate arbitrary commands
+  # smuggled in by a malicious commit to EXTERNAL_PINS.env).
+  read_pin() {
+    local key="$1"
+    local value
+    # grep -m1 stops after first match (avoids concatenation on duplicate keys);
+    # cut -d= -f2- preserves everything after the first '=' so values containing '=' survive.
+    value=$(grep -m1 "^${key}=" "$SCRIPT_DIR/EXTERNAL_PINS.env" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+    if [[ "$value" =~ ^[0-9a-f]{7,40}$ ]] || [[ "$value" == "HEAD" ]]; then
+      echo "$value"
+    else
+      echo "HEAD"
+    fi
+  }
+  IMPECCABLE_PIN="$(read_pin IMPECCABLE_PIN)"
+  EMIL_PIN="$(read_pin EMIL_PIN)"
+  TASTE_PIN="$(read_pin TASTE_PIN)"
+  install_external_pack "pbakaus/impeccable"   "$IMPECCABLE_PIN"
+  install_external_pack "emilkowalski/skill"   "$EMIL_PIN"
+  install_external_pack "Leonxlnx/taste-skill" "$TASTE_PIN"
 else
-  echo "  impeccable: skipped (source not available)"
+  echo "  WARN: EXTERNAL_PINS.env missing at $SCRIPT_DIR; skipping external pack install"
 fi
 
 # --- rtk ---
@@ -754,7 +856,9 @@ if command -v claude &>/dev/null; then
   if claude mcp list 2>&1 | grep -q "prism-mcp"; then
     echo "  prism-mcp: already registered in Claude Code"
   else
-    claude mcp add --scope user prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+    claude mcp add --scope user prism-mcp \
+      --env PRISM_DASHBOARD_PORT=7180 \
+      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
       2>/dev/null || echo "  WARN: prism-mcp registration failed"
     echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
   fi
@@ -766,7 +870,9 @@ if command -v codex &>/dev/null; then
   if codex mcp list 2>&1 | grep -q "prism-mcp"; then
     echo "  prism-mcp: already registered in Codex"
   else
-    codex mcp add prism-mcp -- npx -y "prism-mcp-server@$PRISM_VERSION" \
+    codex mcp add prism-mcp \
+      --env PRISM_DASHBOARD_PORT=7180 \
+      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
       2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
     echo "  prism-mcp: registered with Codex"
   fi
@@ -781,17 +887,20 @@ echo "  ~/.agentic-workflow/: created"
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Skills installed (34):"
+echo "Skills installed ($((${#MANAGED_SKILLS[@]} + 1)) native = ${#MANAGED_SKILLS[@]} managed + bootstrap):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
 echo "  QA:               bugHunt, bugReport"
-echo "  Release:          shipRelease, syncDocs"
+echo "  Release:          shipRelease, landAndDeploy, canary, syncDocs"
 echo "  Retrospective:    weeklyRetro"
-echo "  Planning:         officeHours, productReview, archReview"
+echo "  Planning:         officeHours, productReview, archReview, withInterview,"
+echo "                    autoplan, planDesignReview, planDevexReview"
+echo "  Security:         cso"
 echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
-echo "                    design-mockup [web|ios], design-implement [web|ios],"
+echo "                    design-mockup [web|ios], design-shotgun, design-implement [web|ios],"
 echo "                    design-refine, design-verify [web|ios]"
 echo "  Verification:     verify-app, verify-web, verify-ios"
+echo "  Memory/Status:    prismStatus"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
 echo "Config location:    $CLAUDE_DIR/"

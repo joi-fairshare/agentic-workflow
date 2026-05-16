@@ -1,6 +1,6 @@
 # CLAUDE.md — agentic-workflow
 
-> Portable Claude Code workflow toolkit: 35 custom skills, config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
+> Portable Claude Code workflow toolkit: 43 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill), config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 
 Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
 
@@ -32,7 +32,7 @@ Domain-specific rules are in `.claude/rules/` — they load automatically when w
 
 ```
 agentic-workflow/
-├── skills/        # 34 Claude Code custom skills (symlinked to ~/.claude/skills/)
+├── skills/        # 43 Claude Code custom skills (symlinked to ~/.claude/skills/)
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline script, and safety hooks
 ├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite)

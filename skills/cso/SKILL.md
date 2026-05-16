@@ -1,13 +1,13 @@
 ---
-name: productReview
-description: "Founder/product lens review of plans with 4 scope modes -- mvp, growth, scale, pivot. Challenges assumptions and tightens scope."
-argument-hint: "[--mode mvp|growth|scale|pivot] [plan-file-or-description]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
+name: cso
+description: "OWASP Top 10 + STRIDE threat model. Runs on a plan (pre-impl mode) or a PR diff (post-impl mode). Outputs severity-rated findings with mitigations."
+argument-hint: "[--plan|--diff] [path-or-pr#] [--output <path>]"
+allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write, Glob, Grep, Skill
 ---
 
-# Product Review — Founder Lens
+# CSO — Security Threat Modeling
 
-Reviews plans through a product/founder lens with four distinct modes. Challenges assumptions, tightens scope, and delivers a verdict.
+OWASP Top 10 + STRIDE threat model. Pre-impl (plan) or post-impl (diff) mode. Auto-detects mode from invocation context.
 
 <!-- === PREAMBLE START === -->
 
@@ -180,179 +180,95 @@ If either call fails, surface the error:
 
 <!-- === PREAMBLE END === -->
 
-## Step 1: Parse Arguments and Resolve Plan
+## Overview
 
-**Parse the mode flag:**
-- Look for `--mode` followed by one of: `mvp`, `growth`, `scale`, `pivot`
-- Default to `mvp` if no mode is specified
+Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan doc or a PR diff. Each finding gets a severity rating (CRITICAL / HIGH / MEDIUM / LOW) and a concrete mitigation. Output goes to `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`. Fits the pipeline at two points: pre-ship gate, or fanned out from `/autoplan` for early plan-stage security check.
 
-**Resolve the plan to review:**
-1. If a file path or directory path is given as argument, use it directly
-2. If a text description is given, use it directly as the plan content
-3. If neither is provided, auto-discover the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
+## Inputs
 
-```bash
-# Find newest plan directory (SDD format) and newest plan file (legacy format)
-NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
-NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
+- Mode flag: `--plan <path>` or `--diff <pr-or-branch>`
+- Auto-detect: if no flag, try `gh pr view --json number,state` on current branch — if it succeeds, use `--diff <pr#>`; else `--plan` against `ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1`
+- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/security-review.md` to land the review inside the canonical feature dir; without this flag the default `security/<target-slug>-threat-model.md` path is used.
 
-# Compare timestamps -- prefer whichever is more recent
-if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
-  if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
-    PLAN_TARGET="$NEWEST_DIR"
-  else
-    PLAN_TARGET="$NEWEST_FILE"
-  fi
-elif [ -n "$NEWEST_DIR" ]; then
-  PLAN_TARGET="$NEWEST_DIR"
-elif [ -n "$NEWEST_FILE" ]; then
-  PLAN_TARGET="$NEWEST_FILE"
-fi
-```
+## Steps
 
-**If `PLAN_TARGET` is a directory** (SDD format), read all three files inside it (`requirements.md`, `design.md`, `TASKS.md`) and review them holistically. The review framework maps naturally:
-- **Scope check** -- `requirements.md` (EARS requirements) + `TASKS.md` (task list)
-- **Persona clarity** -- `requirements.md` (Target User section)
-- **Timeline reality** -- `TASKS.md` (complexity estimates)
-- **Riskiest assumption** -- `design.md` (Architecture Decisions + Open Questions)
+1. Resolve mode and target.
+2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
+3. Read source material:
+   - Plan mode: read the plan doc.
+   - Diff mode: `gh pr diff <pr#>` OR `git diff main...HEAD` if branch-based.
+4. **OWASP Top 10 pass** — for each, check if applicable to source material; if yes, identify any finding:
+   - A01 Broken Access Control
+   - A02 Cryptographic Failures
+   - A03 Injection (SQL, command, template, etc.)
+   - A04 Insecure Design
+   - A05 Security Misconfiguration
+   - A06 Vulnerable & Outdated Components
+   - A07 Identification & Authentication Failures
+   - A08 Software & Data Integrity Failures
+   - A09 Security Logging & Monitoring Failures
+   - A10 Server-Side Request Forgery (SSRF)
+5. **STRIDE pass** — for each, identify any finding:
+   - **S**poofing
+   - **T**ampering
+   - **R**epudiation
+   - **I**nformation Disclosure
+   - **D**enial of Service
+   - **E**levation of Privilege
+6. For each finding: title, severity (CRITICAL / HIGH / MEDIUM / LOW), description, attack scenario, mitigation.
+7. Resolve target slug:
+   - Plan mode: `<feature>` (parent dir of plan.md)
+   - Diff mode: `pr-<pr#>` or `branch-<branch-name>`
+8. Resolve output path:
+   - If `--output <path>` was provided, use it verbatim. Ensure the parent dir exists with `mkdir -p "$(dirname <path>)"`.
+   - Otherwise default to `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`. Ensure `~/.agentic-workflow/$REPO_SLUG/security/` exists.
+9. Write to the resolved output path:
+   ```markdown
+   # Threat Model — <target>
 
-**If `PLAN_TARGET` is a single file** (legacy format), read and review it as before.
+   **Mode:** plan | diff
+   **Source:** <path or pr#>
+   **Reviewed:** <ISO date>
 
-If no plan is found at all, tell the user:
-> "No plan found. Provide a file path, a description, or run `/officeHours` first to generate a design doc."
+   ## Summary
+   <3–5 sentences. Worst findings, overall posture.>
 
-## Step 2: Read Context
+   ## OWASP Top 10 findings
+   ### A01 — Broken Access Control
+   - **<title>** [CRITICAL]
+     - Where: <file:line or plan-line>
+     - Attack: <scenario>
+     - Mitigation: <concrete fix>
+   <etc. for each Axx with findings; omit if no findings>
 
-Read project context to inform the review:
+   ## STRIDE findings
+   ### S — Spoofing
+   <findings or "No findings.">
+   <etc.>
 
-- Read `CLAUDE.md` if it exists
-- Read `README.md` if it exists
-- Use Glob to find relevant planning docs and skim them
+   ## Verdict
+   - **Critical findings:** N
+   - **High findings:** N
+   - **Recommendation:** SHIP | FIX-CRITICAL-FIRST | DO-NOT-SHIP
+   ```
 
-## Step 3: Review Through the Mode Lens
+## Outputs
 
-Apply the selected mode's review framework to the plan:
+- Default: `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`
+- When `--output <path>` is supplied: that exact path (used by `/autoplan` to land the review inside `plans/<feature>/security-review.md`)
 
-### MVP Mode (default)
+## Pre-ship integration
 
-Focus on shipping speed and scope discipline:
+`/shipRelease` does NOT currently auto-invoke `/cso`. To enable a security gate, users can:
 
-- **Scope check** — Is this truly minimal? List every feature and challenge whether each one is essential for v1. Identify at least one thing that can be cut.
-- **Persona clarity** — Is there a single, clear user persona? If the plan serves multiple personas, flag it.
-- **Timeline reality** — Can this ship in under 2 weeks of focused effort? If not, what needs to shrink?
-- **Riskiest assumption** — Identify the single biggest assumption. Propose a way to test it before building.
-- **Build vs. skip** — For each component, ask: can we use an existing tool, hardcode it, or skip it entirely for v1?
+1. **Manual gate** (recommended for now): run `/cso --diff` before invoking `/shipRelease`. If CRITICAL findings exist, address them before shipping.
 
-### Growth Mode
+2. **Hook gate** (advanced): add a pre-push hook that calls `claude /cso --diff` and exits non-zero on CRITICAL findings. See `.claude/rules/hooks.md` for hook conventions.
 
-Focus on user acquisition and retention:
-
-- **Growth levers** — What are the 2-3 primary growth mechanisms? Are they built into the product or bolted on?
-- **Activation funnel** — Map the steps from "user discovers this" to "user gets value". Where is the biggest drop-off risk?
-- **10x usage** — What would 10x the current usage look like? Does the current design support or block it?
-- **Retention hooks** — What brings users back? Is there a natural cadence (daily, weekly, per-PR)?
-- **Viral coefficient** — Does usage by one person naturally expose others to the product?
-
-### Scale Mode
-
-Focus on operational sustainability:
-
-- **100x load** — What breaks at 100x current usage? Identify the first bottleneck.
-- **Unit economics** — What is the cost per user/operation? Does it improve or degrade with scale?
-- **Automation gaps** — What currently requires manual intervention? What is the path to automating it?
-- **Operational bottlenecks** — Where will the team spend most of their time at scale? Is that the right place?
-- **Data gravity** — Where does data accumulate? Does it become an asset or a liability?
-
-### Pivot Mode
-
-Focus on strategic direction:
-
-- **What's working** — Identify the strongest signal from current usage/design. What should be doubled down on?
-- **What should die** — Identify features or directions that are not earning their complexity. Recommend killing them.
-- **Adjacent opportunity** — Based on the current position, what nearby problem could be solved with minimal additional effort?
-- **Fresh start test** — If starting from scratch today with current knowledge, what would be built differently?
-- **Core value extraction** — What is the one irreducible thing this product does that matters?
-
-## Step 4: Generate Review
-
-Produce a structured review document:
-
-```markdown
-# Product Review: {plan title}
-
-_Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
-
-## Verdict: {SHIP | ITERATE | RETHINK}
-
-{One paragraph justification for the verdict}
-
-## Strengths
-1. {What's strong about this plan}
-2. {Another strength}
-3. {Another strength}
-
-## Concerns
-
-| # | Severity | Concern | Recommendation |
-|---|----------|---------|----------------|
-| 1 | {high/medium/low} | {concern} | {what to do} |
-| 2 | {high/medium/low} | {concern} | {what to do} |
-| ... | ... | ... | ... |
-
-## Scope Suggestions
-
-### Cut
-- {feature/element to remove and why}
-
-### Keep
-- {feature/element that's essential and why}
-
-### Add
-- {missing element that would strengthen the plan}
-
-## Key Questions for the Team
-1. {Question that needs answering before proceeding}
-2. {Another question}
-3. {Another question}
-
-## Recommended Next Action
-{Single concrete next step -- be specific}
-```
-
-## Step 5: Write the Review
-
-Generate a URL-safe slug from the plan title (lowercase, hyphens, no special chars). Write the file:
-
-```bash
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-```
-
-Write to: `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-product-review-{slug}.md`
-
-## Step 6: Report
-
-Show a summary to the user:
-
-```
-Product Review complete! ({mode} mode)
-
-Verdict: {SHIP | ITERATE | RETHINK}
-
-Review written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-product-review-{slug}.md
-
-Top concerns:
-  1. [{severity}] {concern summary}
-  2. [{severity}] {concern summary}
-  3. [{severity}] {concern summary}
-
-Recommended next action: {one-line action}
-
-Suggested next steps:
-  /archReview — Review the engineering architecture
-  /officeHours — Brainstorm refinements to address concerns
-```
+Future work: extend `/shipRelease` to optionally auto-invoke `/cso` with a `--cso-gate` flag that blocks ship on CRITICAL findings.
 
 ## Next steps
 
-- `/autoplan` — run with other plan-review lenses in parallel
-- `/archReview` — engineering architecture perspective on the same plan
+- `/review` — if pre-ship and findings exist, run general code review
+- `/shipRelease` — if all findings are LOW or none
+- `/rootCause` — if a CRITICAL finding maps to a known incident

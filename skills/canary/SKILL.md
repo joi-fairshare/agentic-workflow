@@ -1,13 +1,13 @@
 ---
-name: productReview
-description: "Founder/product lens review of plans with 4 scope modes -- mvp, growth, scale, pivot. Challenges assumptions and tightens scope."
-argument-hint: "[--mode mvp|growth|scale|pivot] [plan-file-or-description]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
+name: canary
+description: "Post-deploy monitoring. Watches error rate, latency, logs, and custom probes for a configurable window. Verdict: HEALTHY (chain syncDocs), DEGRADED (warn), UNHEALTHY (alert + rootCause)."
+argument-hint: "[release-id] [--duration <sec>] [--setup]"
+allowed-tools: Bash(curl *), Bash(jq *), Bash(kubectl *), Bash(grep *), Bash(tail *), Read, Write, Skill
 ---
 
-# Product Review — Founder Lens
+# Canary — Post-Deploy Monitoring
 
-Reviews plans through a product/founder lens with four distinct modes. Challenges assumptions, tightens scope, and delivers a verdict.
+Watches prod error rate, latency, logs, and custom probes for a configurable window after deploy. Returns a verdict that drives the next-step chain.
 
 <!-- === PREAMBLE START === -->
 
@@ -180,179 +180,137 @@ If either call fails, surface the error:
 
 <!-- === PREAMBLE END === -->
 
-## Step 1: Parse Arguments and Resolve Plan
+## Overview
 
-**Parse the mode flag:**
-- Look for `--mode` followed by one of: `mvp`, `growth`, `scale`, `pivot`
-- Default to `mvp` if no mode is specified
+Reads `.agentic-workflow/canary.json` for monitoring URLs and probes. Runs minute-by-minute checks for `duration` seconds (default 900 = 15 min). Computes a verdict: HEALTHY, DEGRADED, or UNHEALTHY. Writes a timeline to `releases/<release-id>/canary.md`. On HEALTHY, auto-chains `/syncDocs`. On DEGRADED, warns and stops. On UNHEALTHY, alerts and suggests `/rootCause` — does NOT auto-chain (human decides next step).
 
-**Resolve the plan to review:**
-1. If a file path or directory path is given as argument, use it directly
-2. If a text description is given, use it directly as the plan content
-3. If neither is provided, auto-discover the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
+## Inputs
 
-```bash
-# Find newest plan directory (SDD format) and newest plan file (legacy format)
-NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
-NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
+- Release ID (positional arg). If omitted, auto-discover latest:
+  ```bash
+  ls -1d ~/.agentic-workflow/$REPO_SLUG/releases/*/ | sort -r | head -1
+  ```
+- `--duration <sec>` (optional). Overrides `canary.duration` from config.
+- `--setup` flag: run interactive wizard to write `.agentic-workflow/canary.json`, then exit.
+- `--skip-docs` flag (optional). When set, the `/syncDocs` auto-chain on HEALTHY verdict is suppressed. The flag also propagates from `/shipRelease` → `/landAndDeploy` → `/canary`, so passing `--skip-docs` to any upstream skill carries through to canary's chain decision.
+- Config file: `.agentic-workflow/canary.json` in project root.
 
-# Compare timestamps -- prefer whichever is more recent
-if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
-  if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
-    PLAN_TARGET="$NEWEST_DIR"
-  else
-    PLAN_TARGET="$NEWEST_FILE"
-  fi
-elif [ -n "$NEWEST_DIR" ]; then
-  PLAN_TARGET="$NEWEST_DIR"
-elif [ -n "$NEWEST_FILE" ]; then
-  PLAN_TARGET="$NEWEST_FILE"
-fi
+## Config schema (`.agentic-workflow/canary.json`)
+
+```json
+{
+  "duration": 900,
+  "errorRateUrl": "https://example.com/metrics/error-rate",
+  "latencyUrl": "https://example.com/metrics/latency",
+  "logSource": "kubectl logs deploy/api --since=60s",
+  "logAnomalyPatterns": ["FATAL", "OOMKilled", "panic:"],
+  "customProbes": [
+    { "name": "checkout-flow", "command": "npm run smoke:checkout", "critical": true }
+  ],
+  "thresholds": {
+    "errorRateDegradedMultiplier": 2,
+    "errorRateUnhealthyMultiplier": 5,
+    "latencyDegradedMultiplier": 2
+  }
+}
 ```
 
-**If `PLAN_TARGET` is a directory** (SDD format), read all three files inside it (`requirements.md`, `design.md`, `TASKS.md`) and review them holistically. The review framework maps naturally:
-- **Scope check** -- `requirements.md` (EARS requirements) + `TASKS.md` (task list)
-- **Persona clarity** -- `requirements.md` (Target User section)
-- **Timeline reality** -- `TASKS.md` (complexity estimates)
-- **Riskiest assumption** -- `design.md` (Architecture Decisions + Open Questions)
+- `duration` — monitoring window in seconds.
+- `errorRateUrl` — endpoint returning current error rate (numeric JSON or plain number).
+- `latencyUrl` — endpoint returning `{p50,p95,p99}` in ms.
+- `logSource` — shell command that prints recent log lines (last 60s).
+- `logAnomalyPatterns` — substrings/regexes that mark a critical log anomaly.
+- `customProbes[]` — extra checks. `critical:true` failures bump verdict to UNHEALTHY.
+- `thresholds` — multipliers vs pre-deploy baseline. Captured from first probe minute.
 
-**If `PLAN_TARGET` is a single file** (legacy format), read and review it as before.
+## --setup Wizard
 
-If no plan is found at all, tell the user:
-> "No plan found. Provide a file path, a description, or run `/officeHours` first to generate a design doc."
+When invoked with `--setup`, prompt the user (one question per AskUserQuestion call):
 
-## Step 2: Read Context
+1. Monitoring duration in seconds (default 900)
+2. Error rate URL
+3. Latency URL
+4. Log source command (default `kubectl logs deploy/api --since=60s`; can be empty)
+5. Log anomaly patterns (comma-separated; common defaults: `FATAL,OOMKilled,panic:`)
+6. Custom probe name + command + critical? (loop until user says done)
 
-Read project context to inform the review:
+Write `.agentic-workflow/canary.json`. Exit without monitoring.
 
-- Read `CLAUDE.md` if it exists
-- Read `README.md` if it exists
-- Use Glob to find relevant planning docs and skim them
+## Steps (normal mode)
 
-## Step 3: Review Through the Mode Lens
+1. If `--setup`: run wizard and exit.
 
-Apply the selected mode's review framework to the plan:
+2. Resolve release-id (arg or latest from `releases/`).
 
-### MVP Mode (default)
+3. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
 
-Focus on shipping speed and scope discipline:
+4. Load `.agentic-workflow/canary.json`. If missing, suggest `--setup` and exit.
 
-- **Scope check** — Is this truly minimal? List every feature and challenge whether each one is essential for v1. Identify at least one thing that can be cut.
-- **Persona clarity** — Is there a single, clear user persona? If the plan serves multiple personas, flag it.
-- **Timeline reality** — Can this ship in under 2 weeks of focused effort? If not, what needs to shrink?
-- **Riskiest assumption** — Identify the single biggest assumption. Propose a way to test it before building.
-- **Build vs. skip** — For each component, ask: can we use an existing tool, hardcode it, or skip it entirely for v1?
+4a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/canary.json 2>/dev/null` — if this returns 0 (file is tracked), error out with "canary.json is committed to the repo; remove it and run `/canary --setup` to write a local-only copy. The skill executes shell commands from this file and a tracked copy is a foot-gun." Recommend adding `.agentic-workflow/canary.json` to `.gitignore`.
 
-### Growth Mode
+5. Determine duration (`--duration` arg > config `duration` > default 900).
 
-Focus on user acquisition and retention:
+6. Compute baseline values on first probe minute:
+   - Initial `errorRateUrl` value → `baseline.errorRate`
+   - Initial `latencyUrl` p95 → `baseline.p95`
 
-- **Growth levers** — What are the 2-3 primary growth mechanisms? Are they built into the product or bolted on?
-- **Activation funnel** — Map the steps from "user discovers this" to "user gets value". Where is the biggest drop-off risk?
-- **10x usage** — What would 10x the current usage look like? Does the current design support or block it?
-- **Retention hooks** — What brings users back? Is there a natural cadence (daily, weekly, per-PR)?
-- **Viral coefficient** — Does usage by one person naturally expose others to the product?
+7. Probe loop — every 60 s for `ceil(duration / 60)` iterations (so the final tail is probed even when duration isn't a multiple of 60):
+   - Fetch `errorRateUrl` → current error rate
+   - Fetch `latencyUrl` → current p50/p95/p99
+   - If `logSource` set: run it; check stdout against `logAnomalyPatterns`. Record any matches.
+   - For each `customProbes[]`: run the command; record exit code + duration.
+   - Append a row to the timeline (in memory; written at the end).
 
-### Scale Mode
+8. Compute verdict after the loop:
+   - **UNHEALTHY** if ANY of:
+     - A `critical:true` custom probe failed at any point
+     - Error rate exceeded `baseline.errorRate * errorRateUnhealthyMultiplier` for ≥2 consecutive minutes
+     - Any log anomaly pattern matched (critical)
+   - **DEGRADED** if ANY of (and not UNHEALTHY):
+     - A non-critical custom probe failed
+     - Error rate exceeded `baseline.errorRate * errorRateDegradedMultiplier`
+     - p95 latency exceeded `baseline.p95 * latencyDegradedMultiplier`
+   - **HEALTHY** otherwise.
 
-Focus on operational sustainability:
+9. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/canary.md`:
+   ```markdown
+   # Canary — <release-id>
 
-- **100x load** — What breaks at 100x current usage? Identify the first bottleneck.
-- **Unit economics** — What is the cost per user/operation? Does it improve or degrade with scale?
-- **Automation gaps** — What currently requires manual intervention? What is the path to automating it?
-- **Operational bottlenecks** — Where will the team spend most of their time at scale? Is that the right place?
-- **Data gravity** — Where does data accumulate? Does it become an asset or a liability?
+   **Started:** <ISO date>
+   **Duration:** <sec>s
+   **Verdict:** HEALTHY | DEGRADED | UNHEALTHY
 
-### Pivot Mode
+   ## Baseline
+   - Error rate: <baseline>
+   - Latency p95: <baseline> ms
 
-Focus on strategic direction:
+   ## Timeline
+   | Minute | Error rate | p50 | p95 | p99 | Log anomalies | Probes |
+   |---|---|---|---|---|---|---|
+   | 1 | … | … | … | … | none | all pass |
+   <…>
 
-- **What's working** — Identify the strongest signal from current usage/design. What should be doubled down on?
-- **What should die** — Identify features or directions that are not earning their complexity. Recommend killing them.
-- **Adjacent opportunity** — Based on the current position, what nearby problem could be solved with minimal additional effort?
-- **Fresh start test** — If starting from scratch today with current knowledge, what would be built differently?
-- **Core value extraction** — What is the one irreducible thing this product does that matters?
+   ## Triggers
+   - <reason verdict was DEGRADED/UNHEALTHY, or "no triggers" if HEALTHY>
 
-## Step 4: Generate Review
+   ## Recommended next
+   - HEALTHY → /syncDocs (auto-chained)
+   - DEGRADED → review timeline, decide whether to roll back
+   - UNHEALTHY → /rootCause
+   ```
 
-Produce a structured review document:
+10. Branch on verdict:
+    - **HEALTHY:** if `--skip-docs` was passed (directly or propagated from shipRelease/landAndDeploy), print "skipping /syncDocs auto-chain (--skip-docs)" and exit. Otherwise invoke `/syncDocs` via `Skill` tool.
+    - **DEGRADED:** print warning to stdout. Do NOT auto-chain.
+    - **UNHEALTHY:** print alert + suggest `/rootCause`. Do NOT auto-chain.
 
-```markdown
-# Product Review: {plan title}
+## Outputs
 
-_Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
-
-## Verdict: {SHIP | ITERATE | RETHINK}
-
-{One paragraph justification for the verdict}
-
-## Strengths
-1. {What's strong about this plan}
-2. {Another strength}
-3. {Another strength}
-
-## Concerns
-
-| # | Severity | Concern | Recommendation |
-|---|----------|---------|----------------|
-| 1 | {high/medium/low} | {concern} | {what to do} |
-| 2 | {high/medium/low} | {concern} | {what to do} |
-| ... | ... | ... | ... |
-
-## Scope Suggestions
-
-### Cut
-- {feature/element to remove and why}
-
-### Keep
-- {feature/element that's essential and why}
-
-### Add
-- {missing element that would strengthen the plan}
-
-## Key Questions for the Team
-1. {Question that needs answering before proceeding}
-2. {Another question}
-3. {Another question}
-
-## Recommended Next Action
-{Single concrete next step -- be specific}
-```
-
-## Step 5: Write the Review
-
-Generate a URL-safe slug from the plan title (lowercase, hyphens, no special chars). Write the file:
-
-```bash
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-```
-
-Write to: `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-product-review-{slug}.md`
-
-## Step 6: Report
-
-Show a summary to the user:
-
-```
-Product Review complete! ({mode} mode)
-
-Verdict: {SHIP | ITERATE | RETHINK}
-
-Review written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-product-review-{slug}.md
-
-Top concerns:
-  1. [{severity}] {concern summary}
-  2. [{severity}] {concern summary}
-  3. [{severity}] {concern summary}
-
-Recommended next action: {one-line action}
-
-Suggested next steps:
-  /archReview — Review the engineering architecture
-  /officeHours — Brainstorm refinements to address concerns
-```
+- `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/canary.md`
+- `.agentic-workflow/canary.json` (only on `--setup`)
 
 ## Next steps
 
-- `/autoplan` — run with other plan-review lenses in parallel
-- `/archReview` — engineering architecture perspective on the same plan
+- `/syncDocs` — auto-chained on HEALTHY
+- `/rootCause` — recommended on UNHEALTHY
+- Manual rollback (`gh pr revert` or repo-specific path) — recommended on DEGRADED if rolling forward isn't viable

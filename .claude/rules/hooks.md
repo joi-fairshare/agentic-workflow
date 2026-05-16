@@ -23,6 +23,7 @@ Safety hooks run automatically via Claude Code's hook system. All hooks are inst
 |------|---------|
 | `git-context.sh` | Current branch, last 5 commits, working tree status |
 | `bridge-context.sh` | Recent decisions, topics, and tasks from the repo's memory graph (no-ops silently if bridge is down) |
+| `prism-context.sh` | One-line warning if prism-mcp dashboard at `PRISM_DASHBOARD_PORT` (default 7180) is unreachable; silent on success |
 
 ## Hook Protocols
 
@@ -48,6 +49,7 @@ All hook scripts live in `config/hooks/`:
 | `rtk-rewrite.sh` | PreToolUse | `Bash` |
 | `git-context.sh` | SessionStart | — |
 | `bridge-context.sh` | SessionStart | — |
+| `prism-context.sh` | SessionStart | — |
 
 `setup.sh` installs them by copying (not symlinking) to `~/.claude/hooks/` so they survive repo moves.
 
