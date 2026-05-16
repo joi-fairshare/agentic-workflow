@@ -36,15 +36,15 @@ Every SKILL.md embeds the shared preamble between these markers:
 
 ```markdown
 <!-- === PREAMBLE START === -->
-...34-skill table + output directory line...
+...skills table + output directory line...
 ...Bootstrap Check bash script...
 <!-- === PREAMBLE END === -->
 ```
 
-When updating `skills/_preamble.md`, you **must** propagate the change to all 34 SKILL.md files that embed it. Use `Grep` to find all files: search for `=== PREAMBLE START ===`.
+When updating `skills/_preamble.md`, you **must** propagate the change to all 43 SKILL.md files that embed it. Use `Grep` to find all files: search for `=== PREAMBLE START ===`.
 
 The preamble verifies:
-1. All 35 skills are symlinked to `~/.claude/skills/`
+1. All 43 native skills are symlinked to `~/.claude/skills/` (plus 14 skills from the 3 fetched external packs)
 2. The MCP bridge is built (`dist/mcp.js` exists)
 3. The `.claude/rules/` directory exists in the project root
 4. The repo-slug output directory `~/.agentic-workflow/$REPO_SLUG/` is created
@@ -124,7 +124,7 @@ When writing the bootstrap CLAUDE.md template, do not include Skills tables or K
 2. Copy the full preamble block from `skills/_preamble.md` immediately after the frontmatter `---`
 3. Write the skill's steps after the preamble
 4. Add the skill name to `setup.sh`'s `MANAGED_SKILLS` array
-5. Add a row to the skills table in `_preamble.md` and propagate to all 35 existing SKILL.md files
+5. Add a row to the skills table in `_preamble.md` and propagate to all 43 existing SKILL.md files
 6. Update the skill count in the CLAUDE.md tagline (line 3)
 
 ## Symlink Installation
