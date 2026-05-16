@@ -32,7 +32,7 @@ Domain-specific rules are in `.claude/rules/` — they load automatically when w
 
 ```
 agentic-workflow/
-├── skills/        # 34 Claude Code custom skills (symlinked to ~/.claude/skills/)
+├── skills/        # 43 Claude Code custom skills (symlinked to ~/.claude/skills/)
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline script, and safety hooks
 ├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite)

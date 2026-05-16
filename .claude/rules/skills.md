@@ -23,7 +23,6 @@ skills/<name>/
 name: skillName
 description: One-sentence description of what this skill does
 argument-hint: [optional argument syntax]
-disable-model-invocation: true
 allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
 ---
 ```

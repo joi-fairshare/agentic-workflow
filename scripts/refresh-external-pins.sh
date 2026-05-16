@@ -14,9 +14,14 @@ declare -A PACKS=(
 for var in "${!PACKS[@]}"; do
   repo="${PACKS[$var]}"
   sha=$(gh api "repos/$repo/commits/HEAD" --jq .sha)
+  if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: invalid SHA returned by gh api for $repo: $sha" >&2
+    exit 1
+  fi
   echo "  $var = $sha ($repo)"
   if grep -q "^${var}=" "$PINS_FILE"; then
-    sed -i "s|^${var}=.*|${var}=${sha}|" "$PINS_FILE"
+    tmp=$(mktemp)
+    sed "s|^${var}=.*|${var}=${sha}|" "$PINS_FILE" > "$tmp" && mv "$tmp" "$PINS_FILE"
   else
     echo "${var}=${sha}" >> "$PINS_FILE"
   fi
