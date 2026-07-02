@@ -8,7 +8,7 @@ allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuesti
 
 <!-- === PREAMBLE START === -->
 
-> **Agentic Workflow** — 43 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
+> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -55,6 +55,7 @@ allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuesti
 > | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
 > | `/canary` | Post-deploy monitoring with custom probes |
 > | `/prismStatus` | Health check for prism-mcp |
+> | `/specToProvenPR` | Approved spec → proven, review-clean PRs, one shippable stage at a time |
 >
 > **Output directory:** `~/.agentic-workflow/<repo-slug>/`
 >
@@ -90,7 +91,7 @@ echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
 SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
   [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
 done
 
