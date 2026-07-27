@@ -2,7 +2,7 @@
 name: design-analyze-ios
 description: Scan Assets.xcassets and Swift theme files to extract design tokens (colors, typography, spacing) into design-tokens.json in W3C DTCG format. Pass a specific path or let the skill auto-discover.
 argument-hint: [path/to/Assets.xcassets or Theme.swift]
-allowed-tools: Read, Write, Glob, AskUserQuestion
+allowed-tools: Bash(SHARED_DIR=*), Read, Write, Glob, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -283,37 +283,23 @@ Glob("**/*Color*.swift")
 If nothing is found:
 > "No Swift color definitions or asset catalogs found. Start your project and add a color asset catalog or a theme file, then re-run."
 
-## Step 2: Extract Color Tokens
+## Step 2: Extract Tokens (shared procedure)
 
-### From `Assets.xcassets`:
-Read each `.colorset/Contents.json` file. Extract:
-- Color name (from directory name)
-- Light mode RGBA values
-- Dark mode RGBA values (if present)
-- Convert to hex string format
+Resolve the shared dir from this skill's own symlink:
 
-### From Swift theme files:
-Read the file and parse patterns like:
-- `static let primaryColor = Color(hex: "#...")` → extract hex
-- `Color(red: N, green: N, blue: N)` → convert to hex
-- `Color(.systemBlue)` → note as system color
-- `static var background: Color { ... }` → extract color name and value
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-analyze-ios/SKILL.md")")/../_shared"
+echo "extraction: $SHARED_DIR/ios-token-extraction.md"
+```
 
-## Step 3: Extract Typography Tokens (if present)
+Read `$SHARED_DIR/ios-token-extraction.md` and follow it exactly for the files located in Step 1:
 
-Look for patterns in Swift theme files:
-- `Font.system(size: N, weight: .bold)` → extract size and weight
-- `static let headingFont = Font.custom("...", size: N)` → font family + size
-- `UIFont.systemFont(ofSize: N, weight: ...)` → size and weight
+- **Colors** — `Assets.xcassets` colorsets + Swift theme-file patterns
+- **Typography** — Swift font patterns
+- **Spacing (restricted)** — only `CGFloat` constants whose names match the spacing/layout pattern; never arbitrary CGFloat constants
+- **Completeness gate** — if fewer than 3 colors or 0 typography tokens were extracted, report the shortfall and ask via AskUserQuestion (different path / proceed partial / abort) before writing anything
 
-## Step 4: Extract Spacing Tokens (if present)
-
-Look for numeric constants used as spacing:
-- `static let padding: CGFloat = N` → spacing token
-- `static let cornerRadius: CGFloat = N` → radius token
-- Struct or enum with spacing values
-
-## Step 5: Write design-tokens.json
+## Step 3: Write design-tokens.json
 
 If `design-tokens.json` already exists, ask via AskUserQuestion:
 > "design-tokens.json already exists. Overwrite with extracted iOS tokens? (yes/no)"
@@ -322,7 +308,6 @@ Write extracted tokens in W3C DTCG format:
 
 ```json
 {
-  "$schema": "https://design-tokens.org/schema.json",
   "color": {
     "primary": { "$value": "#6366F1", "$type": "color" },
     "primary-dark": { "$value": "#818CF8", "$type": "color" },
@@ -345,7 +330,7 @@ Write extracted tokens in W3C DTCG format:
 If no Swift color definitions existed (only asset catalog):
 > "Created design-tokens.json from color assets only. Typography and spacing tokens could not be auto-extracted — add them manually or create a theme file."
 
-## Step 6: Present Summary
+## Step 4: Present Summary
 
 ```
 iOS Design Token Extraction Complete

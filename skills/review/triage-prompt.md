@@ -42,10 +42,13 @@ Prefer these catalog agents when they match:
 
 Always evaluate the diff for these concerns and include the relevant specialist if findings exist:
 
+### Runtime Behavior & Accessibility (auto-assign)
+- If the diff touches routes, pages, or UI components: **always** assign a runtime-behavior reviewer — `qa-expert` with focus "runtime behavior: exercise the changed flows against the injected {evidence} pack; flag any changed user-facing path with no evidence coverage"
+- If the diff contains JSX/HTML changes: **always** assign `accessibility-tester` (labels, roles, heading order, keyboard reachability)
+
 ### SQL Safety
 If the diff touches SQL queries, database access code, or ORM usage:
-- Look for raw SQL string interpolation or concatenation
-- Check for missing parameterized queries / prepared statements
+- Look for raw SQL interpolation/concatenation and missing parameterized queries
 - Verify migrations are reversible and safe for zero-downtime deploys
 - Flag any `DROP`, `TRUNCATE`, or destructive DDL in migrations
 - Assign `data-integrity-guardian` if any SQL changes are present
@@ -62,11 +65,10 @@ Fall back to built-in agent types (e.g. `backend-developer`, `frontend-developer
 
 ## Rules
 
-- Always include at least one agent, even for small diffs.
+- Always include at least one agent, even for small diffs; aim for 2–5. Don't over-assign.
 - For mixed PRs (e.g. TypeScript + SQL migration), assign multiple agents — one per concern.
 - Security and performance are always worth including for backend changes that touch auth, data, or APIs.
 - Do not overlap scopes — assign each concern to the most relevant agent only.
-- Aim for 2–5 agents. Don't over-assign.
 
 ## Output Format
 

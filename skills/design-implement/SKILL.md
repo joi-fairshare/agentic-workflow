@@ -1,7 +1,8 @@
 ---
 name: design-implement
-description: Detect web vs iOS automatically and delegate to /design-implement-web (CSS/Tailwind/Next.js) or /design-implement-ios (SwiftUI Theme.swift). Generates production code from approved mockup.
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+description: Detect web vs iOS automatically and delegate to /design-implement-web (CSS/Tailwind/Next.js) or /design-implement-ios (SwiftUI Theme.swift). Enforces the mockup-first gate, then auto-chains /design-verify.
+argument-hint: "<screen-name> [--no-mockup]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(SHARED_DIR=*), Bash(source *), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -262,38 +263,47 @@ Design pipeline:
 
 # Design Implement — Platform Dispatcher
 
-Detects whether this is a web or iOS project and delegates to the appropriate code generation skill. Contains no implementation logic.
+Enforces the mockup-first gate, detects whether this is a web or iOS project, delegates to the appropriate code-generation skill, then auto-chains verification. Contains no implementation logic.
 
 > **Tip:** If you already know the platform, invoke directly: `/design-implement-web` or `/design-implement-ios`
 
-## Platform Detection
+## Step 1: Mockup-First Gate
 
-Use the `Glob` tool to check for iOS indicators:
+Implementing without an approved mockup baseline makes `/design-verify` impossible — never skip this step.
 
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-implement/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+echo "screens.json: $AW_DIR/design/screens.json"
+ls "$AW_DIR/design/screens.json" 2>/dev/null || echo "screens.json: MISSING"
 ```
-Glob("Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
-```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+Read `screens.json` (CD4 schema in `$SHARED_DIR/design-artifact-paths.md`). The gate **passes** for the target screen only if its entry has a non-null `approved_at` **and** at least one file listed under `baselines` exists on disk (`ls "$AW_DIR/design/<baseline>"`).
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+- Gate passes → Step 2.
+- `screens.json` missing, screen absent, `approved_at` null, or no baseline file on disk → **STOP** with: "No approved mockup baseline for `<screen>` — run `/design-mockup <screen>` first." Do not dispatch.
+- `--no-mockup` passed → skip the gate, warn "Proceeding without a mockup baseline — /design-verify will have nothing to diff against", and strip `--no-mockup` from the forwarded arguments.
 
-## Platform Resolution
+## Step 2: Platform Detection & Dispatch
 
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("design-implement-ios")` with original arguments |
-| Web only | Invoke `Skill("design-implement-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I generate code for? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I generate code for? (web / ios)" → invoke chosen |
+Follow `$SHARED_DIR/platform-detection.md` exactly: recursive iOS Globs (`**/Package.swift`, `**/*.xcodeproj`, `**/*.xcworkspace`, ignoring `node_modules/`, `.build/`, `Pods/`, `vendor/`, `external-skills/`); web = `package.json` deps include `next`/`react`/`vite`/`vue`/`@angular/core`; both/neither → `AskUserQuestion` per the resolution table.
 
-Arguments are passed through unchanged. Platform is auto-detected — users no longer need to specify `web` or `swiftui`. To override detection, invoke the sub-skill directly.
+Dispatch contract (from the shared file):
+
+1. Echo `dispatch: <sub-skill> args=<args>`
+2. Dispatch literally, passing arguments through unchanged (minus a stripped `--no-mockup`):
+   - `Skill(skill="design-implement-web", args="<original args verbatim>")`
+   - `Skill(skill="design-implement-ios", args="<original args verbatim>")`
+3. If the screen-name argument is empty and the gate needs one, **stop** and ask — never dispatch blank.
+
+## Step 3: Auto-Chain Verification
+
+When the sub-skill completes without printing `[BLOCKED]`:
+
+- If its report already includes a `verify_run_id` (the sub-skill ran its own verify gate), do not re-run — surface that verdict.
+- Otherwise run `Skill(skill="design-verify", args="<screen-name>")` now. Verification is not a suggestion — this dispatcher is done only when a verify run reports PASS or WARN (CD11 thresholds in `$SHARED_DIR/design-artifact-paths.md`).
 
 ## Next steps
 
-- `/design-verify` — screenshot diff implementation vs mockup baseline
-- `/design-refine` — polish the implementation before verification
+- `/design-refine` — polish the implementation (verification re-runs after refinement)
+- `/shipRelease` — ship once verification passes

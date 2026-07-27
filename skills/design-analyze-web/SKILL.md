@@ -1,8 +1,8 @@
 ---
 name: design-analyze-web
 description: Run Dembrandt on reference site URLs to extract design tokens (colors, typography, spacing) as W3C DTCG JSON. Merges multiple sites, resolves conflicts by frequency/prominence, and writes design-tokens.json.
-argument-hint: <url> [url2...]
-allowed-tools: Bash(npx dembrandt *), Bash(git *), Read, Write, Glob, AskUserQuestion
+argument-hint: <url> [url2...] [--dark]
+allowed-tools: Bash(npx dembrandt *), Bash(git *), Bash(SHARED_DIR=*), Bash(mkdir *), Bash(rm *), Read, Write, Glob, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -268,11 +268,11 @@ Runs Dembrandt CLI on one or more reference website URLs, extracts design tokens
 
 ## Step 1: Validate Arguments
 
-The user must provide at least one URL. Parse all URLs from the argument string.
+The user must provide at least one URL. Parse all URLs from the argument string. A `--dark` flag (anywhere in the arguments) requests an additional dark-mode extraction pass.
 
 If no URLs provided:
-> "Usage: `/design-analyze <url> [url2...]`
-> Example: `/design-analyze https://linear.app https://vercel.com`"
+> "Usage: `/design-analyze-web <url> [url2...] [--dark]`
+> Example: `/design-analyze-web https://linear.app https://vercel.com`"
 
 ## Step 2: Validate URLs
 
@@ -285,25 +285,32 @@ If any argument fails validation:
 
 ## Step 3: Run Dembrandt on Each URL
 
-For each URL, run:
+Pin every extractor output to a known path so the merge step reads exact files — never guessed filenames. `<host>` is the URL's hostname (e.g. `https://linear.app/features` → `linear.app`).
+
+For each URL, in one Bash invocation (shell state does not persist between calls):
 
 ```bash
-npx dembrandt <url> --dtcg --save-output
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-analyze-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/design/raw"
+npx dembrandt <url> --dtcg --out "$AW_DIR/design/raw/<host>.json"
 ```
 
-If the user's design system includes dark mode, also run:
+If `--dark` was passed, also run for each URL (same invocation shape):
 
 ```bash
-npx dembrandt <url> --dtcg --dark-mode --save-output
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-analyze-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+npx dembrandt <url> --dtcg --dark-mode --out "$AW_DIR/design/raw/<host>-dark.json"
 ```
 
-Collect all output files. Dembrandt saves JSON files with the extracted tokens.
+After each run, verify the pinned file exists and is non-empty; if not, report the dembrandt error and stop.
 
 ## Step 4: Merge Extracted Tokens
 
 If multiple URLs were provided:
 
-1. Read all Dembrandt output files
+1. Read exactly the pinned files written in Step 3 — `~/.agentic-workflow/<repo-slug>/design/raw/<host>.json` (and `<host>-dark.json` when `--dark`), one per URL
 2. Identify shared patterns across sites (common colors, similar typography scales, consistent spacing)
 3. Resolve conflicts by frequency and prominence:
    - Token present in most sites wins
@@ -318,7 +325,6 @@ Write the merged tokens to `design-tokens.json` at the project root in W3C DTCG 
 
 ```json
 {
-  "$schema": "https://design-tokens.org/schema.json",
   "color": {
     "primary": { "$value": "#...", "$type": "color" },
     "secondary": { "$value": "#...", "$type": "color" }
@@ -358,14 +364,17 @@ Written to: design-tokens.json
 Next steps:
   1. Run /design-language to define brand personality
   2. Run /design-mockup <screen> to generate HTML mockups
-  3. Run /design-implement web|swiftui to generate production code
+  3. Run /design-implement to generate production code
 ```
 
 ## Rules
 
 - Always use `--dtcg` flag for W3C DTCG format output
 - Do not modify existing `design-tokens.json` without warning — if it exists, ask before overwriting
-- Clean up Dembrandt output files after merging (keep only `design-tokens.json`)
+- The pinned raw outputs under `~/.agentic-workflow/<repo-slug>/design/raw/` are **kept** — `/design-evolve-web` reuses them. Remove only stray dembrandt output files written outside `design/raw/` (e.g. in the project directory), explicitly per file:
+  ```bash
+  rm <stray-output-file>
+  ```
 - If Dembrandt is not installed, advise: "Run `npm install -g dembrandt` or re-run `setup.sh`"
 
 ## Next steps

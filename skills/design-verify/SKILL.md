@@ -1,7 +1,8 @@
 ---
 name: design-verify
 description: Detect web vs iOS automatically and delegate to /design-verify-web (Playwright screenshots) or /design-verify-ios (XcodeBuildMCP screenshots). Diffs against mockup baseline.
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+argument-hint: [screen-name]
+allowed-tools: Bash(git *), Bash(ls *), Bash(SHARED_DIR=*), Bash(source *), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -266,34 +267,49 @@ Detects whether this is a web or iOS project and delegates to the appropriate sc
 
 > **Tip:** If you already know the platform, invoke directly: `/design-verify-web` or `/design-verify-ios`
 
-## Platform Detection
+## Step 1: Platform Detection & Dispatch
 
-Use the `Glob` tool to check for iOS indicators:
+Resolve the shared dir from **this skill's own** symlink, then follow the shared detection contract:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify/SKILL.md")")/../_shared"
+echo "$SHARED_DIR"
+```
+
+Read `$SHARED_DIR/platform-detection.md` and apply its Detection rules, Platform Resolution table, and Dispatch contract. Dispatch literally, echoing first:
 
 ```
-Glob("**/Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
+dispatch: design-verify-web args=<original args verbatim>
+Skill(skill="design-verify-web", args="<original args verbatim>")
 ```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+or the same shape with `design-verify-ios`.
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+All user-supplied arguments (e.g., `[screen-name]`) are passed through unchanged. If a required argument is empty, stop and ask — never dispatch blank.
 
-## Platform Resolution
+## Step 2: Read the Sub-Skill's Verdict
 
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("design-verify-ios")` with original arguments |
-| Web only | Invoke `Skill("design-verify-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
+After the sub-skill returns, locate its run report and normalize the outcome — never assume the diff was clean:
 
-All user-supplied arguments (e.g., `[screen-name]`) are passed through to the sub-skill unchanged.
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+RUN_DIR=$(ls -1dt "$AW_DIR/design/verify/"*/ 2>/dev/null | head -1)
+echo "run-dir: ${RUN_DIR:-none}"
+```
+
+Read `$RUN_DIR/comparison-report.json` (schema in `$SHARED_DIR/design-artifact-paths.md`) and extract `overall.verdict` and `overall.max_diff_pct`. Print:
+
+```
+design-verify: <PASS|WARN|FAIL> (max diff <N>%)
+```
+
+If no run dir or report exists, report that the sub-skill produced no comparison report and treat the run as FAIL for gating purposes.
 
 ## Next steps
 
-- `/design-refine` — if the diff surfaced visual gaps
-- `/shipRelease` — if the diff is clean, ship the release
+Gate the suggestions on `overall.verdict` — suggest `/shipRelease` **only on PASS**:
+
+- **PASS** — `/shipRelease` — diff is clean, ship the release
+- **WARN** — `/design-refine` — address the minor discrepancies, then `/design-verify` again
+- **FAIL** — `/design-refine` or `/design-implement-*` — significant deviation; do **not** ship until re-verified

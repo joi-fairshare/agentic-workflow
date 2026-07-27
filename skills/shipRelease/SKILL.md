@@ -1,8 +1,8 @@
 ---
 name: shipRelease
 description: "Ship a release — sync branch, run tests, audit coverage, push, open PR, then auto-chain → /landAndDeploy → /canary → /syncDocs (skip the deploy chain with --no-deploy)."
-argument-hint: "[--base main] [--skip-docs] [--no-deploy]"
-allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Read, Glob, Grep, Skill
+argument-hint: "[--base main] [--skip-docs] [--no-deploy] [--min-coverage <pct>]"
+allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo *), Bash(go *), Bash(bundle *), Bash(coverage *), Bash(ls *), Bash(cat *), Bash(mkdir *), Bash(test *), Bash(SHARED_DIR=*), Bash(source *), Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -194,6 +194,7 @@ If either call fails, surface the error:
    - `--base <branch>` — the base branch to rebase onto and target for the PR. Default: `main`.
    - `--skip-docs` — if present, skip the `/syncDocs` invocation in the final auto-chain step.
    - `--no-deploy` — if present, skip the `/landAndDeploy` auto-chain (Step 7) and fall through directly to `/syncDocs`. Use for release-branch workflows where merge happens elsewhere or deployment is manual.
+   - `--min-coverage <pct>` — optional. If coverage is measurable and below this threshold, **stop** before push and report.
 
 3. Derive the current branch name:
    ```bash
@@ -217,17 +218,15 @@ Do **not** attempt to auto-resolve conflicts.
 
 ## Step 3: Test
 
-Detect the project's test runner by checking for project files:
+Resolve the shared dir from this skill's own symlink, then detect the runner:
 
-| Check | Runner |
-|-------|--------|
-| `package.json` exists | `npm test` |
-| `pytest.ini`, `pyproject.toml` with `[tool.pytest]`, or `setup.cfg` with `[tool:pytest]` | `pytest` |
-| `Cargo.toml` exists | `cargo test` |
-| `go.mod` exists | `go test ./...` |
-| `Gemfile` exists | `bundle exec rspec` |
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/shipRelease/SKILL.md")")/../_shared"
+```
 
-Run the detected test command. If **any tests fail**, **stop** and report:
+Read `$SHARED_DIR/test-runner-detection.md` and set `TEST_CMD` from its runner table. If no runner is detected, report "tests: n/a — excluded from scoring" and continue (never score an undetected runner as a failure).
+
+Run `TEST_CMD`. If **any tests fail**, **stop** and report:
 - Which test runner was used
 - The full failure output
 - A summary of which tests failed
@@ -236,22 +235,29 @@ Do not proceed to push or PR creation on test failure.
 
 ## Step 4: Coverage Audit
 
-Check for available coverage tooling and run if found:
+Set `COVERAGE_CMD` from the coverage table in `$SHARED_DIR/test-runner-detection.md` (already read in Step 3).
 
-| Check | Coverage command |
-|-------|-----------------|
-| `package.json` has `nyc` or `c8` dependency | `npx c8 npm test` or `npx nyc npm test` |
-| `package.json` has `vitest` | `npx vitest run --coverage` |
-| Python project with `coverage` installed | `coverage run -m pytest && coverage report` |
-| `Cargo.toml` with `cargo-tarpaulin` | `cargo tarpaulin` |
-| `go.mod` exists | `go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out` |
-
-If coverage tools are available:
-- Run the coverage command.
-- Report the overall coverage percentage.
+If coverage tooling is available:
+- Run `COVERAGE_CMD` and report the overall coverage percentage.
 - List any files below 80% coverage as warnings (do not fail the release for low coverage).
+- If `--min-coverage` was passed and overall coverage is below it, **stop** and report the shortfall.
 
 If no coverage tools are detected, note "Coverage: not available" and continue.
+
+## Step 4.5: App Verification (user-facing diffs)
+
+Check whether the diff touches UI or routes:
+
+```bash
+git diff origin/{base}..HEAD --name-only
+```
+
+If any changed file is a UI component, page, route, template, or stylesheet:
+
+1. Invoke `Skill(skill="verify-app", args="--yes auto")` — auto mode infers screens from the diff; `--yes` skips the confirmation re-prompt. A `FAIL` verdict **blocks the push**: stop and report the evidence-pack path.
+2. **Baseline check:** if `~/.agentic-workflow/$REPO_SLUG/design/screens.json` exists and any of its screens match the changed files/routes, also invoke `Skill(skill="design-verify")`. A FAIL diff (>10%) blocks the push.
+
+If the diff is not user-facing, note "verification: n/a (no UI/route changes)" and continue.
 
 ## Step 5: Push
 
@@ -265,39 +271,45 @@ If the push fails (e.g., rejected due to non-fast-forward), report the error and
 
 ## Step 6: Open PR
 
-Generate the PR body from recent commits since divergence from base:
-
-```bash
-git log origin/{base}..HEAD --format="- %s" --no-merges
-```
-
-Create the PR:
-
-```bash
-gh pr create --base {base} --head {branch} --title "{branch}" --body "$(cat <<'PRBODY'
-## Summary
-
-{generated list of commits}
-
----
-
-Shipped via `/shipRelease`.
-PRBODY
-)"
-```
-
-If a PR already exists for this branch, report the existing PR URL instead of creating a duplicate. Check first:
+**Duplicate check first.** If a PR already exists for this branch, report its URL and skip creation:
 ```bash
 gh pr list --head {branch} --base {base} --json number,url
 ```
 
-Capture the PR URL (and the PR number returned by `gh pr create`) for the report and the next step.
+Build the PR body from the template in `$SHARED_DIR/pr-body.md` (Read it; re-source `SHARED_DIR` as in Step 3 — shell state does not persist between Bash calls):
+
+- `## Summary` — commits since divergence: `git log origin/{base}..HEAD --format="- %s" --no-merges`, plus the "why".
+- `## Evidence` — pull the **newest verification pack**:
+  ```bash
+  source "$SHARED_DIR/repo-slug.sh"
+  ls -1dt "$AW_DIR/verification/"*/ 2>/dev/null | head -1
+  ```
+  Embed the pack's `evidence` text per `$SHARED_DIR/evidence-pack.md`: the verdict line, journey table, mockup diff %, and cross-check raw output — plus artifact paths. Never just a pointer.
+- `## Tests` — runner + counts from Step 3. `## Coverage` — % from Step 4 (or "not available") + files below 80%.
+- `## Key decisions` / `## Review resolution` per the template (`None.` when empty).
+
+**Draft-only rule (CD13):** if the diff is user-facing (Step 4.5) and the verification pack is **missing or its verdict is FAIL**, do NOT open a ready PR — create it with `--draft` and a warning checkbox noting the missing/failed evidence.
+
+Create the PR with `gh pr create --base {base} --head {branch} --title "{branch}" --body "..."` (adding `--draft` when the rule above applies). Capture the PR URL and number for the report and the next step.
 
 ## Step 7: Auto-chain `/landAndDeploy`
 
-Unless `--no-deploy` was passed, invoke `/landAndDeploy --wait --chained-from-ship` via the `Skill` tool, passing the PR number captured in Step 6. If the user passed `--skip-docs` to `shipRelease`, also pass `--skip-docs` to `/landAndDeploy`.
+Unless `--no-deploy` was passed, first write the structured ship→deploy handoff (read + deleted by `/landAndDeploy`):
 
-The `--chained-from-ship` flag tells `/landAndDeploy` to graceful-degrade if `deploy.json` is missing (a first-time user's `shipRelease` shouldn't hard-fail because the deploy wizard hasn't been run yet). It also tells `/landAndDeploy` that the ship-phase metadata (branch, tip SHA, test results, PR URL) should be incorporated into its `deploy.md` output rather than being written by `shipRelease`. Using a CLI flag rather than an env var is more reliable across the Skill tool boundary.
+```bash
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/releases"
+cat > "$AW_DIR/releases/.pending-ship.json" <<EOF
+{ "branch": "{branch}", "base": "{base}", "tip_sha": "{short-sha}",
+  "pr": {number}, "pr_url": "{url}", "tests": "passed ({N} tests)",
+  "coverage": "{pct}% | not available", "evidence_pack": "{newest pack dir or null}",
+  "shipped_at": "{ISO timestamp}" }
+EOF
+```
+
+Then invoke `/landAndDeploy --wait --chained-from-ship` via the `Skill` tool, passing the PR number captured in Step 6. If the user passed `--skip-docs` to `shipRelease`, also pass `--skip-docs` to `/landAndDeploy`.
+
+The `--chained-from-ship` flag tells `/landAndDeploy` to graceful-degrade if `deploy.json` is missing (a first-time user's `shipRelease` shouldn't hard-fail because the deploy wizard hasn't been run yet). It also tells `/landAndDeploy` to fold the ship-phase metadata from `.pending-ship.json` into its `deploy.md` output rather than it being written by `shipRelease`.
 
 The `--wait` flag tells `/landAndDeploy` to poll for merge before deploying — so this step works correctly even though the PR may not yet be merged at the moment `shipRelease` completes.
 
@@ -329,16 +341,16 @@ Record whether docs were updated, deferred to the canary chain, or skipped.
 
 ## Step 9: Report
 
-**Release record handoff.** The release-id (canonical form `<ISO-date>-<short-sha>`) is generated by `/landAndDeploy` from the **merge commit SHA** — not the tip SHA — because the merge SHA is the canonical post-merge identifier and is the same one `/canary` uses. shipRelease cannot know the merge SHA at push time (especially for non-fast-forward or squash merges), so the release record is structured as follows:
+**Release record handoff.** The canonical release-id scheme (CD7) is `<ISO-date>-<short-sha>`, one dir per release: `releases/<ISO-date>-<short-sha>/`. In the default chain the short SHA is the **merge commit SHA**, generated by `/landAndDeploy` — the canonical post-merge identifier `/canary` also uses. shipRelease cannot know the merge SHA at push time (especially for squash merges), so:
 
-- **Default chain (`/landAndDeploy` is invoked in Step 7):** do **NOT** write a separate `ship.md` here. Instead, the ship-phase metadata (PR url, branch, tip SHA, test results, coverage) is passed forward in the Skill invocation prompt to `/landAndDeploy --chained-from-ship`, which folds it into a `## Ship Phase` subsection at the top of its `deploy.md`. This guarantees `deploy.md` and `canary.md` always live in the same `releases/<merge-sha-release-id>/` subdir — no split across two dirs when tip-SHA ≠ merge-SHA.
+- **Default chain (`/landAndDeploy` is invoked in Step 7):** do **NOT** write a separate `ship.md` here. The ship-phase metadata travels via `releases/.pending-ship.json` (Step 7); `/landAndDeploy` folds it into a `## Ship Phase` subsection at the top of its `deploy.md`. This guarantees `deploy.md` and `canary.md` always live in the same `releases/<ISO-date>-<short-sha>/` subdir — no split across two dirs when tip-SHA ≠ merge-SHA.
 
-- **`--no-deploy` invocation (Step 7 skipped):** since no `/landAndDeploy` will run, shipRelease writes a standalone ship summary to `~/.agentic-workflow/$REPO_SLUG/releases/<timestamp>-<branch>/ship.md`. Use the timestamped-branch form (e.g. `2026-05-15-1430-feat-add-foo`) since no merge SHA exists yet. Deploy information will not be available.
+- **`--no-deploy` invocation (Step 7 skipped):** since no `/landAndDeploy` will run, shipRelease writes a standalone ship summary to `~/.agentic-workflow/$REPO_SLUG/releases/<ISO-date>-<tip-short-sha>/ship.md` — same CD7 id form, using the **tip SHA** since no merge SHA exists yet (e.g. `2026-05-15-a1b2c3d`). Deploy information will not be available.
 
   ```markdown
   # Release: {branch}
 
-  - **Release ID:** {timestamp}-{branch-slug}
+  - **Release ID:** {ISO-date}-{tip-short-sha}
   - **Date:** {ISO timestamp}
   - **Base:** {base}
   - **Branch:** {branch}
@@ -361,7 +373,7 @@ Release shipped!
   PR:      {url}
   Deploy:  {chained via /landAndDeploy --wait --chained-from-ship | skipped (--no-deploy)}
   Docs:    {updated | deferred to canary chain | skipped}
-  Report:  {handed to /landAndDeploy for deploy.md folding | ~/.agentic-workflow/{repo-slug}/releases/{timestamp}-{branch}/ship.md}
+  Report:  {handed to /landAndDeploy via .pending-ship.json | ~/.agentic-workflow/<repo-slug>/releases/{ISO-date}-{tip-short-sha}/ship.md}
 ```
 
 ## Next steps

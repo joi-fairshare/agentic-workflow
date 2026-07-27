@@ -1,9 +1,9 @@
 ---
 name: withInterview
 description: "Interview the user to clarify requirements before executing a prompt. Use when the user wants to refine a task through guided questions before implementation."
-argument-hint: "[prompt]"
+argument-hint: "<skill-name> [prompt]"
 disable-model-invocation: true
-allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
+allowed-tools: Bash(git *), Bash(ls *), Bash(mkdir *), Bash(date *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Interview Before Executing
@@ -186,17 +186,35 @@ If either call fails, surface the error:
 
 $ARGUMENTS
 
+The first token of the arguments is the **target skill** to run after the interview (e.g. `/withInterview officeHours add dark mode`). Record it now — the interview ends by invoking it. If no skill name is given, ask which skill (or "none — execute directly") before Round 1.
+
 ## Interview Process
+
+### Setup: Interview Directory
+
+Create the plan directory (layout per `_shared/plan-layout.md`) before Round 1. Derive `<slug>` as 2–4 kebab-case words from the task:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/withInterview/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+PLAN_DIR="$AW_DIR/plans/$(date +%Y-%m-%d)-<slug>"
+mkdir -p "$PLAN_DIR"
+echo "plan-dir: $PLAN_DIR"
+```
+
+All interview artifacts go to `$PLAN_DIR/interview.md`. Persist each round's questions there as they are asked (append per round) so the question list can be re-rendered on demand later.
 
 ### Round 1: Initial Analysis & High-Level Questions
 
-Read the task above carefully. Identify:
-- Ambiguities or underspecified requirements
-- Decisions that have more than one reasonable answer
-- Missing context that would change your approach
-- Scope boundaries that aren't clear
+Read the task above carefully. Identify: ambiguities or underspecified requirements; decisions with more than one reasonable answer; missing context that would change the approach; unclear scope boundaries; and **scope/time-box constraints** — flags like `--slim` or phrases like "30 min", "quick pass" — captured verbatim (they go into the artifact and are forwarded to the target skill).
 
-Present your **highest-priority questions first** — the ones whose answers will shape everything else. Group them by theme (e.g. scope, behavior, constraints, testing). Keep each question concise and offer concrete options where possible (e.g. "Should X do A or B?" rather than open-ended "What should X do?").
+Present your **highest-priority questions first** — the ones whose answers will shape everything else. Emit them as a numbered table with a Theme column, and write the same table to `$PLAN_DIR/interview.md`:
+
+| # | Theme | Question | Options (if any) |
+|---|-------|----------|------------------|
+| 1 | scope | Should X do A or B? | A / B |
+
+Themes: scope, behavior, constraints, testing, integration. Keep each question concise and offer concrete options where possible (e.g. "Should X do A or B?" rather than open-ended "What should X do?").
 
 ### Round 2: Subagent Strategy
 
@@ -207,41 +225,52 @@ After the user answers Round 1, ask specifically about subagent usage. Present t
 > - **Explore** — for codebase research and file discovery
 > - **Plan** — for designing an implementation strategy before coding
 > - **general-purpose** — for delegating independent subtasks in parallel
-> - **Reviewers** (e.g. Rails, TypeScript, security, performance) — for post-implementation review
+> - **Reviewers** — post-implementation review via `/review`, which selects reviewer agents based on the changed files
 > - **None** — I'll handle everything directly
 >
 > You can pick multiple. I'll also suggest a specific combination if you'd like a recommendation.
 
-If the user selects **multiple subagents**, ask follow-up questions about each one:
-- What specific focus or scope should each agent have?
-- Should they run in parallel or sequentially?
-- Are there dependencies between their outputs (e.g. Explore results feeding into Plan)?
+If the user selects **multiple subagents**, follow up on each: its focus/scope, parallel vs sequential, and dependencies between outputs (e.g. Explore feeding Plan).
 
 ### Round 3+: Drill-Down Details
 
-Continue asking follow-up rounds as needed. Each round should:
-- Reference the user's previous answers ("You mentioned X — does that mean...?")
-- Go deeper on areas that are still underspecified
-- Surface edge cases and error handling questions
-- Clarify testing expectations and acceptance criteria
+Continue asking follow-up rounds as needed. Each round: reference previous answers ("You mentioned X — does that mean...?"), go deeper on underspecified areas, surface edge cases and error handling, clarify testing expectations and acceptance criteria.
 
-Keep going until you have no remaining ambiguities. Each round should be a focused set of 2-5 questions, not a wall of text.
+**Run at least 3 rounds** unless the user explicitly says to skip ahead. Keep going past 3 until you can honestly emit the line `Remaining ambiguities: none` — followed by a bullet list of what each round resolved. That literal line is required in the final round; you may not summarize-and-confirm without it. Each round should be a focused set of 2-5 questions (numbered, with Theme column, appended to `$PLAN_DIR/interview.md`), not a wall of text.
 
-### Final Round: Summarize and Confirm
+### Final Round: Summarize, Persist, and Confirm
 
 Once all details are gathered, present a complete summary:
 
 1. **Task understanding** — what you'll build, with all clarifications incorporated
 2. **Approach** — the implementation strategy step by step
 3. **Subagent plan** — which agents will be used, in what order, with what focus
-4. **Scope boundaries** — what's explicitly in and out of scope
+4. **Scope boundaries** — what's explicitly in and out of scope, including any captured `--slim`/time-box constraint
 5. **Acceptance criteria** — how you'll know the task is done
+
+End with:
+
+```
+Remaining ambiguities: none
+- <round N resolved: ...>
+```
 
 Ask: **"Does this look right? Any changes before I start?"**
 
+After the user confirms, write two artifacts to `$PLAN_DIR` (re-source `repo-slug.sh` first — shell state does not persist):
+
+1. **`$PLAN_DIR/interview.md`** — the full record: target skill, original prompt, captured scope/time-box constraints, every round's question table with the user's answers, the 5-part summary, and the `Remaining ambiguities: none` block.
+2. **`$PLAN_DIR/plan.md`** — a TL;DR-form plan shaped per `_shared/plan-layout.md` so downstream discovery (`/autoplan`, plan lenses, `/specToProvenPR`) finds it: task understanding, approach steps, scope boundaries, acceptance criteria, and a pointer to `interview.md`.
+
 ### Execute
 
-Only after explicit confirmation, begin the work.
+Only after explicit confirmation and after both artifacts are written, hand off to the target skill captured in Round 1 with an explicit invocation:
+
+```
+Skill(skill="<target>", args="<original prompt> — interview: $PLAN_DIR/interview.md")
+```
+
+If the target was "none — execute directly", begin the work yourself using the confirmed plan.
 
 ## Rules
 
@@ -250,8 +279,9 @@ Only after explicit confirmation, begin the work.
 - Each round should be focused: 2-5 questions max per round.
 - Always reference previous answers when asking follow-ups to show you're building understanding.
 - The subagent question always gets its own dedicated round.
-- If the task is trivial and truly has no ambiguity, you may collapse to fewer rounds, but still ask the subagent question and get confirmation before proceeding.
+- Minimum 3 rounds; only the user saying "skip" collapses the interview — and even then, still ask the subagent question, get confirmation, and write both artifacts before proceeding.
 
 ## Next steps
 
-- run original skill — run the original skill with the gathered requirements
+- `Skill(skill="<target>", args="<original prompt> — interview: $PLAN_DIR/interview.md")` — run the wrapped target skill with the interview artifact attached
+- `/autoplan` — if the confirmed plan warrants multi-lens review before implementation (it will auto-discover `$PLAN_DIR/plan.md`)

@@ -1,7 +1,8 @@
 ---
 name: design-analyze
 description: Detect web vs iOS automatically and delegate to /design-analyze-web (Dembrandt CLI on URLs) or /design-analyze-ios (Swift/Xcode asset extraction). Writes design-tokens.json.
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+argument-hint: "[<url> [url2...] (web) | <path> (ios)]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(SHARED_DIR=*), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -189,32 +190,24 @@ Detects whether this is a web or iOS project and delegates to the appropriate to
 > - Web: `/design-analyze-web <url> [url2...]`
 > - iOS: `/design-analyze-ios [path/to/Assets.xcassets]`
 
-## Platform Detection
+## Platform Detection & Dispatch
 
-Use the `Glob` tool to check for iOS indicators:
+Resolve the shared dir from this skill's own symlink, then follow the shared detection contract:
 
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-analyze/SKILL.md")")/../_shared"
+echo "contract: $SHARED_DIR/platform-detection.md"
 ```
-Glob("**/Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
-```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+Read `$SHARED_DIR/platform-detection.md` and apply it exactly — the recursive iOS globs with excludes, the web `package.json` check, and the resolution table (both/neither present ⇒ AskUserQuestion). Sub-skills for this dispatcher: iOS → `design-analyze-ios`, web → `design-analyze-web`.
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+## Dispatch Contract
 
-## Platform Resolution
-
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("design-analyze-ios")` with original arguments |
-| Web only | Invoke `Skill("design-analyze-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I extract design tokens for? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform? (web / ios)" → invoke chosen |
-
-All user-supplied arguments are passed through to the sub-skill unchanged.
+1. Echo before dispatching: `dispatch: <sub-skill> args=<args>`
+2. Dispatch literally, passing all user-supplied arguments through unchanged:
+   - Web: `Skill(skill="design-analyze-web", args="<original args verbatim>")`
+   - iOS: `Skill(skill="design-analyze-ios", args="<original args verbatim>")`
+3. If a required argument is empty (web requires at least one URL), **stop** and ask — never dispatch with a blank required arg.
 
 ## Next steps
 

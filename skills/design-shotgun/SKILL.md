@@ -2,7 +2,7 @@
 name: design-shotgun
 description: "Generate 4–6 mockup variants in parallel with distinct aesthetic directions. Produces a contact sheet for side-by-side comparison and a picked-variant handoff to /design-mockup."
 argument-hint: "[feature-name] [--variants N]"
-allowed-tools: Bash(ls *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_take_screenshot
+allowed-tools: Bash(ls *), Bash(mkdir *), Bash(cat *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Design Shotgun — Parallel Mockup Variants
@@ -183,9 +183,9 @@ If either call fails, surface the error:
 
 ## Overview
 
-Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents, each with a distinct aesthetic direction (minimalist, brutalist, editorial, glassmorphism, neo-skeuomorphic, swiss-grid). Each subagent invokes the existing `frontend-design` skill with the direction baked into the brief. Outputs all N variants as HTML, plus a contact-sheet HTML embedding them side-by-side, plus Playwright screenshots of each.
+Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents, each with a distinct aesthetic direction (minimalist, brutalist, editorial, glassmorphism, neo-skeuomorphic, swiss-grid). Each subagent invokes the `compound-engineering:frontend-design` plugin skill with the direction baked into the brief. Outputs all N variants as HTML, plus a captioned contact-sheet HTML embedding them side-by-side, Playwright screenshots of each, and a `picked.json` handoff for `/design-mockup`.
 
-**External pack dependency:** design-shotgun delegates variant generation to the `frontend-design` skill (provided by the `compound-engineering` plugin or, when not present, the user's local `frontend-design` if installed via taste-skill or impeccable). If `frontend-design` is not available, the skill falls back to constructing the mockup HTML inline using design tokens + the chosen aesthetic direction's prompt template (see `skills/design-shotgun/aesthetics.md` for fallback templates). This makes design-shotgun self-sufficient even in environments without the external pack.
+**External pack dependency:** design-shotgun delegates variant generation to the `frontend-design` skill provided by the **compound-engineering plugin** (skill name `compound-engineering:frontend-design`). If that plugin skill is not available, the skill falls back to constructing the mockup HTML inline using design tokens + the chosen aesthetic direction's prompt template (see `skills/design-shotgun/aesthetics.md` for fallback templates). This makes design-shotgun self-sufficient even in environments without the plugin.
 
 ## Inputs
 
@@ -193,44 +193,73 @@ Sits BEFORE `/design-mockup` in the design pipeline. Spawns N parallel subagents
 - `--variants N` (optional, default 4, max 6).
 - `design-tokens.json` from project root (required for token-aware generation).
 - `.impeccable.md` from project root (required for brand alignment).
-- Feature brief from `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/plan.md`.
+- Feature brief from `~/.agentic-workflow/<repo-slug>/plans/<feature>/plan.md`.
 
 ## Steps
 
-1. Resolve feature name (arg or `ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1` and use its dirname).
-2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
-3. Resolve N (`--variants` flag or 4). Clamp to [2, 6]. If N < 4, print a one-line note "generating fewer than 4 variants reduces aesthetic diversity — consider --variants 4+" but proceed. The description advertises 4–6 variants as the recommended range; the hard floor of 2 exists only for users who explicitly want a head-to-head pair.
-4. Read `design-tokens.json` and `.impeccable.md`. Read the plan doc for context.
-5. **Pick N aesthetic directions** from this seed list, choosing the N that most diverge from each other given the brand personality in `.impeccable.md`:
+1. **Resolve the output dir** — this skill has no design preamble, so derive the slug explicitly. Single Bash invocation:
+   ```bash
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-shotgun/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   mkdir -p "$AW_DIR/design/shotgun"
+   echo "shotgun-dir: $AW_DIR/design/shotgun"
+   ```
+   Use the echoed **absolute** `shotgun-dir` everywhere below — never `~` or an unexpanded `$AW_DIR` in subagent prompts or Playwright calls.
+2. **Prerequisite gate** — this skill has no design preamble, so check explicitly: `design-tokens.json` AND `.impeccable.md` must exist at the project root. If either is missing, stop:
+   > "Design language not established — run `/design-language [url1 url2...]` first, then re-run `/design-shotgun`. Generating variants without tokens produces token-free mockups that can't seed the pipeline."
+3. Resolve feature name (arg, or `ls -t "$AW_DIR"/plans/*/plan.md | head -1` — re-source repo-slug.sh in the same invocation — and use its dirname).
+4. Resolve N (`--variants` flag or 4). Clamp to [2, 6]. If N < 4, print a one-line note "generating fewer than 4 variants reduces aesthetic diversity — consider --variants 4+" but proceed.
+5. Read `design-tokens.json` and `.impeccable.md`. Read the plan doc for context.
+6. **Pick N aesthetic directions** from this seed list, choosing the N that most diverge from each other given the brand personality in `.impeccable.md`:
    - `minimalist` — restrained typography, generous whitespace, monochrome accents
    - `brutalist` — raw monospace, hard edges, system fonts, minimal styling
    - `editorial` — serif headlines, magazine-style hierarchy, drop caps
    - `glassmorphism` — translucent surfaces, backdrop blur, layered depth
    - `neo-skeuomorphic` — soft shadows, subtle gradients, tactile metaphors
    - `swiss-grid` — strict 12-column grid, Helvetica, asymmetric balance
-6. **Dispatch N subagents in parallel.** Send ONE message containing N `Agent` tool calls. Before dispatching, read `skills/design-shotgun/aesthetics.md` and extract the section matching each chosen aesthetic direction — these are the inline fallback templates. Each subagent receives:
+7. **Dispatch N subagents in parallel.** Send ONE message containing N `Agent` tool calls. Before dispatching, read `skills/design-shotgun/aesthetics.md` and extract the section matching each chosen aesthetic direction — these are the inline fallback templates. Each subagent receives:
    - Feature brief from the plan
    - `design-tokens.json` content
    - `.impeccable.md` content
    - ONE aesthetic direction (its own; no overlap)
    - **Fallback template** from `skills/design-shotgun/aesthetics.md` for that direction (the entire matching section verbatim)
-   - Output path: `~/.agentic-workflow/$REPO_SLUG/design/shotgun/variant-{i}.html` where `i` is the variant number 1..N
-   - **Instruction:** "Prefer invoking `/frontend-design` if available (check `$HOME/.claude/skills/frontend-design/` or the compound-engineering plugin). If not available, use the inline aesthetic template below as system context to produce a single self-contained HTML mockup. Either way, the output must respect the project's design tokens and brand language, biased toward the chosen aesthetic direction." Include the relevant aesthetics.md section verbatim in the subagent prompt as the fallback template.
-7. Wait for all N subagents.
-8. Generate `~/.agentic-workflow/$REPO_SLUG/design/shotgun/contact-sheet.html` — a single HTML page with each variant in an `<iframe>` (or `<details>`-wrapped block) labeled with its aesthetic direction. Mobile-friendly grid layout, max 3 columns on desktop.
-9. **Screenshot each variant** using Playwright MCP at 1280×800 viewport:
-   - Navigate to `file://...variant-{i}.html`
-   - Take screenshot → `design/shotgun/variant-{i}.png`
-10. Print summary to stdout: list of variants with directions, contact-sheet path, instruction to open it for comparison.
+   - Output path: the **expanded absolute path** `<shotgun-dir>/variant-{i}.html` where `i` is the variant number 1..N (expand `<shotgun-dir>` from Step 1 before dispatch — subagents get fresh shells and cannot resolve `$AW_DIR`)
+   - **Instruction:** "Probe for the compound-engineering plugin's frontend-design skill by attempting `Skill(skill=\"compound-engineering:frontend-design\", args=...)` — do NOT check `$HOME/.claude/skills/frontend-design/` (that directory exists but is empty; the real skill lives in the plugin). If the plugin skill is unavailable, use the inline aesthetic template below as system context to produce a single self-contained HTML mockup, and say which path was taken. Either way, the output must respect the project's design tokens and brand language, biased toward the chosen aesthetic direction." Include the relevant aesthetics.md section verbatim in the subagent prompt as the fallback template.
+8. Wait for all N subagents. Verify each `<shotgun-dir>/variant-{i}.html` exists and is non-empty; a missing output is a named failure — report it, never silently skip.
+9. Generate `<shotgun-dir>/contact-sheet.html` — a single HTML page with each variant in an `<iframe>` (or `<details>`-wrapped block). **Each variant carries a caption block** containing:
+   - **Direction** — the aesthetic direction name
+   - **Rationale** — one line: why this direction was chosen given the brand personality in `.impeccable.md`
+   - **Token deviation** — one line: which design tokens the variant bends or breaks (e.g. "swaps accent #6366f1 → mono", "spacing scale intact"), or "on-token" if fully compliant
+   Mobile-friendly grid layout, max 3 columns on desktop.
+10. **Screenshot each variant** using Playwright MCP at 1280×800 viewport, holding the browser lock:
+    - Acquire before the first navigation (single Bash invocation):
+      ```bash
+      SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-shotgun/SKILL.md")")/../_shared"
+      LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; acquire_lock
+      ```
+    - For each variant: navigate to `file://<shotgun-dir>/variant-{i}.html` (absolute path), then `mcp__plugin_playwright_playwright__browser_take_screenshot` with `{ filename: "<shotgun-dir>/variant-{i}.png" }` (absolute path)
+    - Release after the last screenshot (single invocation): re-run the block above with `release_lock` in place of `acquire_lock`
+11. **Pick a winner.** Ask via `AskUserQuestion`: "Which variant should seed /design-mockup?" with one option per variant (label = `variant-{i} — <direction>`, description = the caption rationale) plus "None — discard and re-run". On a pick, write `<shotgun-dir>/picked.json`:
+    ```json
+    {
+      "variant": 3,
+      "direction": "editorial",
+      "html_path": "<shotgun-dir>/variant-3.html",
+      "feature": "<feature-name>"
+    }
+    ```
+    (`html_path` fully expanded and absolute.) On "None", write nothing and report.
+12. Print summary to stdout: list of variants with directions and captions, contact-sheet path, picked variant (if any), and the `picked.json` path.
 
 ## Outputs
 
-All under `~/.agentic-workflow/$REPO_SLUG/design/shotgun/`:
+All under `~/.agentic-workflow/<repo-slug>/design/shotgun/`:
 - `variant-{1..N}.html` — full-page HTML mockups
 - `variant-{1..N}.png` — Playwright screenshots
-- `contact-sheet.html` — side-by-side comparison page
+- `contact-sheet.html` — captioned side-by-side comparison page
+- `picked.json` — `{variant, direction, html_path, feature}` handoff consumed by `/design-mockup-web` Step 0
 
 ## Next steps
 
-- `/design-mockup <variant-N>` — user picks a winner; this skill takes its HTML/styling as the seed for a fully-built mockup
+- `/design-mockup <screen>` — reads `design/shotgun/picked.json` and takes the picked variant's HTML/styling as the seed for a fully-built mockup
 - `/design-refine` — if you want to iterate within the chosen direction without rebuilding from scratch

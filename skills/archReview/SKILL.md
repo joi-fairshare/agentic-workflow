@@ -1,8 +1,8 @@
 ---
 name: archReview
 description: Engineering architecture review with mandatory diagrams and edge case analysis. Reviews plans or implementations for technical soundness.
-argument-hint: "[plan-file-or-directory-to-review]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
+argument-hint: "[--plan <path> | plan-file-or-directory-to-review] [--output <path>] [--slim]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(date *), Bash(mkdir *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Architecture Review — Engineering Lens
@@ -183,31 +183,20 @@ If either call fails, surface the error:
 
 ## Step 1: Resolve the Target
 
+**Parse flags first:** `--plan <path>` (equivalent to the positional path), `--output <path>` (explicit output file — `/autoplan` passes `--output <feature-dir>/arch-review.md`), `--slim` (compact output: matrix, scores, and verdict only).
+
 **If a file path is given**, read that file as the plan/spec to review.
 
-**If a directory is given**, explore its structure using Glob and Read to understand the implementation.
+**If a directory is given** and it is a plan dir, read `plan.md` + `engineering.md` + `TASKS.md` — the reader matrix in `_shared/plan-layout.md`. Legacy aliases per `_shared/plan-layout.md`: fall back to `design.md` (→ engineering.md) and `requirements.md` (→ product.md) only if the canonical file is absent. If it is a code directory, explore its structure using Glob and Read.
 
 **If nothing is given**, try two fallbacks in order:
-1. Find the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
+1. Auto-discover the most recent plan per `_shared/plan-discovery.md`:
    ```bash
-   # Find newest plan directory (SDD format) and newest plan file (legacy format)
-   NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
-   NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
-
-   # Compare timestamps -- prefer whichever is more recent
-   if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
-     if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
-       PLAN_TARGET="$NEWEST_DIR"
-     else
-       PLAN_TARGET="$NEWEST_FILE"
-     fi
-   elif [ -n "$NEWEST_DIR" ]; then
-     PLAN_TARGET="$NEWEST_DIR"
-   elif [ -n "$NEWEST_FILE" ]; then
-     PLAN_TARGET="$NEWEST_FILE"
-   fi
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/archReview/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   PLAN_DIR=$(ls -1dt "$AW_DIR/plans/"*/ 2>/dev/null | head -1)
    ```
-   If `PLAN_TARGET` is a directory, explore its structure using Glob and Read to review all three files (`requirements.md`, `design.md`, `TASKS.md`). If it is a single file, read it as before.
+   Resolve a found plan dir per the reader matrix above; a legacy single `.md` file is read as-is.
 2. If no plans exist, review the current project's architecture by exploring the repository root.
 
 ## Step 2: Read Context
@@ -224,111 +213,57 @@ Use Glob to discover these files -- do not assume paths.
 
 ## Step 3: Architecture Analysis
 
-Spawn an **Agent** with task "Explore" to map the system:
+Dispatch one explore agent — `Agent` tool, `subagent_type: "Explore"`, search breadth "very thorough" — with this prompt:
 
-The agent should investigate and report on:
+> "Map the system at `<target>`. Read source files, configuration, and package manifests. Report, with file:line evidence for each: (1) component boundaries — a **named list** of distinct modules/services and where the boundaries are drawn; (2) dependency graph, including circular dependencies; (3) data flow paths — how data enters, transforms, exits; (4) external integrations; (5) state management — where state lives, how it syncs, source of truth; (6) error propagation across boundaries — handled or swallowed."
 
-- **Component boundaries** — What are the distinct modules/services? Where are the boundaries drawn?
-- **Dependency graph** — What depends on what? Are there circular dependencies?
-- **Data flow paths** — How does data enter, transform, and exit the system?
-- **External integrations** — What third-party services, APIs, or tools are involved?
-- **State management** — Where is state stored? How is it synchronized? What is the source of truth?
-- **Error propagation** — How do errors flow across boundaries? Are they handled or swallowed?
-
-The agent should read source files, configuration, and package manifests to build an accurate picture.
+**Output contract:** the agent must return the named boundary list (it drives the Step 5 matrix rows) plus the six areas above. **Fallback:** if the Agent tool is unavailable or returns nothing usable, do the same exploration directly with `Glob` + `Grep` + `Read`, producing the same named boundary list.
 
 ## Step 4: Generate Mandatory Diagrams
 
-Create three mermaid diagrams. These are **mandatory** -- the review is incomplete without them.
+Create three mermaid diagrams. These are **mandatory** -- the review is incomplete without them. Every diagram must satisfy two assertions:
+
+- **≥3 nodes named after real components** from Step 3 (actual module, file, service, or table names — e.g. `mcp.ts`, `EventBus`, `bridge.db`)
+- **No placeholder labels** — generic labels such as "Component A", "Service", "Input", "Transform", "Store" do not count; a diagram containing them is invalid and the review is incomplete.
 
 ### 4a: Component Diagram
-
-Show each module/service as a box with dependency arrows. Include:
-- Internal components and their responsibilities
-- External dependencies (databases, APIs, file system)
-- Direction of dependency (who depends on whom)
-
-```mermaid
-graph TD
-    A[Component A] --> B[Component B]
-    A --> C[External Service]
-    B --> D[(Database)]
-```
+Each module/service as a box with dependency arrows: internal components and responsibilities, external dependencies (databases, APIs, file system), direction of dependency.
 
 ### 4b: Data Flow Diagram
-
-Show how data moves through the system from entry to exit:
-- Input sources (user, API, file, event)
-- Transformation steps
-- Storage points
-- Output destinations
-
-```mermaid
-flowchart LR
-    Input --> Transform --> Store --> Output
-```
+How data moves from entry to exit: input sources (user, API, file, event), transformation steps, storage points, output destinations.
 
 ### 4c: Sequence Diagram
+The single most critical user flow end-to-end: all participants, request/response pairs, and the error path for the main flow.
 
-Model the single most critical user flow end-to-end:
-- All participants (user, services, databases)
-- Request/response pairs
-- Error paths for the main flow
+## Step 5: Edge Case Matrix
 
-```mermaid
-sequenceDiagram
-    User->>Service: request
-    Service->>DB: query
-    DB-->>Service: result
-    Service-->>User: response
-```
+Build a **boundary × failure-mode matrix** — one row per component boundary from Step 3's named list, one column per failure mode. Every cell is either a finding id (defined below the table) or `OK — <evidence>` (file:line, config value, or plan-line proving the case is handled). **No blank cells** — an unexamined cell is itself a finding. One covered boundary must never masquerade as full coverage.
 
-## Step 5: Edge Case Analysis
+| Boundary | Dependency unavailable | Invalid/malicious input | Load 10x | State leakage |
+|---|---|---|---|---|
+| {boundary 1} | F1 or `OK — <evidence>` | … | … | … |
+| {…one row per Step-3 boundary…} | | | | |
 
-For **each component boundary** identified in Step 3, analyze these four failure modes:
+Failure-mode definitions:
+- **Dependency unavailable** — timeout? retry? fallback? does the failure cascade or is it contained?
+- **Invalid / malicious input** — unexpected types, missing fields, oversized payloads; validation at the boundary or deep inside; injection vectors (SQL, command, path traversal)?
+- **Load 10x** — first bottleneck (CPU, memory, I/O, connections); unbounded queues, caches, buffers?
+- **State leakage** — cross-request/user leakage; shared mutable globals; guaranteed cleanup (connections, file handles, temp files)?
 
-### 5a: Dependency Unavailable
-- What happens when each external dependency is unreachable?
-- Is there a timeout? A retry? A fallback?
-- Does the failure cascade or is it contained?
+Findings (F1, F2, …): severity per `_shared/severity.md`, description, location, concrete mitigation.
 
-### 5b: Invalid / Malicious Input
-- What happens with unexpected types, missing fields, oversized payloads?
-- Is input validated at the boundary or deep inside?
-- Are there injection vectors (SQL, command, path traversal)?
+## Step 5.5: Review Self-Check
 
-### 5c: Load Stress (10x)
-- What happens at 10x the expected request volume?
-- Where is the first bottleneck (CPU, memory, I/O, connections)?
-- Are there unbounded queues, caches, or buffers?
+Verify your own evidence: for every `OK — <evidence>` cell in the matrix, confirm the cited code actually exists via `Grep`/`Read` (grep the named timeout, validator, handler, or config key). Downgrade any cell whose evidence does not hold to a finding.
 
-### 5d: State Leakage
-- Can state from one request/user leak into another?
-- Are there shared mutable globals?
-- Is cleanup guaranteed (connections, file handles, temp files)?
-
-## Step 5.5: Dark Factory Adversarial Stress Test (if enabled)
-
-**Start the pipeline:**
-```
-mcp__prism-mcp__session_start_pipeline — project: REPO_SLUG,
-  objective: "Adversarially challenge this architecture review of: {target description from Step 1}. Find: (1) failure modes not identified in the edge case analysis, (2) risks whose impact or likelihood is understated, (3) suggested improvements that are vague or insufficient ('add monitoring' is not a mitigation — what specifically?), (4) component boundaries where error propagation is unaddressed. For each finding, provide component:function or file:line evidence.",
-  working_directory: "<absolute path to repo root>",
-  max_iterations: 2
-```
-
-Store the returned `pipeline_id`. Poll until complete:
-```
-mcp__prism-mcp__session_check_pipeline_status — pipeline_id: <pipeline_id>
-```
-
-When complete:
-- `COMPLETED` — no additional issues found beyond what the review already covers. Proceed to Step 6.
-- `FAILED` — incorporate the evaluator's additional findings into the edge case analysis before writing the verdict. Surface them clearly in the Top Risks table.
+**Optional adversarial delegation:** per `_shared/dark-factory.md` (archReview review-gap objective template) — gate-checked there; skip silently when not enabled. Incorporate delegated findings into the matrix and Top Risks before writing the verdict.
 
 ## Step 6: Review Verdict
 
-Produce the final assessment:
+Produce the final assessment. The verdict is **rule-derived** from the matrix findings and scores (anchored 1–5 scale per `_shared/severity.md`):
+- any CRITICAL finding, or any dimension scored 1 ⇒ **REDESIGN**
+- any HIGH finding, or any dimension scored ≤2 ⇒ **NEEDS WORK**
+- otherwise ⇒ **SOUND**
 
 ```markdown
 # Architecture Review: {title}
@@ -337,11 +272,13 @@ _Reviewed by `/archReview` on {ISO date}_
 
 ## Verdict: {SOUND | NEEDS WORK | REDESIGN}
 
-{One paragraph justification}
+{One paragraph justification citing the finding ids / dimension scores that drove it}
 
 ## Scores
 
-| Dimension | Score (1-10) | Notes |
+_Anchored 1–5 scale from `_shared/severity.md` (5 = no findings above LOW … 1 = CRITICAL or unaddressed)._
+
+| Dimension | Score (1–5) | Notes |
 |-----------|:---:|-------|
 | Complexity | {n} | {brief justification} |
 | Scalability | {n} | {brief justification} |
@@ -367,19 +304,9 @@ _Reviewed by `/archReview` on {ISO date}_
 | 2 | {risk} | {high/med/low} | {high/med/low} | {recommendation} |
 | ... | ... | ... | ... | ... |
 
-## Edge Case Findings
+## Edge Case Matrix
 
-### Dependency Failures
-{findings from 5a}
-
-### Input Validation Gaps
-{findings from 5b}
-
-### Load Concerns
-{findings from 5c}
-
-### State Leakage Risks
-{findings from 5d}
+{the Step 5 boundary × failure-mode matrix, followed by its findings list — empty findings list is the literal `None.`}
 
 ## Missing Error Handling
 - {specific location and what's missing}
@@ -387,22 +314,32 @@ _Reviewed by `/archReview` on {ISO date}_
 
 ## Suggested Improvements (Prioritized)
 
-| Priority | Improvement | Effort | Impact |
+_Severity per `_shared/severity.md` (legacy P0→CRITICAL, P1→HIGH)._
+
+| Severity | Improvement | Effort | Impact |
 |----------|------------|--------|--------|
-| P0 | {must fix before shipping} | {S/M/L} | {description} |
-| P1 | {should fix soon} | {S/M/L} | {description} |
-| P2 | {nice to have} | {S/M/L} | {description} |
+| CRITICAL | {must fix before shipping} | {S/M/L} | {description} |
+| HIGH | {should fix soon} | {S/M/L} | {description} |
+| MEDIUM/LOW | {nice to have} | {S/M/L} | {description} |
+```
+
+End the file with the normalized final line per `_shared/severity.md` (CD9 mapping: SOUND→PASS, NEEDS WORK→NEEDS_WORK, REDESIGN→BLOCKED):
+
+```
+verdict: <PASS|NEEDS_WORK|BLOCKED>
 ```
 
 ## Step 7: Write the Review
 
-Generate a URL-safe slug from the target title (lowercase, hyphens, no special chars). Write the file:
+If `--output <path>` was provided, write to that exact path (ensure the parent dir exists with `mkdir -p`). Otherwise generate a URL-safe slug from the target title (lowercase, hyphens, no special chars) and write to the default path:
 
 ```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/archReview/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to: `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-arch-review-{slug}.md`
+Default: `$AW_DIR/plans/{timestamp}-arch-review-{slug}.md`
 
 Include all three mermaid diagrams and the complete analysis.
 
@@ -413,14 +350,14 @@ Show a summary to the user:
 ```
 Architecture Review complete!
 
-Verdict: {SOUND | NEEDS WORK | REDESIGN}
+Verdict: {SOUND | NEEDS WORK | REDESIGN} (normalized: {PASS | NEEDS_WORK | BLOCKED})
 
 Scores:
-  Complexity:      {n}/10
-  Scalability:     {n}/10
-  Maintainability: {n}/10
+  Complexity:      {n}/5
+  Scalability:     {n}/5
+  Maintainability: {n}/5
 
-Review written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-arch-review-{slug}.md
+Review written to: {resolved output path}
 
 Top 3 risks:
   1. {risk summary}

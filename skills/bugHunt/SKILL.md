@@ -1,8 +1,8 @@
 ---
 name: bugHunt
 description: Fix-and-verify loop with atomic commits and regression test generation. Three tiers — quick (lint+typecheck), standard (unit+integration), exhaustive (full suite + edge cases).
-argument-hint: "[--tier quick|standard|exhaustive] [bug-description-or-test-command]"
-allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Write, Edit, Glob, Grep, Skill
+argument-hint: "[--tier quick|standard|exhaustive] [--from-report <path> --item N] [--from-investigation <path>] [--depth N] [bug-description-or-test-command]"
+allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo *), Bash(go *), Bash(bundle *), Bash(coverage *), Bash(SHARED_DIR=*), Bash(source *), Bash(cat *), Bash(echo *), Bash(mkdir *), Bash(ls *), Agent, Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff, mcp__prism-mcp__session_task_route, mcp__prism-mcp__prism_infer
 ---
 
 # Bug Hunt
@@ -185,7 +185,10 @@ If either call fails, surface the error:
 
 Parse the argument string for:
 - **Tier flag:** `--tier quick`, `--tier standard`, or `--tier exhaustive`. Default: `standard`.
-- **Bug description or test command:** Everything after the tier flag (or the entire argument if no flag).
+- **`--from-report <path> --item N`** — entry from a `/bugReport` report: Read `<path>` and take row N of its `## Bugs` table as the bug description (severity, file, line, description). No manual re-description needed.
+- **`--from-investigation <path>`** — entry from a `/rootCause` handoff (`investigations/<slug>/handoff.md`): Read `<path>` and adopt its root cause, module boundary, and repro command/journey. Skip re-deriving anything the handoff already answers in Steps 2–3.
+- **`--depth N`** — dispatch-chain depth guard (default 0). If N ≥ 2, do not dispatch any sub-skill from this run — report instead. When dispatching, pass `--depth N+1`.
+- **Bug description or test command:** Everything after the flags (or the entire argument if no flag).
 
 Tier definitions:
 | Tier | Verification scope |
@@ -198,12 +201,13 @@ Tier definitions:
 
 Confirm the bug exists before attempting a fix.
 
-1. **If argument contains a test command** (e.g., `npm test -- path/to/test`), run it directly.
-2. **If argument is a description**, use Grep to search for related test files. Look for test files matching keywords from the description. Run the most relevant test(s).
-3. **Capture the failure output.** If the command passes (no failure), inform the user:
-   > "Could not reproduce the bug. The specified test/command passes. Please provide more detail or a failing test command."
-
-   Stop here unless the user provides more context.
+1. **Detect the runner** per `skills/_shared/test-runner-detection.md` (sets `TEST_CMD`). An undetected runner is "n/a" — fall back to the app path below; missing tooling is never itself the bug.
+2. **If argument contains a test command** (e.g., `npm test -- path/to/test`), run it directly.
+3. **If argument is a description**, use Grep to find related test files and **list every candidate test first** (file + why it matched) before running any. Then run the candidates, best match first.
+4. **Capture the failure output.** If no candidate fails, do NOT conclude non-reproduction yet:
+   - Show the full candidate list you tried.
+   - For user-facing symptoms, try the app path: `Skill(skill="verify-app", args="--yes --journey <repro steps from the description>")`.
+   - Only after both routes pass, ask via AskUserQuestion whether the user can provide more detail / a failing command, or wants to stop.
 
 ## Step 3: Locate
 
@@ -213,29 +217,18 @@ Find the bug in the source code.
 2. Use Agent to explore the codebase if the initial search is insufficient.
 3. Read all relevant source files. Trace the logic to identify the defect.
 
-## Step 3.5: Dark Factory Fix Pipeline (if enabled)
+## Step 3.5: Dark Factory (optional)
 
-**Build the objective** from what you learned in Steps 2–3 — be specific about the root cause and the failing test command.
+Follow `skills/_shared/dark-factory.md` — the gate (CD12), the route/infer/verify flow, and the **bugHunt fix objective template** are all preserved there. Fill the template with the root cause from Step 3 and the failing command from Step 2:
 
-**Start the pipeline:**
-```
-mcp__prism-mcp__session_start_pipeline — project: REPO_SLUG,
-  objective: "Fix the bug: <one-sentence description>. Root cause: <root cause from Step 3>. Reproduce with: <test command from Step 2>. The fix must: (1) make the failing test pass, (2) introduce no new test failures, (3) be minimal — only the identified defect is changed, (4) include a regression test for the specific edge case.",
-  working_directory: "<absolute path to repo root>",
-  max_iterations: 3
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/bugHunt/SKILL.md")")/../_shared"
+cat "$SHARED_DIR/dark-factory.md"
 ```
 
-Store the returned `pipeline_id`.
-
-**Poll until complete (check every 15s):**
-```
-mcp__prism-mcp__session_check_pipeline_status — pipeline_id: <pipeline_id>
-```
-
-Continue polling while `status` is `PENDING` or `RUNNING`. When `status` is:
-- `COMPLETED` — pipeline succeeded. Read the fix summary from the pipeline output, then skip to Step 8 (Write QA Report) with status `fixed`.
-- `FAILED` — pipeline exhausted iterations. Fall through to manual Step 4, using the evaluator's final critique as additional context for your fix attempt.
-- `ABORTED` — skip to Step 8 with status `unfixed`.
+- Gate disabled or config absent ⇒ skip silently to Step 4 (don't mention dark factory).
+- Delegated fix **verified by the host** (re-run `TEST_CMD` per the shared flow) ⇒ commit it as in Step 4.2, then **continue at Step 5 and Step 6** — a dark-factory fix never skips the regression test or tier verification.
+- Unavailable, refused, or failed verification ⇒ manual Step 4.
 
 ## Step 4: Fix
 
@@ -265,45 +258,49 @@ Write a test that guards against this bug recurring.
 
 ## Step 6: Verify by Tier
 
-Run verification based on the selected tier.
+Detect `TEST_CMD` per `skills/_shared/test-runner-detection.md` (re-detect in each bash block — shell state does not persist). Undetected tooling reports "n/a", never a failure.
 
 ### Tier: quick
-```bash
-# Run linter (if available)
-npm run lint 2>/dev/null || npx eslint . 2>/dev/null || echo "no linter configured"
-
-# Run typecheck (if available)
-npm run typecheck 2>/dev/null || npx tsc --noEmit 2>/dev/null || echo "no typecheck configured"
-```
+Lint + typecheck only, using the project's configured tools (JS example: `npm run lint || npx eslint .`, `npm run typecheck || npx tsc --noEmit`; use the detected stack's equivalents otherwise). Unconfigured ⇒ "n/a".
 
 ### Tier: standard
-Run the specific test file that was failing, plus any related test files in the same directory or that import the same module:
-```bash
-# The originally failing test
-npm test -- <test-file>
-
-# Related tests (same directory or importing the fixed module)
-npm test -- <related-test-files>
-```
+Run the originally failing test, plus related test files (same directory or importing the fixed module): `$TEST_CMD <test-file>` then `$TEST_CMD <related-test-files>`.
 
 ### Tier: exhaustive
-```bash
-# Full test suite
-npm test
+Run the full suite (`$TEST_CMD`), write and run any additional edge-case tests you identify, and **Step 6.5 is mandatory for user-facing fixes**.
 
-# If the agent identifies additional edge cases not covered by existing tests,
-# write and run those too
-```
+### Step 6.5: Verify in the running app (user-facing fixes)
+
+If the fix touches user-facing code (routes, components, views, templates, styles):
+
+> `Skill(skill="verify-app", args="--yes --journey <the repro steps from Step 2, as the journey>")`
+
+- Recommended at `standard` tier; **mandated** at `exhaustive` tier — do not report `fixed` there without it.
+- Record the resulting evidence pack (`skills/_shared/evidence-pack.md`) for the report:
+  ```bash
+  SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/bugHunt/SKILL.md")")/../_shared"
+  source "$SHARED_DIR/repo-slug.sh"
+  ls -1dt "$AW_DIR/verification/"*/ 2>/dev/null | head -1
+  ```
+- A `FAIL` verdict in the pack counts as verification failure → Step 7.
 
 ## Step 7: Loop on Failure
 
 If verification fails:
 
-1. **Iteration count check.** If this is iteration 3 (max), skip to Step 8 with status `unfixed`.
+1. **Persist and check the iteration counter** (survives context loss — never track it only in your head):
+   ```bash
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/bugHunt/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   mkdir -p "$AW_DIR/qa"
+   COUNTER_FILE="$AW_DIR/qa/.bughunt-attempts-<slug>"
+   ATTEMPT=$(( $(cat "$COUNTER_FILE" 2>/dev/null || echo 0) + 1 ))
+   echo "$ATTEMPT" > "$COUNTER_FILE"
+   echo "attempt $ATTEMPT/3"
+   ```
+   If `ATTEMPT` ≥ 3 (max), skip to Step 8 with status `unfixed`.
 2. **Analyze the new failure.** Read the output, determine if it is the same bug or a new issue introduced by the fix.
 3. **Go back to Step 4.** Revert the broken fix if necessary (`git revert HEAD` or edit), then re-implement.
-
-Track iteration count: `attempt 1/3`, `attempt 2/3`, `attempt 3/3`.
 
 ## Step 8: Write QA Report
 
@@ -351,6 +348,13 @@ Report format:
 **Result:** {pass | fail}
 
 {Command output summary}
+
+## Evidence
+
+- **Runner:** {TEST_CMD or "n/a — no runner detected"}
+- **Verification output:** {key lines from the tier run}
+- **Evidence pack:** {`~/.agentic-workflow/<repo-slug>/verification/<run-id>/pack.json` from Step 6.5, or "n/a — not a user-facing fix"}
+- **Pack verdict:** {PASS | WARN | FAIL | n/a}
 ```
 
 ## Step 9: Report to User
@@ -364,15 +368,16 @@ Attempts: {n}/3
 Root cause: {one-line summary}
 Fix: {commit sha} — fix: {description}
 Test: {commit sha} — test: regression test for {description}
-Report: ~/.agentic-workflow/{REPO_SLUG}/qa/{filename}
+Report: ~/.agentic-workflow/<repo-slug>/qa/{filename}
+Evidence: {pack path or "n/a"}
 ```
 
 ### Sub-skill Dispatch
 
-If the fix-and-verify loop ends with status `unfixed` (all hypotheses exhausted):
-> Skill tool: `bugReport`
+If the fix-and-verify loop ends with status `unfixed` (all hypotheses exhausted) **and** the depth guard allows (`--depth` < 2):
+> `Skill(skill="bugReport", args="--depth <N+1> <scope>")`
 
-Do not invoke bugReport on success — bugHunt's own Step 8 report is sufficient.
+Do not invoke bugReport on success — bugHunt's own Step 8 report is sufficient. At depth ≥ 2, report only.
 
 ## Next steps
 

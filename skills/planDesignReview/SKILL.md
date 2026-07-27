@@ -1,8 +1,8 @@
 ---
 name: planDesignReview
 description: "Design-lens review of a plan document. Rates information architecture, interaction states, user flows, accessibility, and brand/voice consistency on a 1–5 scale with specific gaps."
-argument-hint: "[plan-path] [--output <path>]"
-allowed-tools: Bash(git *), Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
+argument-hint: "[plan-path] [--output <path>] [--slim]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Plan Design Review — Design Lens on Plan Docs
@@ -183,61 +183,90 @@ If either call fails, surface the error:
 
 ## Overview
 
-Reads a plan document (auto-discovers latest if no arg) along with the design language artifacts (`.impeccable.md`, `design-tokens.json`). Rates each of five dimensions on a 1–5 scale with specific gaps. Writes the review to `plans/<feature>/design-review.md` so `/autoplan` can consolidate alongside other lenses.
+Reads a plan directory's design-relevant docs (auto-discovers latest if no arg) along with the design language artifacts (`.impeccable.md`, `design-tokens.json`). Rates each of five dimensions on the anchored 1–5 scale from `_shared/severity.md`, with a mandatory surface×state coverage table. Writes the review to `plans/<feature>/design-review.md` so `/autoplan` can consolidate alongside other lenses.
 
 ## Inputs
 
-- Plan doc — path arg, OR auto-discover with:
+- Plan — path arg, OR auto-discover per `_shared/plan-discovery.md`:
   ```bash
-  ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1
+  SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/planDesignReview/SKILL.md")")/../_shared"
+  source "$SHARED_DIR/repo-slug.sh"
+  PLAN_DIR=$(ls -1dt "$AW_DIR/plans/"*/ 2>/dev/null | head -1)
   ```
-- `--output <path>` (optional) — explicit output file path. When `/autoplan` invokes this skill it passes `--output <feature-dir>/design-review.md` so the review lands inside the canonical feature dir.
-- `.impeccable.md` from project root (skip if missing — note in report)
-- `design-tokens.json` from project root (skip if missing — note in report)
+  (falls back to the newest legacy single-file plan — see the shared snippet)
+- From the plan dir, per the `_shared/plan-layout.md` reader matrix: `plan.md` + **`design-brief.md`** (the doc written for the design team — the primary source for this lens) + `product.md` (legacy alias `requirements.md` only if product.md is absent)
+- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/design-review.md`.
+- `--slim` (optional) — compact output: Inputs available, Ratings, coverage tables, and verdict only
+- `.impeccable.md` from project root (if missing: Brand/voice dimension is N/A)
+- `design-tokens.json` from project root (if missing: note in report)
 
 ## Steps
 
-1. Resolve the plan doc path. Resolve the output path: if `--output <path>` was provided, use it verbatim; otherwise default to `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md` (where `<feature>` is the parent dir name of the resolved plan.md).
-2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
-3. Read the plan, `.impeccable.md` (if present), `design-tokens.json` (if present).
-4. Review across five dimensions, each rated 1 (severe gap) to 5 (excellent):
+1. Resolve the plan path via the Inputs block. Resolve the output path: `--output` verbatim if provided; otherwise `$AW_DIR/plans/<feature>/design-review.md` (where `<feature>` is the parent dir name of the resolved plan.md).
+2. Read `plan.md`, `design-brief.md`, `product.md`, `.impeccable.md` (if present), `design-tokens.json` (if present). Record presence/absence of each in the `## Inputs available` table — **an absent input makes its dependent dimension `N/A — missing <input>`, never a number.**
+3. Review across five dimensions, each rated on the anchored 1–5 scale in `_shared/severity.md` (5 = no findings above LOW … 1 = CRITICAL or unaddressed):
    - **Information architecture** — top-level structure, grouping, naming, prioritization
-   - **Interaction states** — loading / error / empty / success — does the plan address all four for each interactive surface?
+   - **Interaction states** — loading / error / empty / success — verified via the surface×state table below, not free-form prose
    - **User flow completeness** — entry points, success paths, failure paths, edge cases
-   - **Accessibility** — keyboard nav, screen reader semantics, color contrast, focus management — flag every dimension the plan doesn't address
-   - **Brand/voice consistency** — does the plan align with `.impeccable.md` brand personality? Voice and tone of any user-facing copy
-5. For each dimension, write 2–4 bullet evidence lines (quote plan lines + cite line numbers) + a 1–3 bullet "Recommended changes" list.
-6. Write to the resolved output path (default `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md`, or the `--output` value if supplied). Ensure the parent dir exists with `mkdir -p`. Structure:
+   - **Accessibility** — keyboard nav, screen reader semantics, color contrast, focus management — verified via the a11y sub-table
+   - **Brand/voice consistency** — alignment with `.impeccable.md` brand personality; voice/tone of user-facing copy (requires `.impeccable.md` — else N/A)
+4. For each scored dimension, write 2–4 bullet evidence lines (quote plan lines + cite line numbers) + a 1–3 bullet "Recommended changes" list.
+5. Derive the verdict — rule-based per `_shared/severity.md`: any dimension ≤2 or any CRITICAL finding ⇒ BLOCKED; any dimension = 3 or any HIGH finding ⇒ NEEDS_WORK; otherwise PASS. N/A dimensions don't score but are listed.
+6. Write to the resolved output path. Ensure the parent dir exists with `mkdir -p`. Structure:
    ```markdown
    # Plan Design Review — <feature>
    
    **Plan:** <relative path>
    **Reviewed:** <ISO date>
    
+   ## Inputs available
+   | Input | Present? |
+   |---|---|
+   | plan.md | ✓/✗ |
+   | design-brief.md | ✓/✗ |
+   | product.md | ✓/✗ |
+   | .impeccable.md | ✓/✗ |
+   | design-tokens.json | ✓/✗ |
+   <Absent input ⇒ dependent dimension is N/A — not scored.>
+   
    ## Summary
    <3–5 sentences. Top tensions, top wins.>
    
    ## Ratings
+   <Anchors per `_shared/severity.md`.>
    | Dimension | Rating | Top gap |
    |---|---|---|
    | Information architecture | N/5 | … |
    | Interaction states | N/5 | … |
    | User flow completeness | N/5 | … |
    | Accessibility | N/5 | … |
-   | Brand/voice consistency | N/5 | … |
+   | Brand/voice consistency | N/5 or N/A — missing .impeccable.md | … |
+   
+   ## Surface × state coverage
+   <One row per interactive surface named in the plan/design-brief. Each cell cites
+   the plan line addressing that state, or the literal `GAP`. GAPs feed the
+   Interaction-states rating.>
+   | Surface | Loading | Error | Empty | Success |
+   |---|---|---|---|---|
+   
+   ### Accessibility sub-table
+   | Surface | Keyboard | Screen reader | Contrast | Focus mgmt |
+   |---|---|---|---|---|
    
    ## Detailed findings
    ### Information architecture (N/5)
    - Evidence: …
    - Recommended changes: …
-   ### Interaction states (N/5)
-   …
    <etc. for each dimension>
+   
+   ## Verdict
+   <One sentence citing the driving dimension/finding, then the literal final line:>
+   verdict: <PASS|NEEDS_WORK|BLOCKED>
    ```
 
 ## Outputs
 
-- Default: `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/design-review.md`
+- Default: `~/.agentic-workflow/<repo-slug>/plans/<feature>/design-review.md`
 - When `--output <path>` is supplied: that exact path (used by `/autoplan` for canonical placement inside the feature dir)
 
 ## Next steps

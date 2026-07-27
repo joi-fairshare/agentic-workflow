@@ -2,7 +2,7 @@
 name: landAndDeploy
 description: "Wait for PR merge, run deploy command, poll health, run smoke tests, then auto-chain /canary. Configured by .agentic-workflow/deploy.json."
 argument-hint: "[pr#] [--wait|--no-wait] [--setup] [--skip-docs] [--chained-from-ship]"
-allowed-tools: Bash(gh *), Bash(git *), Bash(curl *), Bash(jq *), Read, Write, Skill
+allowed-tools: Bash, Read, Write, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Land and Deploy — Merge, Deploy, Smoke, Chain Canary
@@ -193,7 +193,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
   - Default `--no-wait` when invoked standalone (user is at the terminal, expects fast feedback)
 - `--setup` flag: run interactive wizard to write `.agentic-workflow/deploy.json`, then exit.
 - `--skip-docs` flag (optional). Propagates from `/shipRelease` and forwards to `/canary` on auto-chain, suppressing the eventual `/syncDocs` invocation downstream. This skill does not call `/syncDocs` directly — it only forwards the flag.
-- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to fold ship-phase metadata (PR url, branch, tip SHA, test results) from the invoking prompt into a `## Ship Phase` subsection at the top of `deploy.md`. Using a CLI flag (rather than an env var) ensures reliable propagation across the Skill tool boundary.
+- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to consume `~/.agentic-workflow/$REPO_SLUG/releases/.pending-ship.json` (written by shipRelease Step 7) and fold its ship-phase metadata into a `## Ship Phase` subsection at the top of `deploy.md`. A CLI flag propagates reliably across the Skill tool boundary; env vars don't.
 - Config file: `.agentic-workflow/deploy.json` in project root.
 
 ## Config schema (`.agentic-workflow/deploy.json`)
@@ -203,7 +203,8 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
   "command": "npm run deploy:prod",
   "healthUrl": "https://example.com/health",
   "smokeTests": ["curl -fsS https://example.com/api/ping"],
-  "timeout": 600
+  "timeout": 600,
+  "journey": { "baseUrl": "https://example.com", "args": "--lenses functional,error-state" }
 }
 ```
 
@@ -211,6 +212,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
 - `healthUrl` — URL polled after deploy; expects 200 OK.
 - `smokeTests` — array of shell commands. Each must exit 0.
 - `timeout` — seconds. Used for both deploy command and health polling.
+- `journey` — optional. When present, the deployed app is driven post-smoke via `/verify-app` against `baseUrl` (see Step 12).
 
 ## --setup Wizard
 
@@ -234,28 +236,34 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
 3. Determine wait mode (`--wait` vs `--no-wait`) per defaults above unless explicitly overridden.
 
 4. If PR not merged:
-   - `--wait`: poll `gh pr view --json mergedAt` every 30 s, max 30 min. Stop on merge.
+   - `--wait`: poll `gh pr view --json mergedAt` every 30 s, max 30 min. Print a progress line every 5 min (`waiting for merge: {elapsed}/{max}`), and write a resumable marker `~/.agentic-workflow/$REPO_SLUG/releases/.pending-deploy.json` (`{pr, branch, started_at}`) so a re-invocation resumes the same target instead of starting over. Stop on merge; delete the marker.
    - `--no-wait`: error: "PR #N not merged; pass `--wait` to poll or merge manually first".
 
 5. Load `.agentic-workflow/deploy.json`.
    - If present: continue normally.
-   - If missing AND invoked with `--chained-from-ship`: print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success. This lets the canary→syncDocs chain be skipped without a hard error so first-time users aren't blocked. (We use the CLI flag rather than an env var because env-var propagation across the Skill tool boundary is unspecified.)
-   - If missing AND no `--chained-from-ship` flag (standalone invocation): error and suggest `--setup`.
+   - If missing AND invoked with `--chained-from-ship`: print a one-line note "no deploy.json — skipping deploy step (run `/landAndDeploy --setup` to enable)" and exit gracefully with success, so first-time users aren't blocked.
+   - If missing AND standalone: error and suggest `--setup`.
 
-5a. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/deploy.json 2>/dev/null` — if it returns 0, error out: "deploy.json is committed; remove and run `/landAndDeploy --setup`. The skill executes `command` and `smokeTests[]` from this file as shell, so a tracked copy is an RCE foot-gun." Recommend adding `.agentic-workflow/deploy.json` to `.gitignore`.
+6. **Refuse if config is checked into git.** Run `git ls-files --error-unmatch .agentic-workflow/deploy.json 2>/dev/null` — if it returns 0, error out: "deploy.json is committed; remove and run `/landAndDeploy --setup`. The skill executes `command` and `smokeTests[]` from this file as shell, so a tracked copy is an RCE foot-gun." Recommend adding `.agentic-workflow/deploy.json` to `.gitignore`. This refusal is the safety gate that justifies the broad Bash permission.
 
-6. Compute release-id: `<ISO-date>-<short-sha>` where `<short-sha>` is the merge commit SHA.
+7. Compute release-id (CD7): `<ISO-date>-<short-sha>` where `<short-sha>` is the **merge commit SHA**. All release files live in `releases/<ISO-date>-<short-sha>/`.
 
-7. Run `deploy.command`, stream output. Capture exit code.
+8. Consume the ship handoff + capture the **pre-deploy baseline**:
+   - If `--chained-from-ship`: read `$AW_DIR/releases/.pending-ship.json`, hold its metadata for the `## Ship Phase` subsection, then delete it.
+   - If `.agentic-workflow/canary.json` exists: sample `errorRateUrl`, `latencyUrl` (p95), and one `logSource` run **now, before deploying**, and persist to `releases/<release-id>/baseline.json` (`{error_rate, p95, log_anomaly_count, sampled_at}`). `/canary` reads this so a deploy-introduced regression can never become its own baseline.
+
+9. Run `deploy.command`, stream output. Capture exit code.
    - On non-zero exit: write `releases/<release-id>/deploy.md` with FAILED status, suggest `/rootCause`, exit.
 
-8. Poll `deploy.healthUrl` with exponential backoff (1s, 2s, 4s, … capped at 60s between probes; max total `deploy.timeout` seconds). Stop on 200 OK.
-   - On timeout: mark deploy DEGRADED in the release record. Continue to smoke tests anyway.
+10. Poll `deploy.healthUrl` with exponential backoff (1s, 2s, 4s, … capped at 60s between probes; max total `deploy.timeout` seconds). Stop on 200 OK.
+    - On timeout: mark deploy DEGRADED in the release record. Continue to smoke tests anyway.
 
-9. Run each `deploy.smokeTests[]` command sequentially. Capture each exit code and stdout.
-   - Any non-zero → mark deploy DEGRADED.
+11. Run each `deploy.smokeTests[]` command sequentially. Capture each exit code and stdout.
+    - Any non-zero → mark deploy DEGRADED.
 
-10. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`. When invoked with `--chained-from-ship`, include a `## Ship Phase` subsection at the top capturing the ship-phase metadata (from the invoking prompt and/or `gh pr view`). The merge-SHA-based release-id ensures this file lives in the same subdir as `canary.md`, so the full release (ship + deploy + canary) lives under one folder.
+12. If `deploy.journey` is configured: drive the deployed app — invoke `Skill(skill="verify-app", args="--base-url <journey.baseUrl> --yes <journey.args>")`. A FAIL verdict → mark deploy DEGRADED and record the evidence-pack path in `deploy.md`.
+
+13. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`. When invoked with `--chained-from-ship`, include a `## Ship Phase` subsection at the top from the `.pending-ship.json` metadata. The merge-SHA-based release-id ensures this file lives in the same subdir as `canary.md`, so the full release (ship + deploy + canary + docs-sync) lives under one folder.
     ```markdown
     # Deploy — <release-id>
     
@@ -265,7 +273,7 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
     **Verdict:** SUCCESS | DEGRADED | FAILED
 
     ## Ship Phase
-    <!-- Only included when invoked with --chained-from-ship. Folds ship-phase info into the release record so ship+deploy+canary all live in this one release-id subdir. -->
+    <!-- Only when --chained-from-ship: folded from releases/.pending-ship.json (then deleted). -->
     - **Branch:** <branch> → <base>
     - **Tip SHA (pre-merge):** <short-sha>
     - **Test result:** passed (<N> tests)
@@ -287,11 +295,16 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
     <last 50 lines of deploy command output, smoke test stdout snippets>
     ```
 
-11. On SUCCESS, auto-invoke `/canary` via the `Skill` tool, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
+14. Branch on verdict:
+    - **SUCCESS:** auto-invoke `/canary` via the `Skill` tool, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
+    - **DEGRADED:** do NOT silently stop — ask via AskUserQuestion: "Deploy is DEGRADED ({reason}). Proceed to /canary monitoring, roll back, or stop?" Options: `Proceed to canary` (invoke `/canary` with the release-id), `Roll back` (print the rollback path — `gh pr revert` or repo-specific — and stop), `Stop` (record the choice in deploy.md and exit).
+    - **FAILED:** already handled in step 9.
 
 ## Outputs
 
 - `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`
+- `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/baseline.json` (pre-deploy metrics for `/canary`)
+- Consumes + deletes `releases/.pending-ship.json`; `deploy.md` is read by `/canary` (baseline window) and globbed by `/weeklyRetro`
 - `.agentic-workflow/deploy.json` (only on `--setup`)
 
 ## Next steps

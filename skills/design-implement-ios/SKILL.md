@@ -1,7 +1,8 @@
 ---
 name: design-implement-ios
-description: Generate SwiftUI Theme.swift and view components from an approved iOS mockup using design-tokens.json. Supports light/dark color schemes following iOS HIG.
-allowed-tools: Read, Write, Edit, Glob, Bash(git *), AskUserQuestion
+description: Generate SwiftUI Theme.swift and view components from an approved iOS mockup using design-tokens.json. Supports light/dark color schemes following iOS HIG, with a mandatory design-verify-ios gate.
+argument-hint: "<screen-name>"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git *), Bash(ls *), Bash(SHARED_DIR=*), Bash(source *), AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff, mcp__prism-mcp__session_task_route, mcp__prism-mcp__prism_infer
 ---
 
 <!-- === PREAMBLE START === -->
@@ -261,21 +262,27 @@ Design pipeline:
 
 # Design Implement iOS — Generate SwiftUI Code from Mockup
 
-Generate production-ready SwiftUI code from an approved mockup, using `design-tokens.json` to create a `Theme.swift` file and typed view components.
+Generate production-ready SwiftUI code from an approved mockup, using `design-tokens.json` to create a `Theme.swift` file and typed view components, then prove the result against the mockup baseline before claiming completion.
 
-## Step 1: Validate Prerequisites
+## Step 1: Validate Prerequisites & Load Mockup
 
 Both `design-tokens.json` and at least one mockup source must exist.
 
-Check for the PNG baseline captured by `/design-mockup-ios`:
 ```bash
-ls ~/.agentic-workflow/$REPO_SLUG/design/mockup-ios.png 2>/dev/null
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-implement-ios/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+ls "$AW_DIR/design/Mockup-"*.swift 2>/dev/null            # persisted SwiftUI mockups (primary reference)
+ls "$AW_DIR/design/mockup-ios-"*.png 2>/dev/null          # CD3 baselines
+ls "$AW_DIR/design/mockup-ios.png" 2>/dev/null            # legacy baseline — re-run /design-mockup to upgrade
 ```
 
-If it does not exist:
-> "No iOS mockup found. Run `/design-mockup-ios` first to capture a baseline screenshot."
+- Nothing found → stop: "No iOS mockup found. Run `/design-mockup-ios <screen-name>` first."
+- Multiple screens found and no screen-name argument → ask via AskUserQuestion which to implement.
 
-If multiple Swift mockup files exist, ask via AskUserQuestion which to implement.
+Then load both references for the chosen screen:
+
+1. **`Read` the persisted `$AW_DIR/design/Mockup-<screen>.swift`** — the primary structural reference: view hierarchy, layout containers, modifier usage.
+2. **`Read` the baseline PNG `$AW_DIR/design/mockup-ios-<screen>.png`** (Read renders images) — the visual reference: actual spacing, color placement, and hierarchy as approved. Do not implement from an existence check alone.
 
 ## Step 2: Generate Theme.swift
 
@@ -347,11 +354,16 @@ extension Color {
 
 Write `Theme.swift` to the project root (or the main app target directory if identifiable).
 
-## Step 3: Generate SwiftUI View Components
+> The `Color(hex:)` extension above **must ship inside the generated `Theme.swift`** — `Mockup-<screen>.swift` and every generated view depend on it; nothing else defines it.
 
-Using the mockup as visual reference and `Theme.*` values:
+## Step 3: Plan & Generate SwiftUI View Components
 
-- Generate SwiftUI views for the approved mockup screen
+**3a: Enumerate target views.** From the `Mockup-<screen>.swift` hierarchy and the baseline PNG, list every distinct view the screen needs (screen root, sections, reusable rows/cards, controls). One stub view is never sufficient — the plan must cover the whole mockup.
+
+**3b: Confirm the file plan.** Present the enumerated list as a file plan (`Views/<Screen>View.swift`, `Views/Components/<Name>.swift`, …) and confirm via AskUserQuestion before writing any file. Adjust per the user's answer.
+
+**3c: Generate** each planned view using the mockup as reference and `Theme.*` values:
+
 - Import and use `Theme.Colors`, `Theme.Typography`, `Theme.Spacing`
 - Use semantic SwiftUI view hierarchy (VStack, HStack, LazyVGrid as appropriate)
 - Follow iOS HIG: NavigationStack, proper safe area handling, `.font()` modifiers
@@ -360,48 +372,46 @@ Using the mockup as visual reference and `Theme.*` values:
 
 Reference `.impeccable.md` (if present) for brand personality — spacing density, interaction patterns.
 
-## Step 3.5: Dark Factory Token Compliance Evaluation (if enabled)
+## Step 3.5: Token Compliance Scan
 
-**Start the pipeline:**
-```
-mcp__prism-mcp__session_start_pipeline — project: REPO_SLUG,
-  objective: "Audit the generated SwiftUI components for Theme.swift compliance. Check: (1) no hardcoded Color(hex:) calls in any view file (only Theme.swift may define them), (2) no hardcoded CGFloat literals for spacing that correspond to a Theme.Spacing token, (3) no hardcoded Font.system(size:) calls in any view file (only Theme.swift may define them), (4) all color uses reference Theme.Colors.*, spacing uses reference Theme.Spacing.*, font uses reference Theme.Typography.*. For each violation, provide file:line evidence.",
-  working_directory: "<absolute path to repo root>",
-  max_iterations: 2
-```
+**Always run** a Grep scan over every generated/modified view file (excluding `Theme.swift`, which legitimately defines the raw values):
 
-Store the returned `pipeline_id`. Poll until complete:
 ```
-mcp__prism-mcp__session_check_pipeline_status — pipeline_id: <pipeline_id>
+Grep(pattern: "Color\\(hex:|#[0-9a-fA-F]{3,8}\\b", path: <each view file>, output_mode: "content", -n: true)
+Grep(pattern: "Font\\.system\\(size:", path: <each view file>, output_mode: "content", -n: true)
 ```
 
-When complete:
-- `COMPLETED` — no Theme.swift violations found. Proceed to Step 4.
-- `FAILED` — fix the specific violations identified with `file:line` evidence, then re-run the pipeline once before proceeding.
+Report every hit as `file:line — <matched value>` and replace with the corresponding `Theme.Colors.*` / `Theme.Typography.*` / `Theme.Spacing.*` reference (or justify — no corresponding token). Unjustified hits must be fixed before Step 4.
 
-## Step 4: Validate
+**Dark factory (optional):** follow `$SHARED_DIR/dark-factory.md` with the "design-implement (token-compliance)" objective template adapted to Theme.swift compliance — gate on `dark-factory.json`, route via `mcp__prism-mcp__session_task_route`, run `mcp__prism-mcp__prism_infer` only on a `claw` target, and re-Grep any reported violations yourself before acting. Config absent ⇒ skip silently. The Grep scan above runs regardless.
 
-Check that:
-- No hardcoded hex values appear in view files (all colors reference `Theme.Colors.*`)
-- No hardcoded CGFloat values for spacing (all reference `Theme.Spacing.*`)
-- All font uses reference `Theme.Typography.*`
+## Step 4: Verification Gate (mandatory)
+
+Run the simulator diff against the mockup baseline:
+
+```
+Skill(skill="design-verify-ios", args="<screen-name>")
+```
+
+Read the run's `design/verify/<run-id>/comparison-report.json` (schema and CD11 thresholds: `$SHARED_DIR/design-artifact-paths.md`). The gate binds to `overall.verdict`:
+
+- `PASS` (≤2%) or `WARN` (2–10%) → implementation may complete.
+- `FAIL` (>10%) → print `[BLOCKED]` followed by the failing rows and required fixes (region-level deviations from the report). **Never print "iOS Implementation Complete" while the verdict is FAIL** — fix and re-run this step.
 
 ## Step 5: Report
+
+Print (only when the Step 4 verdict is PASS or WARN):
 
 ```
 iOS Implementation Complete
 ============================
 
-Mockup:    Mockup.swift / mockup-ios.png
+Mockup:      Mockup-<screen>.swift + mockup-ios-<screen>.png
+Verify run:  <run-id> — <overall_verdict> (max diff <pct>%)
 
 Generated:
-  Theme.swift              (Color, Typography, Spacing, Radius extensions)
-  <list of created view files>
-
-Next steps:
-  • Run /design-verify-ios to compare implementation against the mockup baseline
-  • Run /design-refine to apply Impeccable refinements
-  • Commit generated files: git add Theme.swift <components>
+  Theme.swift              (Colors, Typography, Spacing, Radius + Color(hex:) extension)
+  <list of created view files, per the confirmed Step 3b plan>
 ```
 
 ## Rules
@@ -410,8 +420,10 @@ Next steps:
 - Never hardcode values that exist in `design-tokens.json`
 - Do not modify `design-tokens.json` — it is the source of truth
 - If the project has existing color definitions (Asset catalog, extension), note any conflicts rather than silently overwriting
+- No completion claim without a PASS/WARN verify run from Step 4
 
 ## Next steps
 
-- `/design-verify-ios` — simulator screenshot diff against mockup baseline
-- `/design-refine` — polish the SwiftUI views before verification
+- `/design-refine "polish spacing and hierarchy to match the mockup"` — refinement intents, dispatched through impeccable
+- `/shipRelease` — ship once the verify verdict is PASS
+- Commit generated files: `git add Theme.swift <components>`

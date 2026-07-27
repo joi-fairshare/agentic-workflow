@@ -2,7 +2,7 @@
 name: design-verify-ios
 description: Boot simulator if needed, capture screenshot via XcodeBuildMCP, diff against mockup baseline using design-comparison MCP. Reports discrepancies with fix suggestions.
 argument-hint: [screen-name]
-allowed-tools: Bash(source ~/.claude/skills/*), Read, Write, Glob, AskUserQuestion
+allowed-tools: Read, Write, Glob, AskUserQuestion, Bash(SHARED_DIR=*), Bash(source *), Bash(ls *), Bash(mkdir *), Bash(date *), Bash(cat *), mcp__xcodebuildmcp__session_show_defaults, mcp__xcodebuildmcp__discover_projs, mcp__xcodebuildmcp__list_schemes, mcp__xcodebuildmcp__list_sims, mcp__xcodebuildmcp__boot_sim, mcp__xcodebuildmcp__build_run_sim, mcp__xcodebuildmcp__build_sim, mcp__xcodebuildmcp__get_app_bundle_id, mcp__xcodebuildmcp__install_app_sim, mcp__xcodebuildmcp__launch_app_sim, mcp__xcodebuildmcp__snapshot_ui, mcp__xcodebuildmcp__screenshot, mcp__design-comparison__compare_design, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -263,140 +263,147 @@ Design pipeline:
 
 # Design Verify iOS — Simulator Screenshot Diff vs Mockup
 
-Captures a simulator screenshot and compares it against the approved mockup baseline using the design-comparison MCP.
+Boots the simulator per `_shared/sim-bootstrap.md`, navigates with snapshot_ui-verified gestures, captures an appearance/size matrix, and diffs each cell against its per-screen mockup baseline. Artifact paths and the `comparison-report.json` schema come from `_shared/design-artifact-paths.md`.
 
-## Step 1: Load Baselines
-
-Find mockup baselines in the design output directory:
-```bash
-ls ~/.agentic-workflow/$REPO_SLUG/design/mockup-ios*.png 2>/dev/null
-```
-
-**Filtering by screen-name:** If a `[screen-name]` argument was provided, filter to `mockup-ios-<screen-name>.png`. If no argument, verify all iOS baselines found.
-
-If no baselines match:
-> "No iOS mockup baselines found. Run `/design-mockup-ios` first to create a baseline."
-
-## Step 2: Acquire Simulator Lock
-
-Acquire the simulator lock to prevent concurrent sessions from corrupting screenshots:
+## Step 1: Load screens.json and Baselines
 
 ```bash
 SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify-ios/SKILL.md")")/../_shared"
-LOCK_NAME=ios-sim
-source "$SHARED_DIR/skill-lock.sh"
-acquire_lock || { echo "Could not acquire simulator lock — another skill may be using the simulator"; exit 1; }
+source "$SHARED_DIR/repo-slug.sh"
+cat "$AW_DIR/design/screens.json" 2>/dev/null || echo "NO_SCREENS_JSON"
+ls "$AW_DIR/design/"mockup-ios-*.png 2>/dev/null
+ls "$AW_DIR/design/mockup-ios.png" 2>/dev/null || true
 ```
 
-If any step after lock acquisition fails, call `release_lock` before stopping. Never exit this skill with the simulator lock held.
+Read `$SHARED_DIR/design-artifact-paths.md` for the screens.json (CD4) schema and baseline naming (CD3).
 
-## Step 3: Ensure Simulator Is Running
+- **Screens to verify:** the `[screen-name]` argument if given, else every screen in `screens.json` with `"source": "design-mockup-ios"`.
+- **Baselines:** `mockup-ios-<screen>.png` (light) and, when present, `mockup-ios-<screen>-dark.png` (dark).
+- **Legacy baseline:** a bare `mockup-ios.png` (second `ls` line) may be used only for a single light-appearance compare, with the warning: "legacy baseline — re-run /design-mockup to upgrade".
 
-```
-xcodebuildmcp: list_sims
-```
+If a requested screen has no entry and no baseline, or none exist at all, stop:
+> "No iOS mockup baseline for `<screen>`. Run `/design-mockup-ios <screen>` first."
 
-If no simulator is booted, launch the app:
-```
-xcodebuildmcp: launch_app_sim
-```
+**Staleness check** — warn (do not stop) if the screen's `baseline_stale` in screens.json is non-null: "baselines predate a design-token update (design-evolve) — re-run /design-mockup-ios".
 
-If the app bundle ID can't be determined, ask via AskUserQuestion.
+## Step 2: Acquire Simulator Lock
 
-## Step 4: Navigate to Screen (if needed)
-
-If a `[screen-name]` argument was provided that implies navigation (e.g., "settings", "profile"):
-- Use `xcodebuildmcp: tap` to navigate to the target screen
-- Wait briefly for the view to appear (use `xcodebuildmcp: snapshot_ui` to confirm)
-
-## Step 5: Capture Implementation Screenshot
-
-```
-xcodebuildmcp: screenshot
-```
-
-Save to:
-```
-~/.agentic-workflow/<repo-slug>/design/impl-<screen>-ios.png
-```
-
-## Step 6: Diff Against Baseline
-
-Call the design-comparison MCP tool `compare_design`:
-
-- **reference:** `~/.agentic-workflow/<repo-slug>/design/mockup-ios<-screen>.png`
-- **implementation:** `~/.agentic-workflow/<repo-slug>/design/impl-<screen>-ios.png`
-
-Save diff image:
-```
-~/.agentic-workflow/<repo-slug>/design/diff-<screen>-ios.png
-```
-
-## Step 7: Report Results
-
-### Pass (< 2% diff):
-```
-[PASS] iOS Verification Passed
-================================
-
-Screen:   <screen-name>
-Diff:     <N>% (threshold: 2%)
-
-Implementation matches the approved iOS mockup.
-```
-
-### Minor Discrepancies (2–10%):
-```
-[WARN] Minor iOS Discrepancies Found
-=====================================
-
-Screen:   <screen-name>
-Diff:     <N>%
-
-Discrepancies:
-  1. Header height differs from mockup
-  2. Button corner radius uses 4pt instead of Theme.Radius.md
-  3. Body text color does not match Theme.Colors.textPrimary
-
-Suggested fixes:
-  • Use Theme.Spacing values for all layout constants
-  • Apply Theme.Colors consistently
-
-Diff image: ~/.agentic-workflow/<repo-slug>/design/diff-<screen>-ios.png
-```
-
-### Major Discrepancies (> 10%):
-```
-[FAIL] Major iOS Discrepancies Found
-======================================
-
-Screen:   <screen-name>
-Diff:     <N>%
-
-Priority fixes:
-  1. [HIGH] Layout structure differs from mockup
-  2. [HIGH] Color scheme not applied — using system defaults
-  3. [MED]  Typography scale doesn't match design tokens
-
-Diff image: ~/.agentic-workflow/<repo-slug>/design/diff-<screen>-ios.png
-
-Recommended: Run /design-implement-ios to regenerate components, then /design-verify-ios again.
-```
-
-## Step 8: Release Simulator Lock
+Single bash invocation per the lock recipe in `$SHARED_DIR/sim-bootstrap.md` (`skill-lock.sh` enables `set -euo pipefail`):
 
 ```bash
-release_lock
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify-ios/SKILL.md")")/../_shared"
+LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"; acquire_lock
+```
+
+If `acquire_lock` reports TIMEOUT, report "Another skill is using the simulator" and stop. Every failure branch after this point must, in one invocation, re-source (`LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"`) and call `release_lock` before stopping. Use `return`, not `exit`, in sourced context — `exit` after sourcing can kill the caller's shell. Never end this skill with the lock held.
+
+## Step 3: Boot Simulator and Launch App
+
+Follow the canonical sequence in `$SHARED_DIR/sim-bootstrap.md`:
+
+1. `mcp__xcodebuildmcp__session_show_defaults` — verify project/workspace, scheme, simulator
+2. If missing/wrong: `mcp__xcodebuildmcp__discover_projs` → `mcp__xcodebuildmcp__list_schemes`
+3. `mcp__xcodebuildmcp__list_sims` — pick the target simulator
+4. `mcp__xcodebuildmcp__boot_sim` if not already Booted
+5. `mcp__xcodebuildmcp__build_run_sim` — or the split path: `mcp__xcodebuildmcp__build_sim` → `mcp__xcodebuildmcp__get_app_bundle_id` → `mcp__xcodebuildmcp__install_app_sim` → `mcp__xcodebuildmcp__launch_app_sim`
+
+If any of these fails, release the lock (Step 2 recipe) and stop with the tool error.
+
+## Step 4: Navigate to Screen — snapshot_ui First
+
+1. `mcp__xcodebuildmcp__snapshot_ui` — inspect the view hierarchy. If the target screen is already showing (labels/identifiers match), skip to Step 5.
+2. Otherwise read the screen's `nav` recipe from screens.json — an ordered list of `{"action":"tap","target":"<label or x,y>"}` steps recorded by `/design-mockup-ios`.
+3. **Capability probe** (per `$SHARED_DIR/sim-bootstrap.md`): before any gesture, check that the UI-automation workflow tools (tap/swipe/type_text) are available. If absent, print exactly:
+   > "XcodeBuildMCP UI-automation workflow not enabled — see github.com/getsentry/XcodeBuildMCP/docs/CONFIGURATION.md. Interaction steps will be SKIPPED (verdict capped at WARN)."
+   Then, because this screen **requires navigation**, do not merely cap at WARN: capturing whatever screen happens to be showing would produce a false verdict. Mark the screen **FAIL** with reason `navigation required but gestures unavailable`, and skip its capture.
+4. Execute each nav step: resolve label targets to coordinates from the current `mcp__xcodebuildmcp__snapshot_ui` hierarchy, perform the gesture, then re-run `mcp__xcodebuildmcp__snapshot_ui` to assert the expected transition happened. If a step's target cannot be found, mark the screen FAIL with the hierarchy evidence.
+5. If navigation is needed but the screen has no `nav` recipe (`null`), mark it FAIL: "no nav recipe in screens.json — re-run /design-mockup-ios <screen> (records one) or navigate the simulator manually and re-run."
+
+## Step 5: Create the Run Directory
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify-ios/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+RUN_ID="$(date -u +%Y%m%d-%H%M%S)-<screen-or-all>"
+mkdir -p "$AW_DIR/design/verify/$RUN_ID"
+echo "run-dir: $AW_DIR/design/verify/$RUN_ID"
+```
+
+Previous runs are never overwritten.
+
+## Step 6: Capture the Appearance/Size Matrix
+
+For each screen, capture with `mcp__xcodebuildmcp__screenshot` into `$AW_DIR/design/verify/$RUN_ID/<screen>-<cell>.png`, one cell at a time:
+
+| Cell | What | Diffed against |
+|------|------|----------------|
+| `light` | light appearance (always) | `mockup-ios-<screen>.png` |
+| `dark` | dark appearance | `mockup-ios-<screen>-dark.png` when it exists; otherwise capture for the record, no diff |
+| `dynamic-type` | one Dynamic Type step-up; sanity-check for truncation/overlap via `mcp__xcodebuildmcp__snapshot_ui` | no diff (recorded observation) |
+| `<class2>-light` | a second device class (e.g. iPad) when `mcp__xcodebuildmcp__list_sims` offers one | recorded; diffed only if a matching baseline exists |
+
+Appearance/Dynamic Type switching requires the simulator-management workflow; if those tools are not enabled, record the affected cells as `SKIPPED — simulator management workflow not enabled` and cap the run verdict at **WARN** (the `light` cell alone can still PASS a cell-level diff, but never the overall run).
+
+## Step 7: Diff Against Baselines
+
+For each matrix cell with a baseline, call `mcp__design-comparison__compare_design`:
+
+- **reference:** the baseline PNG from Step 1
+- **implementation:** `$AW_DIR/design/verify/$RUN_ID/<screen>-<cell>.png`
+
+Record the response's **numeric diff-percentage field** as `diff_pct`; save the returned diff image to `$AW_DIR/design/verify/$RUN_ID/<screen>-<cell>-diff.png`. Cell verdict (CD11): `≤2%` PASS · `2–10%` WARN · `>10%` FAIL.
+
+## Step 8: Write comparison-report.json (Run Manifest)
+
+Write `$AW_DIR/design/verify/$RUN_ID/comparison-report.json` per the schema in `$SHARED_DIR/design-artifact-paths.md`, with the matrix cell carried in the `viewport` field:
+
+```json
+{ "schema": "comparison-report/v1", "run_id": "<run-id>",
+  "screens": [ { "screen": "...", "viewport": "light|dark|dynamic-type|<class2>-light", "baseline": "...",
+                 "capture": "...", "diff_image": "...", "diff_pct": 0.0, "verdict": "PASS|WARN|FAIL" } ],
+  "overall": { "max_diff_pct": 0.0, "verdict": "PASS|WARN|FAIL" } }
+```
+
+`overall.verdict` = worst cell verdict (SKIPPED cells cap it at WARN); `overall.max_diff_pct` = max `diff_pct`. Nav-failed screens get `diff_pct: 100`, `verdict: "FAIL"`, and the reason recorded in place of the diff image path. This file is the run's gate manifest — the dispatcher and ship chain read it.
+
+## Step 9: Report Results
+
+**Report honesty (region-level only):** a pixel diff can say *where* pixels differ ("header area differs by N%"), never *why*. Do not attribute deviations to specific Theme values or tokens — there is no computed-style probe on iOS, so token-level attribution is forbidden.
+
+```
+[<PASS|WARN|FAIL>] iOS Design Verification — <screen(s)>
+=========================================================
+Overall:  <verdict>  (max diff <N>% · thresholds: ≤2% PASS / ≤10% WARN / >10% FAIL)
+
+| screen | cell | diff % | verdict | deviating regions |
+|--------|------|--------|---------|-------------------|
+
+Skipped cells: <list with reasons, or "none">
+Artifacts: ~/.agentic-workflow/<repo-slug>/design/verify/<run-id>/
+```
+
+For WARN/FAIL cells, describe the deviating regions and point at the diff image; suggest `/design-refine` or `/design-implement-ios`, then `/design-verify-ios` again.
+
+## Step 10: Release Simulator Lock
+
+Always — success or failure (single invocation, re-sourced):
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-verify-ios/SKILL.md")")/../_shared"
+LOCK_NAME=ios-sim source "$SHARED_DIR/skill-lock.sh"; release_lock
 ```
 
 ## Rules
 
-- Compare against the latest baseline
-- Report exact differences (element sizes, colors, spacing) when detectable from the diff
+- Never diff a capture whose on-screen content was not confirmed via `mcp__xcodebuildmcp__snapshot_ui`
+- Region-level findings only — no token/Theme attribution (Step 9)
 - Do not modify any code — this skill is read-only verification
-- If the simulator is in an unexpected state (wrong screen, system dialog), note it and ask the user to navigate to the correct screen
+- If the simulator shows an unexpected state (system dialog, wrong screen after nav), record it as evidence and mark the affected screen FAIL rather than guessing
 
 ## Next steps
 
-- `/design-refine` — if the simulator diff surfaced visual gaps
-- `/shipRelease` — if the diff is clean, ship the release
+Gate on `overall.verdict` — a FAIL run **blocks** the `/shipRelease` suggestion:
+
+- **PASS** — `/shipRelease` — diff is clean, ship the release
+- **WARN** — `/design-refine` — address minor discrepancies or enable the missing simulator workflows, then `/design-verify-ios` again
+- **FAIL** — `/design-refine` or `/design-implement-ios` — significant deviation; re-verify before any ship step

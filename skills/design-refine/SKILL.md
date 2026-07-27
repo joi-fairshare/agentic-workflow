@@ -1,8 +1,8 @@
 ---
 name: design-refine
 description: "Dispatch design refinement from impeccable (umbrella refinement skill), emil-design-eng (design engineering principles reference), and taste-skill (modular style packs) with design language context pre-loaded."
-argument-hint: "[impeccable-command]"
-allowed-tools: Read, Write, Edit, Skill, Glob, AskUserQuestion
+argument-hint: "[refinement-intent]"
+allowed-tools: Read, Write, Edit, Skill, Glob, Grep, Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Bash(source *), AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -259,37 +259,43 @@ Design pipeline:
 
 <!-- === DESIGN PREAMBLE END === -->
 
-# Design Refine — Dispatch Impeccable Refinement Commands
+# Design Refine — Orchestrate Refinement Through Impeccable + Packs
 
-Pre-loads the design language context and dispatches Impeccable refinement commands. If no command specified, analyzes the current implementation and suggests which refinements would be most impactful.
+Pre-loads the design language context, then runs a **bounded** refinement sequence: impeccable audit → map findings to packs → dispatch at most 3 refinements → impeccable verify pass → design-verify diff. If no refinement intent is given, analyzes the implementation and suggests intents.
 
 ## Pack Selection
 
-`design-refine` orchestrates three external skill packs (all fetched at setup time):
+`design-refine` orchestrates three external skill packs (all fetched at setup time). Only these registered skill names may be dispatched — there are no per-dimension skills like "colorize" or "typeset"; those are **intents phrased in the args of an `/impeccable` dispatch**.
 
 | Pack | Skill name(s) | Use for |
 |---|---|---|
-| `pbakaus/impeccable` | `/impeccable` | Umbrella refinement — audit, polish, bolder, distill, harden, clarify, colorize, animate, etc. The canonical entry point when you know the design needs improvement but want a holistic pass. |
-| `emilkowalski/skill` | `/emil-design-eng` | Design engineering principles — UI polish, component design, animation decisions, the invisible details. Use as **reference context** when explaining or justifying refinements. |
-| `Leonxlnx/taste-skill` | `/taste-skill`, `/brandkit`, `/brutalist-skill`, `/gpt-tasteskill`, `/imagegen-frontend-mobile`, `/imagegen-frontend-web`, `/image-to-code-skill`, `/minimalist-skill`, `/output-skill`, `/redesign-skill`, `/soft-skill`, `/stitch-skill` | Modular style packs. Invoke when the critique calls for a specific style shift (e.g., "make this feel more minimalist" → `/minimalist-skill`; "more brutalist" → `/brutalist-skill`; "needs a brand kit" → `/brandkit`). |
+| `pbakaus/impeccable` | `/impeccable` | Umbrella refinement — every dimensional intent (color, typography, spacing, motion, accessibility, responsiveness, icons, dark mode) is expressed as an intent phrase in its args. The canonical entry point and the only dispatch target for dimension-level work. |
+| `emilkowalski/skill` | `/emil-design-eng` | Design engineering principles — UI polish, component design, animation decisions. Use as **reference context** when explaining or justifying refinements. |
+| `Leonxlnx/taste-skill` — style packs | `/taste-skill`, `/minimalist-skill`, `/brutalist-skill`, `/soft-skill`, `/redesign-skill`, `/brandkit`, `/stitch-skill`, `/gpt-tasteskill`, `/imagegen-frontend-web`, `/imagegen-frontend-mobile` | Style-direction shifts ("more minimalist" → `/minimalist-skill`; "more brutalist" → `/brutalist-skill`; "needs a brand kit" → `/brandkit`). |
+| `Leonxlnx/taste-skill` — utility packs | `/output-skill` (complete-output enforcement), `/image-to-code-skill` (image→code fidelity) | **Not style packs.** Compose them into another dispatch when its output risks truncation or must match a reference image — never dispatch them as a style shift. |
 
-### Sequencing
+## Step 0: Resume Context
 
-1. Start with `/impeccable` for a holistic audit and refinement pass — it will identify dimensional issues across typography, color, spacing, motion, interaction, etc.
-2. For each finding, pick the right tool:
-   - **Specific dimension issue** → `/impeccable` covers it (single umbrella skill)
-   - **Style direction shift** → invoke the matching `/Leonxlnx/taste-skill` family member
-   - **Architectural / engineering rationale needed** → load `/emil-design-eng` as reference, cite its principles in the refinement
-3. After a round of fixes, re-run `/impeccable` for a verification pass.
-4. Append every command run to `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md` so future sessions can see what was tried.
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-refine/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/design"
+ls "$AW_DIR/design/refine-log.md" 2>/dev/null || echo "refine-log: none yet"
+ls -1dt "$AW_DIR/design/verify/"*/ 2>/dev/null | head -1   # newest verify run = pre-refine baseline
+git diff --name-only > /tmp/refine-before.txt 2>/dev/null; git status --short
+```
+
+- **`Read` `$AW_DIR/design/refine-log.md`** (if present) — do not re-suggest refinements already tried; note their outcomes.
+- **Record the pre-refine baseline**: the newest `design/verify/<run-id>/comparison-report.json` (if any) is what Step 5 compares against for regression.
+- **Snapshot the changed-file set** (`git diff --name-only`) so Step 4 can isolate what refinement touched.
 
 ## Step 1: Analyze Current State
 
-If no Impeccable command was specified as argument:
+If no refinement intent was given as argument:
 
 1. Read the current implementation files (detect via Glob: `*.tsx`, `*.jsx`, `*.html`, `*.css`, `*.swift`)
 2. Analyze against the design language in `.impeccable.md`
-3. Suggest the most impactful refinements:
+3. Suggest the most impactful refinements **as intent phrases**:
 
 ```
 Design Refinement Analysis
@@ -297,90 +303,91 @@ Design Refinement Analysis
 
 Current implementation could benefit from:
 
-1. /design-refine colorize — Color usage doesn't match token palette; 3 hardcoded colors found
-2. /design-refine typeset — Heading hierarchy inconsistent with design-tokens.json scale
-3. /design-refine polish — Missing hover states, focus rings, and micro-interactions
-4. /design-refine arrange — Layout spacing doesn't follow the spacing scale
+1. /design-refine "align color usage with the token palette" — 3 hardcoded colors found
+2. /design-refine "tighten the heading hierarchy to the design-tokens.json type scale"
+3. /design-refine "add hover states, focus rings, and micro-interactions"
+4. /design-refine "bring layout spacing onto the spacing scale"
 
-Run any of these commands to apply the refinement.
+Run any of these to apply the refinement.
 ```
 
-If a command was specified, skip to Step 2.
+If an intent was specified, skip to Step 2.
 
 ## Step 2: Pre-load Design Context
 
-Before dispatching, ensure the design context is available for the Impeccable command:
+Skill invocations do not inherit file context — **read the files and inline excerpts into the dispatch args**:
 
-1. Confirm `.impeccable.md` exists (required — Impeccable uses this for brand context)
-2. Confirm `design-tokens.json` exists (needed for exact token values)
-3. If either is missing, warn and offer to create via `/design-language` or `/design-analyze`
+1. `Read` `.impeccable.md` (required — brand personality, aesthetic direction, what to avoid). If missing, warn and offer `/design-language`.
+2. `Read` `design-tokens.json` (required — exact token values). If missing, warn and offer `/design-analyze`.
+3. Build a **context excerpt** (keep it tight, it rides in args): the brand-personality lines from `.impeccable.md` plus the token groups relevant to the intent (e.g. the full `color` block for a color intent).
+4. Collect the **absolute paths** of the implementation files in scope.
 
-## Step 3: Dispatch Impeccable Command
+## Step 3: Bounded Refinement Sequence
 
-Invoke the specified Impeccable command via the Skill tool:
+Every dispatch in this sequence uses the registered `impeccable` skill (or a real taste-pack skill) — never a bare dimension name. The canonical dispatch form:
 
 ```
-Skill(<command>)
+Skill(skill="impeccable", args="<intent> — files: <absolute paths>; context: <inlined token/impeccable excerpts from Step 2>")
 ```
 
-Available Impeccable commands include:
-- `colorize` — Apply or fix color usage
-- `animate` — Add meaningful animations
-- `polish` — Visual polish pass (shadows, borders, transitions)
-- `typeset` — Typography refinement
-- `arrange` — Layout and spacing refinement
-- `accessibilize` — Accessibility improvements
-- `responsivize` — Responsive design improvements
-- `iconify` — Icon usage and consistency
-- `darkmode` — Dark mode implementation
-- And others from the Impeccable skill set
+1. **Audit pass:** `Skill(skill="impeccable", args="audit these files against the design language; report dimensional issues (typography, color, spacing, motion, interaction) — files: <abs paths>; context: <excerpts>")`
+2. **Map findings to packs:** dimension-level findings → further `/impeccable` intents; style-direction findings → the matching style pack from the table; cite `/emil-design-eng` principles when justifying a refinement.
+3. **Dispatch at most 3 refinements** (the user's intent first, then the top audit findings). Style-pack dispatches use the same args shape: `Skill(skill="minimalist-skill", args="<intent> — files: <abs paths>; context: <excerpts>")`.
+4. **Verify pass:** `Skill(skill="impeccable", args="verify the previous refinements resolved the audit findings without introducing new issues — files: <abs paths>; context: <excerpts>")`
 
-The design context from `.impeccable.md` and `design-tokens.json` will be available to the dispatched command.
+Append every dispatch (skill, intent, files, outcome) to `$AW_DIR/design/refine-log.md`. The sequence is bounded: one audit, ≤3 refinements, one verify pass — then stop; further rounds are a new `/design-refine` run.
 
 ## Step 4: Post-Refinement Token Check
 
-After the Impeccable command completes, check if the refinement introduced any values not in `design-tokens.json`:
+1. `git diff --name-only` again and diff against the Step 0 snapshot → the exact changed-file set.
+2. `Grep(pattern: "#[0-9a-fA-F]{3,8}\\b", ...)` and `Grep(pattern: "\\b[0-9]+px\\b", ...)` over each changed file, `output_mode: "content"`, `-n: true`.
+3. Compare hits against `design-tokens.json` values. New values introduced → ask via AskUserQuestion whether to add them to `design-tokens.json` (then note `/design-implement` must regenerate platform token files) or replace them with existing tokens.
 
-1. Scan modified files for color values, font sizes, spacing values
-2. Compare against token values in `design-tokens.json`
-3. If new values were introduced:
-   - Ask if they should be added to `design-tokens.json`
-   - If yes, update the tokens file
+## Step 5: Verification Gate (mandatory)
 
-## Step 5: Report
+Refinement is the drift-likeliest step — always diff against the mockup baseline:
+
+```
+Skill(skill="design-verify", args="<screen(s) touched>")
+```
+
+Compare the new `comparison-report.json` against the pre-refine baseline recorded in Step 0:
+
+- No baseline existed, or `overall.max_diff_pct` is equal/lower → proceed to Step 6.
+- **Regression** (diff % increased or verdict degraded vs pre-refine) → **block**: report the regressing screens/viewports, and either fix forward (targeted `/impeccable` dispatch on the regressing region) or revert the refinement (`git diff` from Step 4 identifies the files). Do not report success on a regression.
+
+## Step 6: Report
 
 ```
 Refinement Applied
 ==================
 
-Command:    <impeccable-command>
-Files:      <list of modified files>
-Token sync: <in sync / N new values added to design-tokens.json>
-
-Next steps:
-  • Run /design-verify to check implementation against mockup
-  • Run /design-refine [another-command] for additional refinements
-  • Run /design-refine (no args) for a new analysis
-  • If `design-tokens.json` was updated, run `/design-implement` to regenerate platform token files
+Intent:      <refinement intent>
+Dispatched:  <skill + intent per dispatch, ≤5 lines>
+Files:       <changed-file set from Step 4>
+Token sync:  <in sync / N new values added to design-tokens.json>
+Verify:      <run-id> — <verdict> (max diff <pct>% vs pre-refine <pct>%)
 ```
 
 ## Outputs
 
 | Path | Description |
 |------|-------------|
-| `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md` | Append-only log of every refinement command run (which pack, which skill, which files touched, outcome). Grows across runs so future sessions can see what was already tried. |
+| `~/.agentic-workflow/<repo-slug>/design/refine-log.md` | Append-only log of every dispatch (pack, skill, intent, files touched, outcome). Read at Step 0 so runs never repeat failed experiments. |
 | `design-tokens.json` | Updated in place when a refinement introduces new token values (see Step 4). |
 
 ## Rules
 
-- Always dispatch via `Skill` tool — never re-implement refinement commands inline
-- Design context must be loaded before dispatch — refinement skills need `.impeccable.md`
-- Choose the right pack per the Pack Selection table — do not invoke a style-shift skill (`/minimalist-skill`, `/brutalist-skill`, etc.) when `/impeccable` would cover the issue holistically
+- Always dispatch via the `Skill` tool using registered skill names only (`impeccable`, `emil-design-eng`, taste-pack names) — dimension names like "colorize"/"typeset" are intent phrases inside `args`, never skill names
+- Design context must be inlined into every dispatch's args (Step 2) — Skill invocations do not inherit file context
+- Bounded sequence: one audit, at most 3 refinement dispatches, one verify pass per run
+- Do not invoke a style pack when an `/impeccable` intent covers the issue holistically; never dispatch the utility packs (`output-skill`, `image-to-code-skill`) as style shifts
 - If `design-tokens.json` is updated, note that `/design-implement` should be re-run to regenerate platform token files
 - Do not modify `.impeccable.md` during refinement — only `design-tokens.json` may be updated
-- Always append the run to `~/.agentic-workflow/$REPO_SLUG/design/refine-log.md`
+- Always append the run to `refine-log.md`, and never skip the Step 5 verify gate
 
 ## Next steps
 
-- `/design-verify` — verify refinements match the mockup baseline
-- `/design-implement` — if refinements require code-level changes
+- `/design-verify` — re-run anytime for a fresh diff against the mockup baseline
+- `/design-implement` — if refinements require regenerating platform token files
+- `/shipRelease` — ship once the verify verdict is PASS

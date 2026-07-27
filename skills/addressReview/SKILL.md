@@ -1,8 +1,8 @@
 ---
 name: addressReview
 description: Address PR review comments by spawning domain-specific implementation agents in parallel. Reads from ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json as source of truth, merges any new human GitHub comments, implements fixes, and updates the state file. Can be re-run to continue the review loop.
-argument-hint: [pr-number-or-url]
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Edit
+argument-hint: [pr-number-or-url] [--all]
+allowed-tools: Bash(gh *), Bash(git *), Bash(npm *), Bash(npx *), Bash(SHARED_DIR=*), Agent, Read, Write, Edit, Skill, AskUserQuestion, mcp__prism-mcp__session_search_memory, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -193,34 +193,34 @@ gh pr view <argument> --json number,title,headRefName,baseRefName,url,headReposi
 gh pr list --head $(git branch --show-current) --json number,title,url
 ```
 
-If multiple PRs are found, list them and ask the user to pick one.
+If multiple PRs are found, ask the user to pick one via AskUserQuestion.
 
 If no PRs are found: "No open PR found for the current branch. Use `/addressReview <number>` to specify one."
 
 ## Step 2: Load State File
 
-Read `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`.
+Read `~/.agentic-workflow/<repo-slug>/reviews/{number}.json`.
 
 If the file does not exist:
 > "No local review state found for PR #{number}. Run `/review` first."
 
 ## Step 3: Fetch New Human Comments from GitHub
 
-Fetch all GitHub comments created **after** `reviewed_at` in the state file:
+Fetch all GitHub comments created **after** the `human_comments_fetched_at` cursor in the state file (fall back to `reviewed_at` only if the cursor is unset — `reviewed_at` never advances):
 
 ```bash
 # Top-level issue comments
 gh api repos/{owner}/{repo}/issues/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
+  --jq '[.[] | select(.created_at > "{human_comments_fetched_at}") | {id, body, user: .user.login, created_at, path: null, diff_position: null, source: "human"}]'
 
 # Inline PR review comments
 gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | select(.created_at > "{reviewed_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
+  --jq '[.[] | select(.created_at > "{human_comments_fetched_at}") | {id, body, user: .user.login, created_at, path, position, source: "human"}]'
 ```
 
 Filter out comments posted by bots or CI systems (check `user.login` for `[bot]` suffix or known CI usernames).
 
-Append any new comments to a `human_comments` array in the state file. Update `human_comments_fetched_at` to now.
+Append any new comments to a `human_comments` array in the state file, then advance the cursor: set `human_comments_fetched_at` to now — this prevents re-triaging the same comments on every loop iteration.
 
 ## Step 4: Build the Issue List
 
@@ -234,7 +234,7 @@ Collect all unaddressed items:
 
 **Filter by severity** (for structured issues):
 - Default: `blocking` and `issue` only
-- Pass `--all` to include `suggestion` and `nit`
+- Pass `--all` to include `suggestion` and `nit` — `/specToProvenPR`'s review loop **always** invokes `/addressReview --all`; its loop-to-zero gate cannot terminate if suggestions/nits are dropped
 
 Report to the user:
 ```
@@ -244,8 +244,7 @@ Outstanding items:
   X blocking   (structured)
   Y issue      (structured)
   Z new human comments
-  (W suggestions/nits skipped — pass --all to include)
-
+  (W suggestions/nits excluded — pass --all to include)
 Already addressed: N items
 ```
 
@@ -274,17 +273,32 @@ gh pr checkout {number}
 Then spawn **all implementation agents simultaneously** in a single message. Each receives the prompt from [implementer-prompt.md](implementer-prompt.md) with:
 - `{agent}`, `{focus}`, `{issues}` — from triage output
 - `{number}`, `{owner}`, `{repo}`, `{branch}` — PR coordinates
-- `{REPO_SLUG}` — repo slug derived in the preamble
+- `{repo_slug}` — repo slug derived in the preamble
+
+## Step 6.5: Re-verify Before Marking Addressed
+
+Self-reported fixes are not proof. After all implementers complete:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/addressReview/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+```
+
+1. **Tests** — detect the runner per `$SHARED_DIR/test-runner-detection.md` (Read it) and run the detected `TEST_CMD`.
+2. **User-facing fixes** (routes, UI components, styles) — run `Skill(skill="verify-app", args="--yes")` with a journey covering each changed flow; require a non-FAIL verdict.
+3. **Push once** — `git push origin {branch}`, only after 1–2 pass (implementers never push; one serialized push avoids parallel-push races). If tests fail or verify-app returns FAIL, the affected issues stay `addressed: false` — never mark an issue addressed without passing verification.
 
 ## Step 7: Update State File
 
-After all implementers complete, update `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
+After Step 6.5, update `~/.agentic-workflow/<repo-slug>/reviews/{number}.json`:
 
-For each issue that was addressed:
+For each result with status `fixed` or `answered` (the only statuses — there is no defer status), when covered by passing verification:
 - Set `"addressed": true`
 - Set `"addressed_at"` to current ISO timestamp
 - Set `"addressed_by"` to the agent name
 - Set `"fix_commit"` to the commit SHA the agent reported
+
+For each `unresolved` entry an implementer returned: keep `"addressed": false` and record the reason under `"unresolved_reason"`.
 
 For new human comments that were addressed, add them to the state file under `human_comments` with the same fields.
 
@@ -301,8 +315,9 @@ Implemented:
   • security-engineer — 2 issues fixed (commit abc1234)
   • typescript-pro — 1 issue fixed (commit def5678)
 
-Still outstanding (if any):
-  [blocking] src/auth.ts — JWT not verified (agent error — address manually)
+WARNING — unresolved items remain (addressed: false):
+  [blocking] src/auth.ts — JWT not verified (reason: requires refactor beyond flagged scope)
+These are NOT deferred to a follow-up. Re-run /addressReview or fix manually before shipping.
 
 Run /addressReview again to continue, or /postReview to publish.
 ```
