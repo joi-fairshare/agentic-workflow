@@ -2,7 +2,7 @@
 name: design-evolve-web
 description: Analyze a new reference URL mid-project and selectively merge design tokens into the existing design language. Diffs new tokens against current, asks what to adopt/adapt/ignore, updates design-tokens.json and .impeccable.md.
 argument-hint: <url>
-allowed-tools: Bash(npx dembrandt *), Bash(git *), Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash(npx dembrandt *), Bash(git *), Bash(SHARED_DIR=*), Bash(mkdir *), Read, Write, Edit, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -280,79 +280,29 @@ If validation fails:
 
 ## Step 3: Run Dembrandt on New URL
 
+Pin the extractor output to a known path so the diff reads an exact file — never a guessed filename. `<host>` is the URL's hostname (e.g. `https://linear.app/features` → `linear.app`). One Bash invocation (shell state does not persist between calls):
+
 ```bash
-npx dembrandt <url> --dtcg --save-output
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-evolve-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/design/raw"
+npx dembrandt <url> --dtcg --out "$AW_DIR/design/raw/<host>.json"
 ```
 
-Read the Dembrandt output.
+Verify the pinned file exists and is non-empty; if not, report the dembrandt error and stop. Then Read `~/.agentic-workflow/<repo-slug>/design/raw/<host>.json` — this exact file is the merge input.
 
-## Step 4: Present Diff
+## Step 4: Merge (shared algorithm)
 
-Compare new tokens against existing `design-tokens.json`:
+Read `$SHARED_DIR/token-merge.md` and follow it exactly:
 
-```
-Design Evolution Diff
-=====================
+- **Step A** — category diff table (NEW / DIFFERENT / UNCHANGED) against current `design-tokens.json`
+- **Step B** — AskUserQuestion Adopt / Adapt / Ignore per group; **Adapt requires the follow-up AskUserQuestion capturing the literal replacement value**
+- **Step C** — write merged `design-tokens.json`; **unconditionally** append the consultation to `.impeccable.md ## Sources`; set `baseline_stale` in `screens.json` when anything was adopted or adapted
+- **Step D** — report counts and exact before→after values
 
-Source: <url>
-
-NEW tokens (not in current language):
-  color.accent-blue: #3B82F6
-  spacing.2xl: 3rem
-  typography.mono: "JetBrains Mono"
-
-DIFFERENT values (exist but differ):
-  color.primary: current=#1A1A2E → new=#0F172A
-  spacing.lg: current=2rem → new=1.5rem
-
-UNCHANGED (same in both):
-  color.background: #FFFFFF
-  typography.body.fontSize: 1rem
-```
-
-## Step 5: Ask What to Adopt
-
-For each category (new tokens, different values), ask via AskUserQuestion:
-> "Which elements would you like to adopt from <url>?
-> - **Adopt**: take the new value as-is
-> - **Adapt**: use the new value as inspiration but modify
-> - **Ignore**: keep current value unchanged"
-
-## Step 6: Update Design Files
-
-Apply the user's choices:
-1. Update `design-tokens.json` with adopted/adapted tokens
-2. Update `.impeccable.md` if the new reference changes aesthetic direction:
-   - Add to references list if adopted
-   - Note any style shifts in relevant sections
-
-## Step 7: Report
-
-```
-Design Language Updated
-=======================
-
-Adopted:  N tokens from <url>
-Adapted:  N tokens (modified from <url>)
-Ignored:  N tokens (kept current values)
-
-Updated files:
-  design-tokens.json (N changes)
-  .impeccable.md (references updated)
-
-Next steps:
-  • Run /design-implement web|swiftui to regenerate platform-specific token files
-  • Run /design-verify to check implementation against updated tokens
-```
-
-## Rules
-
-- Never overwrite existing tokens without user confirmation
-- Show exact before/after values for all changes
-- Preserve token structure — only update values, don't reorganize
-- Clean up Dembrandt output files after processing
+The pinned `design/raw/<host>.json` is kept — do not delete it.
 
 ## Next steps
 
-- `/design-mockup-web` — build an HTML mockup with the updated tokens
+- `/design-mockup-web` — rebuild mockups with the updated tokens (existing baselines are now marked stale)
 - `/design-refine` — apply the evolved language to existing screens

@@ -29,7 +29,7 @@ Each issue has:
 Before reading the PR, search for prior discussions about the files or issues you're about to address:
 
 ```
-mcp__agentic-bridge__search_memory — query: "<issue summary>", repo: {REPO_SLUG}, mode: "hybrid", limit: 5
+mcp__prism-mcp__session_search_memory — query: "<issue summary>", project: {repo_slug}, limit: 5
 ```
 
 Use any relevant prior context to inform your implementation approach. Continue silently if nothing relevant is found or if the tool returns an error.
@@ -88,10 +88,7 @@ Addresses review comments:
 - [SEVERITY] summary of issue 2 (comment #{comment_id})"
 ```
 
-Push to the PR branch:
-```bash
-git push origin {branch}
-```
+Do **not** push — the orchestrator pushes once after all implementers finish and re-verification passes (parallel pushes race).
 
 Capture the commit SHA:
 ```bash
@@ -150,24 +147,25 @@ After completing all fixes and replies, return a JSON summary so the orchestrato
       "id": "sec-1",
       "status": "answered",
       "note": "Explained why token expiry is configurable via env var"
-    },
+    }
+  ],
+  "unresolved": [
     {
       "comment_id": 12351,
       "id": "sec-2",
-      "status": "skipped",
-      "note": "Requires broader refactor outside PR scope — left comment recommending follow-up"
+      "reason": "Requires refactor beyond the flagged scope"
     }
   ]
 }
 ```
 
-Status values: `"fixed"` · `"answered"` · `"skipped"`
+Status values: `"fixed"` · `"answered"` — there is no skip/defer status. Any assigned issue you cannot complete goes under `"unresolved"` with a reason; the orchestrator keeps it `addressed: false` and raises a hard warning. Never defer a flagged fix to a "follow-up".
 
 ---
 
 ## Rules
 
 - Fix **only** the issues assigned to you. Don't touch unrelated code.
-- If a fix is ambiguous or would require a significant refactor beyond what was flagged, post a reply explaining why and what you'd recommend instead — don't guess.
-- If a file has been modified by another agent's commit since you started, `git pull` before pushing.
+- If a fix is ambiguous or would require a significant refactor beyond what was flagged, post a reply explaining why and what you'd recommend instead — don't guess. List it under `unresolved`.
+- If another agent's commit lands while you work, make sure your commit applies cleanly on top (no pushing — the orchestrator pushes).
 - Always reply to every comment you were assigned, even if you couldn't fix it (explain why).

@@ -1,8 +1,8 @@
 ---
 name: specToProvenPR
 description: Use when turning an approved spec or design doc into production-ready pull requests that are definitively proven to work in the running app. Use for staged multi-phase builds where each stage must be planned, implemented, proven in the app, and driven to zero review findings before a PR opens. Triggers include "take this spec to PRs", "ship this design", "prove it works then open the PR", staged epic delivery, and review-loop-until-clean. Also use when tempted to stop a review loop early, treat green tests as proof, or defer findings to a follow-up.
-argument-hint: "[approved-spec-or-design-doc-path]"
-allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Agent, Read, Write, Edit, Glob, Grep, Skill, TodoWrite
+argument-hint: "[approved-spec-or-design-doc-path] (no argument = resume from stages.md)"
+allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(npx *), Bash(SHARED_DIR=*), Bash(source *), Bash(mkdir *), Bash(ls *), Bash(cat *), Bash(test *), Bash(date *), Agent, Read, Write, Edit, Glob, Grep, Skill, TodoWrite, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # specToProvenPR
@@ -183,118 +183,86 @@ If either call fails, surface the error:
 
 ## Core principle
 
-A stage is **DONE** only when **all three gates are green at once**:
+A stage is **DONE** only when all three gates are green at once:
 
-1. **PROOF**: the spec's behavior was observed in the running app (not merely unit-tested), with captured evidence and an independent cross-check.
-2. **REVIEW=0**: `/review` itself returns **zero findings at every severity** (not "only lows left", not "I fixed them, re-review is unnecessary").
+1. **PROOF**: the spec's behavior was observed in the running app (not merely unit-tested), with an evidence pack captured per `_shared/evidence-pack.md` (`pack.json` verdict not FAIL) and an independent cross-check for every claim.
+2. **REVIEW=0**: the most recent `/review` run returned **zero findings at every severity** (not "only lows left", not "I fixed them, re-review is unnecessary").
 3. **GREEN**: the full test suite and CI pass.
 
-Then open the PR and **STOP for human merge**. Anything less is not done.
-
-**Violating the letter of these gates is violating the spirit.** "Practically done", "just nits", "trivial delta" all mean: not done.
+Then mark the PR ready and **STOP for human merge**. "Practically done", "just nits", "trivial delta" all mean: not done.
 
 ## When to use
 
-- You have an approved spec/design doc and need production PRs proven in the app.
-- A multi-phase build where each phase ships as its own proven PR.
-- Any time you catch yourself about to declare done on green tests, or about to stop a review loop above zero.
+- An **approved** spec (e.g. `planning/specs/<topic>/DESIGN.md`) that must ship as staged, proven, review-clean PRs — one stage per PR. Not approved → stop and approve it first.
+- **NOT for**: a one-line fix with no observable app behavior, or pure docs. Use a normal commit.
+- **Resume mode**: invoked with no argument, read `plans/<epic>/stages.md`, print a state synopsis (per-stage status, current step, open PR, last verdict), and continue from the first incomplete step.
 
-**When NOT to use:** a one-line fix with no observable app behavior, or pure docs. Use a normal commit.
+## Stage steps
 
-## Inputs
+Create one TodoWrite item per stage from stages.md. Shared files and output dirs resolve via this block — re-source it at the top of every bash block (shell state does not persist between Bash calls):
 
-- An **approved** spec (e.g. `planning/specs/<topic>/DESIGN.md`). If it is not approved, stop: brainstorm/approve it first.
-
-## The harness (one isolated worktree; create a TodoWrite item per stage)
-
-```dot
-digraph harness {
-  rankdir=TB;
-  "Per stage" [shape=box];
-  "1. Plan" [shape=box];
-  "2. Verification plan\n(BEFORE implementing)" [shape=box];
-  "3. Implement" [shape=box];
-  "4. Prove in the running app" [shape=box];
-  "Proof observed?" [shape=diamond];
-  "5. /review" [shape=box];
-  "Findings == 0\nat EVERY severity?" [shape=diamond];
-  "/addressReview\n(fix, never defer)" [shape=box];
-  "6. Tests + CI green?" [shape=diamond];
-  "7. Open PR -> STOP for human merge" [shape=doublecircle];
-  "Next stage" [shape=box];
-
-  "Per stage" -> "1. Plan" -> "2. Verification plan\n(BEFORE implementing)" -> "3. Implement" -> "4. Prove in the running app" -> "Proof observed?";
-  "Proof observed?" -> "3. Implement" [label="no: fix"];
-  "Proof observed?" -> "5. /review" [label="yes, evidence captured"];
-  "5. /review" -> "Findings == 0\nat EVERY severity?";
-  "Findings == 0\nat EVERY severity?" -> "/addressReview\n(fix, never defer)" [label="no"];
-  "/addressReview\n(fix, never defer)" -> "5. /review" [label="ALWAYS re-run"];
-  "Findings == 0\nat EVERY severity?" -> "6. Tests + CI green?" [label="yes"];
-  "6. Tests + CI green?" -> "3. Implement" [label="no: fix"];
-  "6. Tests + CI green?" -> "7. Open PR -> STOP for human merge" [label="yes"];
-  "7. Open PR -> STOP for human merge" -> "Next stage";
-}
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/specToProvenPR/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+STAGE_DIR="$AW_DIR/proof/<stage-slug>" && mkdir -p "$STAGE_DIR"
 ```
 
-### Stage steps
+**0. Isolate (once per epic).** Create a dedicated worktree (**REQUIRED:** superpowers:using-git-worktrees). All stage work happens there.
 
-1. **Plan.** Decompose the spec into staged, independently shippable PR-sized units (match the spec's phases). **REQUIRED:** use superpowers:writing-plans. One stage = one PR.
-2. **Verification plan, written BEFORE you implement.** For this stage, write down the concrete observable proof: what you will do in the running app and the exact signal you expect (a feed item appears; `POST /query` returns a grounded answer with a breadcrumb; a row lands in the ledger; a number matches an independent count). If you cannot state the observable signal, the stage is underspecified, fix that first. This is the tests-first analog: decide how you will prove it before building it.
-3. **Implement.** Build the stage. **REQUIRED:** use superpowers:test-driven-development for the code, and superpowers:subagent-driven-development or superpowers:executing-plans to execute the plan.
-4. **Prove in the running app.** Run the app and exercise the real path; do not stop at unit tests. **REQUIRED:** use verify-app (or verify-web for UI). Capture the evidence (response, screenshot, log line) and an **independent cross-check** of any number/claim (a hand-written query or provider count). Green unit tests are NOT proof: they confirm your code matches your assumptions, not reality. **REQUIRED:** use superpowers:verification-before-completion.
-5. **Review loop to ZERO.** Run `/review`. While it reports any finding at any severity, run `/addressReview`, then **run `/review` again**. Repeat until `/review` returns zero. See "The review loop to zero" below, this is where harnesses cheat.
-6. **Gate.** Confirm tests + CI green.
-7. **Open the PR and STOP.** Open the PR (commit-push-pr / shipRelease --no-deploy as configured), put the captured proof + the resolved-findings summary in the description, and **stop for human merge approval**. Do not self-merge. After merge, start the next stage.
+**0.5. Stage map + contracts (once per epic).** Decompose the spec into staged, independently shippable PR-sized units (match the spec's phases; one stage = one PR) and write `plans/<epic>/stages.md`: per stage — goal, observable signal, files touched, estimated size, status. Then record two contracts in stages.md:
+- **Autonomy contract** — one AskUserQuestion, asked once up front: pause for approval after each stage, or run continuously to epic end?
+- **Git topology contract** — detect the base branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`) and the push remote (fork vs origin) up front and state them. **Never push the base branch**; each stage gets its own branch off base.
 
-## The review loop to zero (the bulletproofed core)
+**1. Plan the stage.** Expand this stage's stages.md entry into an implementation plan. **REQUIRED:** superpowers:writing-plans, scoped to this stage only.
 
-The user asked for **zero issues of any severity**. That is a hard gate, not a target. The only way to *know* you are at zero is that **`/review` itself reported zero on its most recent run** after your fixes. Self-certifying ("I fixed the three it found, so it must be clean now") does not count: your fixes can introduce new findings, and reviewers see the delta you cannot.
+**2. Verification plan — written BEFORE you implement.** Write `$STAGE_DIR/verification-plan.md` from `_shared/verification-plan-template.md`: app entry, ≥1 journey (≥3 interactive steps), **≥3 named lenses** from `_shared/verification-lenses.md`, and ≥1 independent cross-check per numeric/behavioral claim. **GATE:** the plan's `created` timestamp must predate the stage's first implementation commit (`git log --diff-filter=A --format=%cI -- <files> | tail -1`); a plan written after code is invalid — regenerate the stage. If you cannot state the observable signal, the stage is underspecified: fix that first.
 
-**Rules:**
-- After every `/addressReview`, you **must** re-run `/review`. No exceptions for "trivial" deltas.
-- Every finding is **fixed**, not deferred. "File it as a follow-up issue" is not resolution.
-- A finding you believe is wrong is still resolved explicitly: reply on the thread with the technical reason and mark it resolved in the state file (`~/.agentic-workflow/<repo-slug>/reviews/<pr>.json`), then re-run `/review`. Disagreement is resolved in writing, not by ignoring.
-- The loop ends ONLY when a `/review` run returns zero findings at every severity.
+**3. Implement.** **REQUIRED:** superpowers:test-driven-development, executed via superpowers:subagent-driven-development or superpowers:executing-plans. Start the app with the project's own run recipe (`/run` or the documented dev command) — never assume a Node app.
 
-### Rationalizations (all FALSE)
+**4. Prove in the running app.** Green unit tests are NOT proof — they confirm your code matches your assumptions, not reality.
+- Invoke exactly: `Skill(skill="verify-app", args="--yes --journey <path-to-verification-plan.md> --lenses functional,error-state,accessibility[,visual,responsive]")`. A single-screenshot pass is forbidden — the journey must execute.
+- **Baseline check:** if `$AW_DIR/design/screens.json` baselines cover any of this stage's screens, `/design-verify` is **mandatory**; a FAIL diff (>10%) is stage-blocking.
+- **Evidence pack (per `_shared/evidence-pack.md`):** verify-* writes `verification/<run-id>/pack.json` + report. Write `$STAGE_DIR/evidence.md` — verdict line, journey table, mockup diff %, each cross-check as its recorded command **with raw output side-by-side** — plus a pointer to the `<run-id>` dir.
+- `pack.json` verdict FAIL, or proof not observed → fix and return to step 3. **REQUIRED:** superpowers:verification-before-completion.
 
-| Excuse | Reality |
-|--------|---------|
-| "Re-running review on a trivial delta is theater" | The delta can add findings; only a clean `/review` run proves zero. Re-run. |
-| "Only LOWs/nits are left, good enough" | Zero means zero. A LOW is a finding. Fix it. |
-| "I'll file the LOWs as follow-up issues" | Deferral is not resolution. The gate is zero open findings on THIS PR. |
-| "I made a deliberate call to stop" | The stop condition is `/review` returning zero, not your judgment that it is close. |
-| "Tests are green, so it works" | Tests confirm assumptions, not reality. Prove it in the app. |
-| "It's late / the user is waiting" | Pressure does not move the gate. A proven, clean PR is faster than a reverted one. |
+**5. Open a draft PR.** Push the stage branch to the recorded remote, then `gh pr create --draft` with the body per `_shared/pr-body.md` (`## Evidence` embeds the evidence.md text; `--attach-images` defaults on for user-facing stages). The review loop needs an open PR — draft first, ready last.
+
+**6. Review loop to zero (cap 5).** `/review` → `/postReview` → `/addressReview --all` → re-run `/review`. Repeat while any finding at any severity remains. Always pass `--all`: the default severity filter drops suggestions/nits and the loop would never terminate. After 5 iterations without zero: stop, report the oscillating findings verbatim, ask the user.
+
+**7. Gates → ready → STOP.** Confirm all of: tests + CI green; latest `/review` = zero findings; `test -s "$STAGE_DIR/evidence.md"`; pack verdict not FAIL. Then `gh pr ready` and **STOP for human merge approval — never self-merge**. Emit the next-stage synopsis from stages.md, update stage status, and save the session handoff; after the human merges, start the next stage at step 1 (honoring the autonomy contract).
+
+## The review loop to zero
+
+Zero is a hard gate, not a target. The only way to *know* you are at zero is that **`/review` itself reported zero on its most recent run** after your fixes. Self-certifying ("I fixed the three it found, so it must be clean") does not count: fixes can introduce new findings, and reviewers see the delta you cannot.
+
+- After every `/addressReview --all`, you **must** re-run `/review`. No exceptions for "trivial" deltas.
+- Every finding is **fixed**, not deferred. A finding you believe is wrong is still resolved explicitly: reply on the thread with the technical reason, mark it resolved in `~/.agentic-workflow/<repo-slug>/reviews/<pr>.json`, then re-run `/review`.
+- The loop ends ONLY when a `/review` run returns zero findings at every severity — or the cap of 5 triggers report-and-ask.
+
+### Rationalizations and red flags (all FALSE — each means: return to the loop)
+
+| Excuse / red flag | Reality |
+|-------------------|---------|
+| "Re-running review on a trivial delta is theater" / about to skip the re-run | The delta can add findings; only a clean `/review` run proves zero. Re-run. |
+| "Only LOWs/nits are left" / "file them as follow-ups" | Zero means zero; deferral is not resolution. Fix them on THIS PR. |
+| "Tests are green, so it works" / "done" on unit-test evidence alone | Tests confirm assumptions, not reality. Prove it in the app and capture the pack. |
+| "I made a deliberate call to stop" / "it's late, the user is waiting" | The stop condition is `/review` returning zero (or the cap-5 ask), not your judgment or the clock. |
 | "The reviewer is wrong, so I can ignore it" | Resolve in writing on the thread + state file, then re-run. Never silently ignore. |
+| Writing the verification plan after implementing / marking ready with FAIL or missing evidence | The plan predates code (step 2 gate); non-FAIL evidence is a ready gate (step 7). |
 
-### Red flags, STOP
-
-- About to open a PR with any open `/review` finding.
-- About to skip re-running `/review` after a fix.
-- About to move a finding to "follow-up" instead of fixing it.
-- About to say "done" / "works" with only unit-test evidence.
-- Writing the verification plan *after* implementing.
-
-All of these mean: you are not done. Return to the loop.
-
-## Composition (skills/commands per stage)
+## Composition (per stage)
 
 | Stage | Use |
 |-------|-----|
-| Isolate | superpowers:using-git-worktrees |
-| Plan | superpowers:writing-plans |
-| Implement | superpowers:test-driven-development + superpowers:subagent-driven-development (or executing-plans) |
-| Prove | verify-app / verify-web + superpowers:verification-before-completion |
-| Review loop | `/review` then `/addressReview`, looped to zero; `/postReview` to publish |
-| Ship | commit-push-pr or shipRelease (`--no-deploy` until human merge) |
+| Isolate / Plan / Implement | superpowers:using-git-worktrees · writing-plans · test-driven-development |
+| Prove | verify-app (+ design-verify when screens.json baselines match) + superpowers:verification-before-completion |
+| Review loop | `/review` → `/postReview` → `/addressReview --all`, looped to zero |
+| Ship | draft PR → gates → `gh pr ready`; or `/shipRelease --no-deploy` for an already-proven, review-clean stage |
 
 ## Common mistakes
 
 - **Bundling phases into one PR.** Each stage is its own proven, review-clean PR.
-- **Verification plan as an afterthought.** It is step 2, before code, or it does not shape the implementation seams you need to observe.
-- **Counting green tests as proof.** Run the app.
-- **Stopping the review loop on your own say-so.** The stop condition belongs to `/review`, not you.
+- **Opening the PR ready, or after the review loop.** `/review` needs an open PR: draft at step 5, ready only at step 7.
 - **Self-merging.** The harness stops at the human merge gate.
 
 ## Next steps

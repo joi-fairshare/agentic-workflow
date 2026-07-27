@@ -16,23 +16,27 @@ The diff has been provided below. Study it carefully.
 
 {diff}
 
-### 2. Read related files
+### 2. Check captured evidence
+
+{evidence}
+
+Above: the newest verification `pack.json` + design `comparison-report.json` (see `_shared/evidence-pack.md`), or `none`. If your focus covers user-facing behavior and a changed route/component/flow is **not** covered by this evidence, raise a `blocking` finding ("changed user-facing path lacks verification evidence").
+
+### 3. Read related files
 
 For any changed file relevant to your focus area, read it in full for context using the Read tool. Also read related files that provide important context (test files, interfaces, config) even if they weren't changed.
 
-### 3. Analyze
+### 4. Analyze
 
 Review the changes through the lens of your specialty: **{focus}**
 
 Look for:
-- Bugs and correctness issues
+- Bugs, correctness issues, and missing error handling or edge cases
 - Violations of best practices specific to your domain
-- Security concerns (if relevant to your focus)
-- Performance problems (if relevant to your focus)
+- Security or performance problems (if relevant to your focus)
 - Patterns that will cause maintenance pain
-- Missing error handling or edge cases
 
-### 4. Flag investigation candidates
+### 5. Flag investigation candidates
 
 If you find a `blocking`-severity issue containing a clear error message or stack trace,
 set `investigation_needed: true` in your JSON output and include the stack trace or error message:

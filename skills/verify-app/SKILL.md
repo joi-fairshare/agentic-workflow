@@ -1,7 +1,8 @@
 ---
 name: verify-app
 description: "Detect web vs iOS automatically and delegate to /verify-web (Playwright) or /verify-ios (XcodeBuildMCP). Pass any arguments through unchanged."
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+argument-hint: "[--journey <path>] [--lenses <csv>] [--baseline] [--yes] [--base-url <url>] [--visual] [criteria or 'auto']"
+allowed-tools: Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Bash(source *), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -185,34 +186,68 @@ Detects whether this is a web or iOS project and delegates to the appropriate ve
 
 > **Tip:** If you already know the platform, invoke directly: `/verify-web` or `/verify-ios`
 
-## Platform Detection
+## Platform Detection & Dispatch
 
-Use the `Glob` tool to check for iOS indicators:
+Follow `_shared/platform-detection.md` — canonical detection Globs (with vendored-path excludes), the resolution table, and the dispatch contract. Resolve it from this skill's **own** symlink:
 
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-app/SKILL.md")")/../_shared"
+ls "$SHARED_DIR/platform-detection.md"
 ```
-Glob("**/Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
+
+If resolution or `ls` fails, stop and report — do not guess the platform. Otherwise Read the file and apply it: iOS → `verify-ios`, web → `verify-web`, both/neither → `AskUserQuestion`. Echo `dispatch: <sub-skill> args=<args>` before dispatching, then dispatch literally: `Skill(skill="<sub-skill>", args="<original args verbatim>")`.
+
+## Argument Spec (pass-through)
+
+All arguments are forwarded to the sub-skill **unchanged** — never drop or rewrite one:
+
+| Argument | Meaning |
+|----------|---------|
+| `--journey <path>` | Path to a `verification-plan.md` (template: `_shared/verification-plan-template.md`) — the sub-skill executes its journeys |
+| `--lenses <csv>` | Narrow the lens set (catalog: `_shared/verification-lenses.md`) |
+| `--baseline` | Require visual diffing against `screens.json` baselines — the visual lens fails if none exist |
+| `--yes` | Non-interactive: the sub-skill auto-approves its plan |
+| `--base-url <url>` | Override app-URL detection (web only; still forwarded verbatim) |
+| `--visual` | Include the visual lens |
+| `auto` / criteria | Diff-inference mode / explicit verification criteria |
+
+If `--journey` is given but the path does not exist, **stop** and report — do not dispatch with a blank or dead required arg.
+
+## Sub-skill Return Contract
+
+The sub-skill must produce an evidence pack (`_shared/evidence-pack.md`) and report back `{verdict, evidence_path}`:
+
+- `verdict` ∈ `PASS | WARN | FAIL`
+- `evidence_path` = absolute path to the `verification/<run-id>/` dir containing `pack.json`
+
+After the sub-skill returns, confirm the pack exists:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-app/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+ls -1dt "$AW_DIR/verification/"*/ | head -1
+ls "$(ls -1dt "$AW_DIR/verification/"*/ | head -1)pack.json"
 ```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+If the sub-skill returned no `{verdict, evidence_path}`, or the newest run dir has no `pack.json`, **fail loudly**:
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+> "verify sub-skill returned no evidence pack — verification is not proven. Treat this run as FAIL."
 
-## Platform Resolution
+Relay the sub-skill's `verdict` and `evidence_path` verbatim in your final report. A FAIL verdict blocks PR-open / mark-ready (gate rule in `_shared/evidence-pack.md`).
 
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("verify-ios")` with original arguments |
-| Web only | Invoke `Skill("verify-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
+## Auto-chain: design-verify
 
-All user-supplied arguments (e.g., `--visual`, `auto`, explicit criteria) are passed through to the sub-skill unchanged.
+After a completed run, check whether `screens.json` baselines cover the screens the sub-skill verified:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-app/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+ls "$AW_DIR/design/screens.json" 2>/dev/null || echo "no screens.json — skip design-verify chain"
+```
+
+If `screens.json` exists and has `baselines` entries for one or more of the verified screens, invoke `Skill(skill="design-verify", args="<verified screens>")` automatically and report its diff verdict alongside the verification verdict. If no baselines cover the verified screens, skip the chain silently.
 
 ## Next steps
 
-- `/design-verify` — if visual gaps surfaced, run design verification
+- `/design-verify` — re-run design diffing on demand (auto-chained above when baselines cover verified screens)
 - `/bugReport` — if functional gaps surfaced, capture them as a bug report

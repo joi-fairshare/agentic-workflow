@@ -2,7 +2,7 @@
 name: bootstrap
 description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
 argument-hint: "[--force] [--product-docs <url-or-path>]..."
-allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Agent, Read, Write, Glob, Grep, Skill
+allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Bash(curl *), Bash(docker *), Bash(cat *), Bash(mkdir *), Bash(kill *), Bash(sleep *), Bash(REPO_PATH=*), Bash(REPO_NAME=*), Bash(RULES_OK=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__serena__check_onboarding_performed, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -187,7 +187,7 @@ If either call fails, surface the error:
 > | `playwright` | Browser automation, screenshots, DOM inspection |
 > | `github` | PRs, issues, releases via GitHub API |
 > | `design-comparison` | Visual diff between implementation and design |
-> | `xcodebuildmcp` | iOS simulator control — build, run, screenshot, UI snapshot | Manual iOS testing |
+> | `xcodebuildmcp` | iOS simulator control — build, run, screenshot, UI snapshot |
 
 ## External Documentation — Parse and Classify
 
@@ -238,18 +238,10 @@ After classifying all sources, present them to the user before proceeding:
 ```
 External Product Documentation
 ===============================
+{one line per source, grouped by type: • <url-or-path>  ✓ Accessible | ✗ Not accessible}
 
-SharePoint:
-  • https://company.sharepoint.com/.../Roadmap.docx    ✓ Accessible
-Confluence:
-  • https://company.atlassian.net/wiki/...              ✗ Not accessible
-File:
-  • ~/docs/strategy.pdf                                 ✓ Accessible
-
-These sources will be referenced when generating:
-  PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET
-
-Inaccessible sources will be documented as unavailable but won't halt bootstrap.
+These sources will be referenced when generating: PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET
+Inaccessible sources are documented as unavailable but don't halt bootstrap.
 
 Continue? (yes/no/edit)
 ```
@@ -260,22 +252,7 @@ Continue? (yes/no/edit)
 
 ### When to Reference External Docs
 
-Only include an "External References" section in product-facing documents:
-
-| Document | Include External Refs? |
-|----------|----------------------|
-| `BUSINESS_PLAN` | Yes |
-| `PRODUCT_ROADMAP` | Yes |
-| `GO_TO_MARKET` | Yes |
-| `COMPETITIVE_ANALYSIS` | Yes |
-| `ARCHITECTURE` | No |
-| `ERD` | No |
-| `API_CONTRACT` | No |
-| `CODE_STYLE` | No |
-| `COMMIT_STRATEGY` | No |
-| `TESTING` | No |
-| `CI_CD` | No |
-| `DEPLOYMENT` | No |
+Only include an "External References" section in the product-facing documents: `BUSINESS_PLAN`, `PRODUCT_ROADMAP`, `GO_TO_MARKET`, `COMPETITIVE_ANALYSIS`. Never in engineering docs (`ARCHITECTURE`, `ERD`, `API_CONTRACT`, `CODE_STYLE`, `COMMIT_STRATEGY`, `TESTING`, `CI_CD`, `DEPLOYMENT`).
 
 ### External References Section Template
 
@@ -337,7 +314,10 @@ Read any existing `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`, or files in `docs
 
 ## Step 3: Audit Documentation Coverage
 
-Check for each of the 17 Pivot-pattern documents. Search flexibly — docs may exist under different names or be embedded in other files:
+Check for each of the 17 Pivot-pattern documents in two concrete passes:
+
+1. **Filename pass (Glob).** For each Doc ID, run its filename patterns (table below) with Glob over each of these directory sets: `planning/`, `docs/`, `doc/`, `.docs/`, `wiki/`, and the repo root — e.g. `Glob("planning/*architecture*")`, `Glob("docs/**/*roadmap*")`. Match case-insensitively (try capitalized variants like `*ARCHITECTURE*` where the filesystem is case-sensitive).
+2. **Content pass (Grep).** Docs may be embedded in other files: Grep the same directories plus `README.md` and `CONTRIBUTING.md` for each Doc ID's keywords (derived from its patterns, e.g. `monetization|revenue model` for BUSINESS_PLAN) with case-insensitive matching. A hit on a heading line (`^#{1,3} .*keyword`) counts as **found (embedded in `<file>`)**; a body-only mention does not.
 
 | Doc ID | Search patterns |
 |--------|----------------|
@@ -368,30 +348,19 @@ Documentation Audit
 
 Found (N/17):
   ARCHITECTURE     — planning/ARCHITECTURE.md
-  API_CONTRACT     — planning/API_CONTRACT.md
-  ERD              — planning/ERD.md
+  {one line per found doc — Doc ID + path (or "embedded in <file>")}
 
 Missing (M/17):
-  BUSINESS_PLAN
-  PRODUCT_ROADMAP
-  DESIGN_SYSTEM
-  CODE_STYLE
-  COMMIT_STRATEGY
-  PR_GUIDE
-  TESTING
-  CI_CD
-  DEPLOYMENT
-  LOCAL_DEV
-  ANALYTICS
-  COMPETITIVE_ANALYSIS
-  GO_TO_MARKET
-  DEPENDENCY_GRAPH
+  {one Doc ID per line}
 
 CLAUDE.md:       [exists / missing]
 .claude/rules/:  [exists (N files) / missing]
 ```
 
-If `--force` was passed, treat all docs as missing and regenerate.
+If `--force` was passed: list every existing doc file that would be overwritten, then confirm via AskUserQuestion —
+> "`--force` will regenerate and overwrite these {N} existing docs (they may contain hand edits): {list}. Overwrite? (yes/no)"
+
+Only on **yes**, treat all docs as missing and regenerate. On **no**, fall back to missing-only generation.
 
 ## Step 4: Handle Each Scenario
 
@@ -406,7 +375,34 @@ Report completeness. For each existing doc, note if it could be improved (missin
 
 ## Step 5: Generate Missing Docs
 
-For each missing doc, spawn an **Explore** agent to research the repo, then a **general-purpose** agent to write the doc.
+For each missing doc, run a two-stage dispatch — research, then write.
+
+### Dispatch Contract (per `skills/_shared/parallel-dispatch.md`)
+
+1. **Research:**
+   ```
+   Agent(subagent_type="Explore",
+         prompt="Research the repo at <ABS REPO ROOT> to gather everything needed to write planning/<DOC_ID>.md:
+                 <doc-specific facts to collect — e.g. for ARCHITECTURE: directory tree, entry points, layers,
+                 data flow; for TESTING: test framework, commands, existing coverage config>.
+                 Return a concise findings summary — file paths and facts only, no prose padding.")
+   ```
+2. **Write:**
+   ```
+   Agent(subagent_type="general-purpose",
+         prompt="Write <ABS REPO ROOT>/planning/<DOC_ID>.md following the Pivot template structure for <DOC_ID>
+                 (structure given below in Generation Rules). Use these research findings as your only source
+                 material: <findings from stage 1>. Real repo data only — no placeholder content.
+                 Write the file to exactly that path.")
+   ```
+
+**Batching policy:** dispatch in batches of **4–5 docs** — one message, N `Agent` calls per batch, never sequential when independent. After each batch, existence-check every expected output before starting the next batch:
+
+```bash
+ls -la planning/ && for f in planning/<DOC_ID_1>.md planning/<DOC_ID_2>.md; do [ -s "$f" ] || echo "MISSING OUTPUT: $f"; done
+```
+
+A missing or empty file is a **named failure** — re-dispatch that doc's writer; never silently skip it or invent its content in-line.
 
 ### Generation Rules
 
@@ -538,6 +534,16 @@ required patterns, things to avoid, code examples from the real code.}
 
 Spawn an Explore agent to read representative files in each domain before writing the rules. Rules should reflect what the code actually does, not generic best practices.
 
+### Step 6c: Generate Design Language (optional)
+
+If the repo has a user-facing surface (web frontend or iOS app detected in Step 2) and no `.impeccable.md` / `design-tokens.json` exist yet, ask via AskUserQuestion:
+> "Generate the design language now (.impeccable.md + design-tokens.json via /design-language)? (yes/no)"
+
+- **yes** → invoke `Skill(skill="design-language")` and wait for its artifacts.
+- **no** (or no user-facing surface) → skip; the DESIGN_SYSTEM doc's pointer to `/design-analyze` + `/design-language` stands.
+
+The completion report's "+ design language" line (Step 8) appears **only if this step actually ran and produced its artifacts** — never claim design language was generated otherwise.
+
 ## Step 7: Generate .serena/project.yml
 
 After generating docs and CLAUDE.md, configure Serena LSP for the repo.
@@ -618,6 +624,7 @@ Serena validates `project.yml` on startup and will crash if any required fields 
 REPO_PATH="$(pwd)"
 REPO_NAME="$(basename "$REPO_PATH" | tr -c '[:alnum:]-_.' '-')"
 mkdir -p "${REPO_PATH}/.serena/cache" "${REPO_PATH}/.serena/logs" "${REPO_PATH}/.serena/memory"
+LINES_BEFORE=$(wc -l < "${REPO_PATH}/.serena/project.yml")
 docker run --rm \
   -v "${REPO_PATH}:/workspaces/projects/${REPO_NAME}" \
   -v "${REPO_PATH}/.serena/cache:/workspaces/projects/${REPO_NAME}/.serena/cache" \
@@ -628,11 +635,23 @@ docker run --rm \
   --context claude-code \
   --project "/workspaces/projects/${REPO_NAME}" &
 SPID=$!
-sleep 5
+# Poll for the expanded config instead of a blind sleep — Serena rewrites
+# project.yml with the full schema once startup validation completes.
+EXPANDED=false
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  sleep 1
+  CUR=$(wc -l < "${REPO_PATH}/.serena/project.yml" 2>/dev/null || echo 0)
+  [ "$CUR" -gt "$LINES_BEFORE" ] && { EXPANDED=true; break; }
+done
 kill $SPID 2>/dev/null || true
+if [ "$EXPANDED" = true ]; then
+  echo "serena: project.yml expanded ($LINES_BEFORE -> $CUR lines)"
+else
+  echo "WARN: project.yml was not expanded within 30s — verify Serena startup manually before relying on it"
+fi
 ```
 
-After this, `.serena/project.yml` will be fully expanded with all required fields. Subsequent `serena-docker` invocations mount the project read-only and will start without errors.
+**Verify, don't assert:** only report the bootstrap as successful if the poll observed the expanded config. Subsequent `serena-docker` invocations mount the project read-only and will start without errors.
 
 If the Docker command fails (image not built, Docker not running), do NOT abort bootstrap — print a warning and continue:
 > `WARN: Could not bootstrap .serena/project.yml via Docker. The config is minimal and Serena may fail to start. Run setup.sh to build the serena-local image, then re-run /bootstrap.`
@@ -648,32 +667,36 @@ If `csharp` was detected, append:
 If `swift` was detected, append:
 > NOTE: Swift LSP requires a host-side socket bridge. Run `BUILD_SWIFT=1 ./setup.sh` to build it, then add `- swift` to `.serena/project.yml`.
 
-**Run Serena onboarding check (non-fatal):** After the Docker bootstrap step, call the `check_onboarding_performed` Serena MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+**Run Serena onboarding check (non-fatal):** After the Docker bootstrap step, call the `mcp__serena__check_onboarding_performed` MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
 
-> **Important — tool name:** Call `check_onboarding_performed`, not `onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
+> **Important — tool name:** Call `mcp__serena__check_onboarding_performed`, not `onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
 
-> **Non-fatal:** If `check_onboarding_performed` fails (e.g., Docker is not running or the Serena image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
+> **Non-fatal:** If `mcp__serena__check_onboarding_performed` fails (e.g., Docker is not running, the Serena MCP server is not connected, or the image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
 > `WARN: Serena not available — the project.yml must be bootstrapped before Serena will connect. Build the serena-local Docker image with setup.sh, then re-run /bootstrap.`
 
 ## Step 8: Report
+
+**Compute the total — never assert it.** `found` = docs present before this run (Step 3 audit), `generated` = docs actually written and existence-checked this run (Step 5). `total = found + generated` out of 17; list any Doc IDs still missing. Append " + design language" **only if Step 6c ran and produced `.impeccable.md` + `design-tokens.json`**.
 
 ```
 Bootstrap Complete
 ==================
 
-Generated:
+Generated ({generated}):
   planning/BUSINESS_PLAN.md          (new)
   planning/PRODUCT_ROADMAP.md        (new)
   planning/CODE_STYLE.md             (new)
   ...
   CLAUDE.md                          (new)
 
-Existing (unchanged):
+Existing (unchanged, {found}):
   planning/ARCHITECTURE.md
   planning/API_CONTRACT.md
   planning/ERD.md
 
-Total: 17/17 docs + CLAUDE.md + .claude/rules/ + design language
+Still missing ({missing}): {Doc IDs, or "none"}
+
+Total: {found}+{generated}={total}/17 docs + CLAUDE.md + .claude/rules/{ + design language — only if Step 6c ran}
 
 Next steps:
   1. Review generated docs for accuracy
@@ -682,20 +705,9 @@ Next steps:
 
 Suggested workflow:
   • /officeHours — brainstorm a feature or problem before planning
-  • /productReview — get founder-lens feedback on a plan
-  • /archReview — get engineering architecture review of a plan
-  • /design-analyze <url> — extract design tokens from reference sites
   • /design-language — define brand personality and aesthetic direction
-  • /design-mockup <screen> — generate HTML mockup from design language
-  • /design-implement web|swiftui — generate production code from mockup
-  • /design-refine — apply Impeccable design refinements
-  • /design-verify — screenshot diff implementation vs mockup
   • /review <pr> — run multi-agent code review on a PR
-  • /bugHunt — find and fix bugs with regression tests
-  • /bugReport — audit code health without making changes
-  • /rootCause — systematic 4-phase debugging
-  • /shipRelease — push, open PR, sync docs
-  • /weeklyRetro — generate a weekly retrospective
+  (full pipeline: see the skills table above)
 ```
 
 ## Next steps

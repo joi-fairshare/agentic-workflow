@@ -1,8 +1,8 @@
 ---
 name: review
 description: Orchestrate a multi-agent PR code review. Spawns domain-specific reviewer subagents in parallel based on changed files. Findings are saved to ~/.agentic-workflow/<repo-slug>/reviews/<pr>.json — run /postReview to publish to GitHub.
-argument-hint: [pr-number-or-url]
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write, Skill
+argument-hint: [pr-number-or-url] [--lens <persona,...>]
+allowed-tools: Bash(gh *), Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Agent, Read, Write, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -193,25 +193,31 @@ gh pr view <argument> --json number,title,headRefName,baseRefName,url,headReposi
 gh pr list --head $(git branch --show-current) --json number,title,url
 ```
 
-If multiple PRs are returned, list them and ask the user to pick one before proceeding.
+If multiple PRs are returned, ask the user to pick one via AskUserQuestion before proceeding.
 
 If no PRs are found: "No open PR found for the current branch. Use `/review <number>` to specify one."
 
 ## Step 2: Fetch PR Context
 
+Run in parallel:
 ```bash
-# Run in parallel
 gh pr diff {number}
 gh pr view {number} --json number,title,body,additions,deletions,headRefName,baseRefName,headRepository
 gh pr view {number} --json files --jq '[.files[].path]'
 gh pr view {number} --json commits --jq '.commits[-1].oid'
 ```
 
-## Step 3: Ensure output directory exists
+## Step 3: Ensure output directory exists and gather evidence
 
 ```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/reviews"
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/review/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/reviews"
+ls -1dt "$AW_DIR/verification/"*/ 2>/dev/null | head -1   # newest pack.json dir
+ls -1dt "$AW_DIR/design/verify/"*/ 2>/dev/null | head -1  # newest comparison-report.json dir
 ```
+
+Read `pack.json` and `comparison-report.json` from those newest dirs (per `_shared/evidence-pack.md`). Their contents become `{evidence}` for reviewers — the literal `none` when neither exists.
 
 ## Step 4: Triage
 
@@ -222,12 +228,12 @@ Inject:
 - `{file_list}` — JSON array of changed file paths
 - `{diff}` — full diff output
 
-Parse the returned JSON array of reviewer assignments.
+Parse the returned JSON array of reviewer assignments. If the user passed `--lens <persona,...>`, append one assignment per named lens/persona (dedupe by agent name) — these run in addition to triage output.
 
 ## Step 5: Spawn Parallel Reviewers
 
 Spawn **all agents simultaneously** in a single message. Each reviewer receives the prompt from [reviewer-prompt.md](reviewer-prompt.md) with these values injected:
-- `{agent}`, `{focus}`, `{number}`, `{title}`, `{diff}`
+- `{agent}`, `{focus}`, `{number}`, `{title}`, `{diff}`, `{evidence}` (from Step 3)
 
 Each reviewer returns a **JSON object** as its final output (not GitHub comments). Collect all responses.
 
@@ -235,17 +241,17 @@ Each reviewer returns a **JSON object** as its final output (not GitHub comments
 
 After collecting all reviewer JSON outputs:
 1. Check for any reviewer output with `investigation_needed: true`
-2. If found: identify the single highest-confidence entry (blocking severity + clearest error trace)
-3. Ask the user (conversationally):
-   > "Found a blocking bug with a stack trace in {path}. Run rootCause to investigate? (yes/no)"
-4. If yes: Skill tool: `rootCause`, args: `"<investigation_error value>"`
-   - Attach the investigation file path to that issue in the state file under `"investigation"`
-   - If rootCause returns `scope-breach`, note it in the state file and continue — do not block the review
+2. If found: rank candidates deterministically — severity first (`blocking` before `issue`), then longer error trace, then lowest issue `id` (lexicographic) — and take up to **3**
+3. Ask via AskUserQuestion:
+   > "Found {N} blocking bug(s) with error traces. Run rootCause on the top {min(N,3)}? (yes/no)"
+4. If yes: dispatch up to 3 rootCause runs **in parallel** — one Skill call (`rootCause`, args: `"<investigation_error value>"`) per candidate, all in a single message
+   - Attach each investigation file path to its issue in the state file under `"investigation"`
+   - If a rootCause returns `scope-breach`, note it in the state file and continue — do not block the review
 5. If no, or no reviewer flagged `investigation_needed`: skip and proceed to writing the state file
 
 ## Step 6: Write State File
 
-Combine all reviewer outputs into `~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json`:
+Combine all reviewer outputs into `~/.agentic-workflow/<repo-slug>/reviews/{number}.json`:
 
 ```json
 {
@@ -258,6 +264,9 @@ Combine all reviewer outputs into `~/.agentic-workflow/{REPO_SLUG}/reviews/{numb
     "url": "https://github.com/myorg/myrepo/pull/123"
   },
   "commit_sha": "<latest commit oid>",
+  "review_run": 1,
+  "previous_run_finding_count": null,
+  "lenses": ["security-sentinel", "kieran-typescript-reviewer"],
   "reviewed_at": "<ISO timestamp>",
   "posted": false,
   "posted_at": null,
@@ -284,13 +293,15 @@ Combine all reviewer outputs into `~/.agentic-workflow/{REPO_SLUG}/reviews/{numb
 }
 ```
 
-Use the Write tool to save this file.
+Use the Write tool to save this file. `lenses` lists the agent names actually spawned in Step 5. On re-review (file already exists): set `review_run` to prior value + 1 and `previous_run_finding_count` to the prior run's total issue count before overwriting.
 
 ## Step 7: Report to User
 
 ```
 Review complete for PR #{number}: "{title}"
-Findings saved to ~/.agentic-workflow/{REPO_SLUG}/reviews/{number}.json
+Findings saved to ~/.agentic-workflow/<repo-slug>/reviews/{number}.json
+Run #{review_run} (previous run findings: {previous_run_finding_count})
+Lenses: {lenses, comma-joined}
 
 Reviewers:
   • security-sentinel (focus: auth, input validation) — 2 blocking, 1 issue

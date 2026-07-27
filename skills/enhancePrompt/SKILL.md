@@ -2,7 +2,7 @@
 name: enhancePrompt
 description: Use when the user invokes /enhancePrompt — discovers available project documentation, reads relevant files, and rewrites the user's request with richer context before execution
 argument-hint: [prompt-to-enhance]
-allowed-tools: Read, Glob, Grep
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, Bash(git *), Bash(ls *), Bash(mkdir *), Bash(date *), Bash(SHARED_DIR=*), mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff, mcp__agentic-bridge__send_context, mcp__agentic-bridge__assign_task
 ---
 
 <!-- === PREAMBLE START === -->
@@ -187,29 +187,19 @@ Dynamically discovers project documentation, reads what's relevant to the user's
 
 ### 1. Discover documentation
 
-Scan the working directory for any of these (check what actually exists, don't assume):
-- Root-level guides: `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`
-- Docs folders: `docs/`, `planning/`, `wiki/`, `.docs/`, `documentation/`
-- Domain files by keyword: any `*.md` at root or one level deep
+Scan the working directory for what actually exists (don't assume): root-level guides (`CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`); domain rules `.claude/rules/*.md` (this skill's core input); `planning/*.md`; docs folders (`docs/`, `wiki/`, `.docs/`, `documentation/`); any `*.md` at root or one level deep.
 
 List what you find. If nothing exists, say so and offer to enhance from conversation context alone.
 
-### 2. Read selectively
+### 2. Read selectively — and account for every doc
 
-Read files whose names or paths suggest relevance to the user's prompt topic. Always read any root-level instruction file (`CLAUDE.md`, `AGENTS.md`, `README.md`) first since they establish overall context. Then read topic-specific files.
+Read files whose names or paths suggest relevance to the user's prompt topic. Always read any root-level instruction file (`CLAUDE.md`, `AGENTS.md`, `README.md`) first since they establish overall context, then the `.claude/rules/*.md` files whose globs cover the prompt's domain, then topic-specific `planning/*.md` files.
 
-Use judgment — a prompt about pricing doesn't need the testing strategy doc.
+Use judgment — a prompt about pricing doesn't need the testing strategy doc — but the judgment must be visible: every discovered doc appears in the Step 4 output as **read** or **skipped (why)**. Reading only the README does not satisfy this step when rules or planning docs exist.
 
 ### 3. Evaluate Codex dialogue value
 
-Before producing output, assess whether the task would benefit from a Codex consultation via the MCP bridge (`agentic-bridge`). Include a dialogue recommendation **only** when at least one of these applies:
-
-- **Cross-domain task** — the prompt spans areas where a second agent working in parallel would reduce total time (e.g., frontend + backend, infra + application code)
-- **Second opinion valuable** — architecture decisions, security-sensitive changes, or unfamiliar codebases where an independent review adds confidence
-- **Parallel research** — the task involves investigating multiple approaches or technologies that could be explored simultaneously
-- **Verification needed** — the result should be validated by a separate agent (e.g., "implement X, then have Codex try to break it")
-
-If none apply, skip the dialogue section entirely — don't force it.
+Before producing output, assess whether the task would benefit from a Codex consultation via the MCP bridge (`agentic-bridge`). Include a dialogue recommendation **only** when at least one applies: **cross-domain task** (parallel second agent reduces total time), **second opinion valuable** (architecture/security-sensitive/unfamiliar code), **parallel research** (multiple approaches explorable simultaneously), or **verification needed** ("implement X, then have Codex try to break it"). If none apply, skip the dialogue section entirely.
 
 ### 4. Output the enhanced prompt
 
@@ -218,12 +208,21 @@ If none apply, skip the dialogue section entirely — don't force it.
 
 **Original:** <user's exact words>
 
+**Docs discovered / read / skipped:**
+- read: <path> — <what it contributed>
+- skipped: <path> — <why it wasn't relevant>
+
 **Relevant context from project docs:**
 <concise bullets — constraints, conventions, patterns, gotchas that apply>
 
 **Full task:**
-<rewritten version of the prompt with all context woven in, specific and actionable>
+- **Goal:** <the outcome the rewritten prompt must achieve>
+- **Constraints:** <conventions, tech-stack rules, and limits from the docs>
+- **Out of scope:** <what this task explicitly does not cover>
+- **Done when:** <concrete, checkable completion criteria>
 ```
+
+Every doc from Step 1 must appear in the discovered/read/skipped list — none silently dropped.
 
 If step 3 identified dialogue value, append:
 
@@ -233,20 +232,37 @@ If step 3 identified dialogue value, append:
 **Why:** <one sentence — which criterion triggered this>
 
 **What to ask Codex:**
-<specific prompt to send via agentic-bridge assign_task or send_context>
+<specific prompt to dispatch via mcp__agentic-bridge__assign_task or mcp__agentic-bridge__send_context>
 
 **Expected value:** <what the response would add — a review, alternative approach, parallel implementation, etc.>
-
-**How to initiate:**
-  In a Codex session: "Check your unread messages on the agentic-bridge"
-  Or manually: assign_task with conversation UUID, domain, and the prompt above
 ```
 
 If step 3 found no dialogue value, do not include this section.
 
-### 5. Confirm before proceeding
+### 5. Persist the enhanced prompt
+
+Write the full `## Enhanced Prompt` block (plus the Codex section, if any) to the prompts directory:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/enhancePrompt/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/prompts"
+echo "prompt-file: $AW_DIR/prompts/$(date +%Y%m%d-%H%M%S).md"
+```
+
+Write the content to that path and echo it back to the user so downstream skills can reference it.
+
+### 6. Confirm, then dispatch
 
 Ask: "Should I proceed with this, or adjust anything?"
+
+If step 3 recommended a Codex dialogue and the user confirms, **dispatch it now** over the bridge (BRIDGE_OK was checked in the preamble):
+- `mcp__agentic-bridge__assign_task` — conversation, domain, summary, details = the "What to ask Codex" prompt — when Codex should do independent work
+- `mcp__agentic-bridge__send_context` — conversation, sender, recipient, payload — when Codex only needs the context for a second opinion
+
+**Fallback (bridge down, `BRIDGE_OK=false`):** don't dispatch; instead print the manual instructions —
+> In a Codex session: "Check your unread messages on the agentic-bridge"
+> Or manually: assign_task with conversation UUID, domain, and the prompt above
 
 Do NOT begin executing the task during this skill.
 
@@ -260,4 +276,9 @@ Do NOT begin executing the task during this skill.
 
 ## Next steps
 
-- run the enhanced prompt — execute the enhanced prompt directly via the appropriate skill
+Name the successor skill explicitly — pick the one that matches the enhanced task and pass the persisted prompt file:
+
+- `Skill(skill="withInterview", args="<successor-skill> <enhanced prompt path: ~/.agentic-workflow/<repo-slug>/prompts/<ts>.md>")` — if requirements still need clarification before executing
+- `/officeHours` — if the enhanced prompt describes a feature that needs a spec before implementation
+- `/specToProvenPR` — if the enhanced prompt is an approved spec ready to be built and proven
+- Otherwise, execute the enhanced prompt from `prompts/<ts>.md` directly in this session after the user confirms

@@ -1,8 +1,8 @@
 ---
 name: design-mockup-web
-description: Generate an HTML mockup informed by the design language, serve it via the visual companion, iterate with feedback until approved, then screenshot the final version as a baseline for /design-verify-web.
+description: Generate an HTML mockup informed by the design language, serve it locally, iterate with feedback until approved, then capture mobile/tablet/desktop baselines and register the screen in screens.json for /design-verify-web.
 argument-hint: <screen-name>
-allowed-tools: Bash(*/start-server.sh *), Bash(mkdir *), Write, Read, Agent, AskUserQuestion
+allowed-tools: Bash(mkdir *), Bash(ls *), Bash(SHARED_DIR=*), Bash(source *), Bash(python3 *), Bash(LOCK_NAME=*), Write, Read, Edit, Glob, AskUserQuestion, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_close, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -262,93 +262,138 @@ Design pipeline:
 
 # Design Mockup — Generate HTML Mockup from Design Language
 
-Generate an HTML mockup using the visual companion, informed by the design language. Iterate with user feedback until approved, then capture a baseline screenshot for verification.
+Generate an HTML mockup informed by the design language, serve it locally, iterate with user feedback until approved (capped loop), then capture viewport baselines and register the screen in `screens.json` for `/design-verify-web`.
+
+Artifact names and the `screens.json` schema come from `_shared/design-artifact-paths.md` — read it via `SHARED_DIR` if unsure.
+
+## Step 0: Shotgun Seed (optional)
+
+Check for a picked shotgun variant:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+ls "$AW_DIR/design/shotgun/picked.json" 2>/dev/null || echo "no shotgun pick"
+```
+
+If `picked.json` exists: Read it, Read the variant HTML it points to (`$AW_DIR/design/shotgun/variant-<N>.html`), and use that HTML as the **starting point** for Step 3 instead of generating from scratch. Note the seed variant in the Step 8 report.
 
 ## Step 1: Validate Arguments
 
 The user must provide a screen name (e.g., "dashboard", "login", "settings", "onboarding").
 
-If no screen name provided:
-> "Usage: `/design-mockup <screen-name>`
-> Example: `/design-mockup dashboard`"
+If no screen name provided, stop:
+> "Usage: `/design-mockup-web <screen-name>`
+> Example: `/design-mockup-web dashboard`"
 
 ## Step 2: Load Design Context
 
-Read `.impeccable.md` and `design-tokens.json` to understand:
-- Color palette and semantic color usage
-- Typography scale and font choices
-- Spacing system and layout approach
-- Brand personality and aesthetic direction
-
-These values must drive every visual decision in the mockup.
+Read `.impeccable.md` and `design-tokens.json` — palette, typography scale, spacing system, and brand personality must drive every visual decision in the mockup.
 
 ## Step 3: Generate HTML Mockup
 
-Create an HTML file as a content fragment for the visual companion. The mockup should:
+The mockup must be a **single HTML file** with inline CSS (no external deps except CDN fonts), use **exact token values** from `design-tokens.json`, reflect the `.impeccable.md` personality (not generic Bootstrap/Tailwind defaults), be **responsive** (viewport meta + breakpoints), and use **realistic content** (no "Lorem ipsum").
 
-1. **Be a single HTML file** with inline CSS (no external dependencies except CDN fonts)
-2. **Use exact token values** from `design-tokens.json` — colors, font sizes, spacing, radii
-3. **Reflect the brand personality** from `.impeccable.md` — not generic Bootstrap/Tailwind defaults
-4. **Be responsive** — include viewport meta tag and basic responsive breakpoints
-5. **Include realistic content** — use plausible text and data, not "Lorem ipsum"
-
-Save to the visual companion's session directory:
-```
-.superpowers/brainstorm/<session-id>/<screen-name>.html
-```
-
-## Step 4: Present in Browser
-
-Start the visual companion server:
-```bash
-*/start-server.sh *
-```
-
-The mockup will be visible in the browser for the user to review.
-
-## Step 5: Iterate
-
-Use `AskUserQuestion` to gather feedback from the user. Common adjustments:
-- Layout changes (reorder sections, change grid)
-- Color refinements (too much contrast, wrong emphasis)
-- Typography tweaks (heading sizes, body line-height)
-- Content density (too sparse, too crowded)
-- Missing elements (navigation, footer, status indicators)
-
-Apply changes to the HTML file and continue asking via `AskUserQuestion` until the user approves.
-
-## Step 6: Capture Baseline
-
-Once approved, save the baseline screenshot for `/design-verify`:
+Save to the canonical path and **echo it** so the user and `/design-implement-web` can find it:
 
 ```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/design"
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+mkdir -p "$AW_DIR/design"
+echo "mockup file: $AW_DIR/design/mockup-<screen-name>.html"
 ```
 
-Use an `Agent` subagent with Playwright MCP tools to capture the screenshot. The subagent should:
-1. Navigate to the mockup URL served by the visual companion
-2. Take a full-page screenshot
-3. Save it to the baseline path
+Write the HTML to `$AW_DIR/design/mockup-<screen-name>.html`.
 
-Baseline path:
-```
-~/.agentic-workflow/<repo-slug>/design/mockup-<screen-name>.png
+## Step 4: Serve the Mockup
+
+Serve the file with a real local server and **record the URL** (`MOCKUP_URL`) — it is reused for every capture in Step 6:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+python3 -m http.server 8721 --directory "$AW_DIR/design" &
+echo "MOCKUP_URL=http://localhost:8721/mockup-<screen-name>.html"
 ```
 
-## Step 7: Report
+- If port 8721 is busy, pick another free port and re-echo the URL.
+- Alternative: if the mockup must render inside the project's dev server (e.g., it uses project assets), start that server instead and record its URL.
+
+Tell the user to open `MOCKUP_URL` in their browser for review.
+
+## Step 5: Approval Loop (max 5 rounds)
+
+Iterate via `AskUserQuestion` with exactly two options: **Approve** / **Revise**.
+
+- **Revise:** gather specifics (layout, color emphasis, typography, content density, missing elements), Edit the HTML file, tell the user to refresh, and ask again.
+- **Approve:** record the current UTC timestamp as `approved_at` — it is written into `screens.json` in Step 7.
+- **Cap: 5 rounds.** If round 5 ends without approval: stop, keep the latest HTML, write **no** baseline and **no** `screens.json` entry, and report the mockup as unapproved with the outstanding feedback listed.
+
+## Step 6: Capture Viewport Baselines
+
+Only after approval. First, the overwrite check — if any existing baseline matches, confirm before capturing:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+ls "$AW_DIR"/design/mockup-web-<screen-name>-*.png 2>/dev/null || echo "no existing baselines"
+```
+
+If baselines exist, `AskUserQuestion`: "Baselines already exist for `<screen-name>`. Overwrite? (yes/no)". On "no", skip to Step 7 keeping the old baselines.
+
+Acquire the browser lock in a **single bash invocation** (shell state does not persist between Bash calls):
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; acquire_lock
+```
+
+Then capture **all three** viewports inline (no subagent), holding the lock throughout. For each viewport in `mobile` 375×812, `tablet` 768×1024, `desktop` 1440×900:
+
+1. `mcp__plugin_playwright_playwright__browser_navigate` → `MOCKUP_URL`
+2. `mcp__plugin_playwright_playwright__browser_resize` → the viewport's width × height
+3. `mcp__plugin_playwright_playwright__browser_take_screenshot` → save to `~/.agentic-workflow/<repo-slug>/design/mockup-web-<screen-name>-<viewport>.png` — producing exactly the three `mockup-web-<screen-name>-{mobile,tablet,desktop}.png` baselines.
+
+Finally — success or failure — close the browser (`mcp__plugin_playwright_playwright__browser_close`) and release the lock in a single invocation:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup-web/SKILL.md")")/../_shared"
+LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; release_lock
+```
+
+## Step 7: Write/Update screens.json
+
+Determine the **route** where this screen will live in the real app: infer it from the repo's routing (e.g., `app/` / `pages/` directories); if not inferable, `AskUserQuestion` for it (a route of `null` is allowed for screens with no URL yet).
+
+Read `~/.agentic-workflow/<repo-slug>/design/screens.json` if it exists, merge this screen's entry (Read → mutate → Write; never clobber other screens), following the CD4 schema in `_shared/design-artifact-paths.md`:
+
+```json
+{ "schema": "screens/v1",
+  "viewports": {"mobile":"375x812","tablet":"768x1024","desktop":"1440x900"},
+  "screens": { "<screen-name>": {
+      "route": "/path-or-null",
+      "nav": null,
+      "baselines": {
+        "mobile":  "mockup-web-<screen-name>-mobile.png",
+        "tablet":  "mockup-web-<screen-name>-tablet.png",
+        "desktop": "mockup-web-<screen-name>-desktop.png" },
+      "approved_at": "<ISO timestamp from Step 5>",
+      "baseline_stale": null,
+      "source": "design-mockup-web" } } }
+```
+
+## Step 8: Report
 
 ```
 Mockup Approved
 ===============
 
-Screen:    <screen-name>
-File:      .superpowers/brainstorm/<session-id>/<screen-name>.html
-Baseline:  ~/.agentic-workflow/<repo-slug>/design/mockup-<screen-name>.png
-
-Next steps:
-  • Run /design-implement web|swiftui to generate production code
-  • Run /design-mockup <another-screen> to mockup additional screens
-  • Run /design-refine to apply Impeccable refinements
+Screen:       <screen-name>
+Seed:         shotgun variant-<N> | none
+File:         ~/.agentic-workflow/<repo-slug>/design/mockup-<screen-name>.html
+Served at:    <MOCKUP_URL>
+Baselines:    mockup-web-<screen-name>-{mobile,tablet,desktop}.png
+screens.json: entry written (route: <route>, approved_at: <ISO>)
 ```
 
 ## Rules
@@ -357,9 +402,11 @@ Next steps:
 - The mockup is a design artifact, not production code — optimize for visual fidelity, not code quality
 - Include hover states and interactive affordances in the HTML/CSS
 - If `.impeccable.md` doesn't exist, warn but still allow creation with manual style guidance
-- Save only ONE baseline per screen name — re-running overwrites the previous baseline after confirmation
+- One baseline set per screen name — overwriting requires the Step 6 confirmation
+- Never write baselines or a `screens.json` entry for an unapproved mockup
 
 ## Next steps
 
-- `/design-implement-web` — generate CSS/Tailwind/React from the mockup
+- `/design-implement <screen-name>` — generate production code from the approved mockup
+- `/design-mockup <another-screen>` — mockup additional screens
 - `/design-refine` — iterate the HTML mockup before implementation

@@ -1,8 +1,8 @@
 ---
 name: verify-web
-description: "Playwright-based self-verification of running web apps. Two modes: explicit criteria or diff-inference from recent changes. Accessibility snapshots by default, --visual for screenshots."
-argument-hint: "[--visual] [criteria or 'auto']"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep, AskUserQuestion
+description: "Playwright-based self-verification of running web apps. Executes journeys through verification lenses (functional, visual, accessibility, error-state, responsive) and writes an evidence pack (pack.json + report.md) on every run."
+argument-hint: "[--journey <plan.md>] [--lenses <csv>] [--visual] [--baseline] [--yes] [--base-url <url>] [criteria or 'auto']"
+allowed-tools: Bash(git *), Bash(SHARED_DIR=*), Bash(source *), Bash(ls *), Bash(mkdir *), Bash(date *), Read, Write, Glob, Grep, AskUserQuestion, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_close, mcp__design-comparison__compare_design, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -181,186 +181,153 @@ If either call fails, surface the error:
 
 # Verify Web — Browser-Based Self-Verification
 
-Launches Playwright against a running web app to verify behavior. Uses accessibility snapshots by default for fast, structured verification. Add `--visual` for screenshot-based visual checks.
+Launches Playwright against a running web app and executes **journeys** through **verification lenses**. Every run writes an evidence pack (`pack.json` + `report.md`) per `_shared/evidence-pack.md`.
+
+Shared references resolve from this skill's **own** symlink (never another skill's):
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")/../_shared"
+ls "$SHARED_DIR/verification-lenses.md" "$SHARED_DIR/evidence-pack.md"
+```
+
+If resolution or `ls` fails, stop and report — do not improvise the journey/lens rules. Read both files before planning.
 
 ## Step 1: Parse Arguments
 
-Parse the command arguments:
+- **`--journey <path>`** — a `verification-plan.md` (template: `_shared/verification-plan-template.md`). Its journeys, lenses, and cross-checks **are** the plan; record the path in `pack.json.plan`. Stop if the path does not exist.
+- **`--lenses <csv>`** — narrow the lens set (e.g. `functional,error-state`). Default: all web-applicable lenses.
+- **`--visual`** — shorthand for including the `visual` lens.
+- **`--baseline`** — the visual lens must diff against `screens.json` baselines; it FAILs if no baseline exists for a verified screen.
+- **`--yes`** — non-interactive: skip plan confirmation. Treated as set automatically when invoked by a parent skill (verify-app, specToProvenPR, shipRelease, landAndDeploy) — parent-invoked runs are auto-approved.
+- **`--base-url <url>`** — skip URL detection and use this URL.
+- **Explicit criteria** — any text after flags is verification criteria.
+- **`auto` / no arguments** — infer what to verify from recent git changes.
 
-- **`--visual`** — Use screenshots (Playwright `browser_take_screenshot`) instead of accessibility snapshots. Useful for visual regression, layout checks, and design verification.
-- **Explicit criteria** — Any text after flags is treated as verification criteria (e.g., `/verify-app the login form should show validation errors`)
-- **`auto`** — Infer what to verify from recent git changes (diff-inference mode)
-- **No arguments** — Same as `auto`
+## Journeys
 
-Set two variables:
-- `MODE`: either `"explicit"` (criteria provided) or `"auto"` (infer from diff)
-- `VISUAL`: `true` if `--visual` was passed, `false` otherwise
+Defined in `_shared/verification-lenses.md`. A journey is a named, ordered list of `{action, target, assertion}` steps executed in one browser session, `action ∈ navigate | click | fill | select | press | wait`.
+
+**Interaction is mandatory:** ≥3 non-navigate (interactive) steps and ≥1 assertion following a state-mutating action. A plan of only navigate+snapshot pairs is **rejected** — add interactions, or record `journey: waived — <reason>`, which caps the run verdict at WARN.
+
+## Lenses
+
+Web-applicable lenses from the catalog in `_shared/verification-lenses.md`: `functional`, `visual`, `accessibility`, `error-state`, `responsive`. All run by default; `--lenses` narrows. Every lens result lands in `pack.json.lenses[]`; a skipped lens must carry `reason_if_skipped` — silent omission is not allowed.
 
 ## Step 2: Detect the App URL
 
-Determine where the app is running:
+If `--base-url` was given, use it. Otherwise:
 
-1. Read `package.json` — look for `scripts.dev` or `scripts.start` to identify the framework and default port
-2. Common defaults:
-   - Next.js: `http://localhost:3000`
-   - Vite/React: `http://localhost:5173`
-   - Angular: `http://localhost:4200`
-   - Generic: `http://localhost:3000`
-3. Check `CLAUDE.md` for documented URLs or ports
+1. Read `package.json` — `scripts.dev`/`scripts.start` reveal framework and port (Next.js `:3000`, Vite `:5173`, Angular `:4200`, generic `:3000`).
+2. Check `CLAUDE.md` for documented URLs or ports.
 
-Verify the app is reachable using Playwright's `browser_navigate`. If the navigation fails:
+Verify reachability with `mcp__plugin_playwright_playwright__browser_navigate`. If navigation fails:
 > "The app doesn't appear to be running at {url}. Start the dev server and try again."
 
 ## Step 3: Acquire Browser Lock
 
-Source the browser lockfile script and acquire the lock:
+Acquire in a **single bash invocation** (shell state does not persist between Bash calls):
 
 ```bash
-SKILL_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")"
-source "$SKILL_DIR/browser-lock.sh"
-acquire_browser_lock
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")/../_shared"
+LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; acquire_lock
 ```
 
-If the lock cannot be acquired (timeout), report:
+If the lock cannot be acquired (timeout):
 > "Another browser verification session is in progress. Wait for it to finish or remove `~/.agentic-workflow/.browser.lock` if stale."
 
-**Important:** Always release the lock when done, even on errors. Wrap all subsequent steps in a try/finally pattern — if any step fails, jump to Step 7 to release the lock before exiting.
+Every per-step failure branch must re-source and release **in that same invocation** (`LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; release_lock`). Use `return`, not `exit`, in sourced context — `skill-lock.sh` enables `set -euo pipefail` in the caller's shell. Always release at Step 7, success or failure.
 
-## Step 4: Build Verification Plan
+## Step 4: Build the Verification Plan
 
-### Explicit Mode
+Create the run directory first (CD5):
 
-The user provided specific criteria. Parse them into a checklist of things to verify. Each item should be:
-- A page or route to visit
-- An expected behavior or element to check
-- A pass/fail condition
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+RUN_ID="$(date -u +%Y%m%d-%H%M%S)-<slug>"   # <slug> = 2–4 word kebab summary of what is being verified
+mkdir -p "$AW_DIR/verification/$RUN_ID"
+echo "run dir: $AW_DIR/verification/$RUN_ID"
+```
 
-Example criteria: "the login form should show validation errors when email is empty"
-→ Plan: Navigate to login, clear email field, submit, check for error message.
+**Plan source (first match wins):**
 
-### Auto Mode (Diff-Inference)
-
-Infer what to verify from recent changes:
+1. **`--journey` file** — parse its Journeys/Lenses/cross-check tables.
+2. **Explicit criteria** — parse into journeys: route to visit, interactions to perform, assertion per step.
+3. **Auto (diff-inference)** — infer from recent changes:
 
 ```bash
 git diff --name-only HEAD~3..HEAD
 git log --oneline -5
 ```
 
-For each changed file, determine what user-facing behavior it affects:
-- **Route/page changes** → verify those pages render correctly
-- **Component changes** → verify the components appear and behave as expected
-- **API changes** → verify the UI reflects the new data/behavior
-- **Style changes** → verify visual appearance (recommend `--visual` if not already set)
-- **Config changes** → verify the app starts and basic navigation works
+Route/page changes → verify those pages; component changes → verify appearance and behavior; API changes → verify the UI reflects new data; style changes → include the `visual` lens; config changes → verify startup and basic navigation.
 
-Build a verification plan with 3-8 checks. Present the plan to the user:
+**Validate the plan against the journey rules above** — if it has fewer than 3 interactive steps or no post-mutation assertion, rework it or record an explicit waiver. Keep 3–8 checks; more than 10 means the scope is too broad — split into multiple runs.
 
-> **Verification plan** (based on recent changes):
->
-> 1. Navigate to `/` — verify page loads, main content visible
-> 2. Navigate to `/dashboard` — verify data table renders
-> 3. Click "Create" button — verify modal opens
-> ...
->
-> **Proceed with this plan? (yes / edit / add more)**
+Present the plan and wait for confirmation — **unless `--yes` is set or the run is parent-invoked**, in which case proceed immediately and note "plan auto-approved (--yes / parent-invoked)" in the report.
 
-Wait for user confirmation. Adjust the plan based on their feedback.
+## Step 5: Execute Lenses
 
-## Step 5: Execute Verification
+Execute each selected lens with fully-qualified tools:
 
-For each item in the verification plan, execute using Playwright MCP tools:
+### `functional`
 
-### Default Mode (Accessibility Snapshots)
+Execute journeys step by step: `mcp__plugin_playwright_playwright__browser_click`, `mcp__plugin_playwright_playwright__browser_fill_form`, `mcp__plugin_playwright_playwright__browser_press_key`, `mcp__plugin_playwright_playwright__browser_select_option` (navigation steps via `mcp__plugin_playwright_playwright__browser_navigate`; async UI via `mcp__plugin_playwright_playwright__browser_wait_for`). Assert after each step with `mcp__plugin_playwright_playwright__browser_snapshot`. Then check `mcp__plugin_playwright_playwright__browser_console_messages` (no uncaught errors) and `mcp__plugin_playwright_playwright__browser_network_requests` (no failed calls).
 
-For each verification step:
+### `visual`
 
-1. **Navigate**: `browser_navigate` to the target URL/route
-2. **Snapshot**: `browser_snapshot` to get the accessibility tree
-3. **Analyze**: Parse the accessibility tree for expected elements:
-   - Check for specific text content, headings, buttons, links
-   - Verify ARIA roles, labels, and states
-   - Check form fields have proper labels
-   - Verify interactive elements are keyboard-accessible
-4. **Interact** (if needed): Use `browser_click`, `browser_fill_form`, `browser_press_key` to test interactions, then snapshot again
-5. **Record result**: Pass/fail with details
+`mcp__plugin_playwright_playwright__browser_take_screenshot` per screen×viewport, saved as `{run-id}/{check}-{viewport}.png` inside `$AW_DIR/verification/`. Baseline lookup: Read `$AW_DIR/design/screens.json` (path echoed from the Step 4 bash block); if it maps the screen to a baseline for this viewport, call `mcp__design-comparison__compare_design` on baseline vs capture and record the numeric diff % in `pack.json.mockup_diff` — thresholds (CD11): **≤2% PASS, 2–10% WARN, >10% FAIL**. With `--baseline` and no covering baseline, the visual lens FAILs; without the flag, note "no baseline" and judge region-level only. Pixel diffs may only claim **region-level** deviations — token-level attribution (e.g. "wrong border-radius token") requires a `mcp__plugin_playwright_playwright__browser_evaluate` computed-style step.
 
-### Visual Mode (`--visual`)
+### `accessibility`
 
-For each verification step:
+`mcp__plugin_playwright_playwright__browser_snapshot` tree: labels, roles, heading order, keyboard reachability of interactive elements.
 
-1. **Navigate**: `browser_navigate` to the target URL/route
-2. **Screenshot**: `browser_take_screenshot` to capture the current state
-3. **Analyze**: Examine the screenshot for:
-   - Layout correctness (elements positioned as expected)
-   - Visual styling (colors, fonts, spacing)
-   - Content rendering (text, images, icons visible)
-   - Responsive behavior (if testing multiple viewports)
-4. **Interact** (if needed): Use `browser_click`, `browser_fill_form` then screenshot again
-5. **Save screenshots**: Write to `~/.agentic-workflow/$REPO_SLUG/verification/`
-6. **Record result**: Pass/fail with details
+### `error-state`
 
-### Screenshot Naming
+Drive invalid input / unknown routes through the journey tools above; assert visible error UI in the snapshot; `mcp__plugin_playwright_playwright__browser_console_messages` shows no uncaught exception.
 
-```
-verification/{timestamp}-{check-number}-{slug}.png
-```
+### `responsive`
 
-## Step 6: Report Results
+`mcp__plugin_playwright_playwright__browser_resize` to the three CD4 viewports — mobile 375×812, tablet 768×1024, desktop 1440×900 — re-snapshot (and re-screenshot if visual lens is active) at each; artifacts keep the `{run-id}/{check}-{viewport}.png` naming.
 
-Generate a structured report:
+**Layout claims must be falsifiable:** bind every layout/styling check to a screens.json baseline, a design token, or an explicit user criterion — never a free-floating "positioned as expected".
 
-```
-Verification Report
-====================
+When all lenses finish, close the session with `mcp__plugin_playwright_playwright__browser_close`.
 
-App:     {app name from package.json}
-URL:     {base URL}
-Mode:    {explicit | auto (diff-inference)}
-Method:  {accessibility snapshots | visual (screenshots)}
-Date:    {ISO date}
+## Step 6: Write the Evidence Pack
 
-Results: {N passed} / {M total} checks
+Write both files into `$AW_DIR/verification/$RUN_ID/` following the schema in `_shared/evidence-pack.md` exactly:
 
-  [PASS] 1. Homepage loads — main heading "Dashboard" found
-  [PASS] 2. Navigation works — sidebar links present and clickable
-  [FAIL] 3. Create modal — submit button not found after clicking "Create"
-         Expected: Button with text "Submit" or role="button"
-         Found: Modal opened but no submit button in accessibility tree
-  [PASS] 4. Data table renders — table with 5 rows found
+- **`pack.json`** — `"schema": "evidence-pack/v1"`, `"skill": "verify-web"`, `"platform": "web"`, `base_url`, `plan` (journey-file path or null), `lenses[]` (every executed/skipped lens with per-check status + evidence), `journeys[]` (per-step status), `cross_checks[]` (from the journey file, with raw output files saved in the run dir), `artifacts[]` (screenshot filenames), `mockup_diff`, `started_at`/`finished_at`.
+- **`report.md`** — human-readable summary: app, URL, mode, plan source, per-lens results table, issues found with route/action/expected/actual/suggestion, artifact list.
 
-Issues Found:
-  1. [FAIL] Create modal missing submit button
-     Route: /dashboard
-     Action: Click "Create" button
-     Expected: Submit button appears in modal
-     Actual: Modal opens but contains no submit action
-     Suggestion: Check the modal component renders a submit button
-
-{If --visual: Screenshots saved to ~/.agentic-workflow/<repo-slug>/verification/}
-```
-
-Write the report to:
-```
-~/.agentic-workflow/$REPO_SLUG/verification/{timestamp}-report.md
-```
+**Verdict rollup:** any journey or lens FAIL ⇒ `FAIL`; a waived journey, a SKIPPED-with-reason lens, or a mockup diff in 2–10% ⇒ at most `WARN`; otherwise `PASS`.
 
 ## Step 7: Release Browser Lock
 
-Always release the lock, regardless of success or failure:
+Always release, regardless of success or failure — a leaked lock blocks all future verification sessions:
 
 ```bash
-release_browser_lock
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/verify-web/SKILL.md")")/../_shared"
+LOCK_NAME=browser source "$SHARED_DIR/skill-lock.sh"; release_lock
+```
+
+## Verdict & Gate
+
+**A FAIL verdict forbids downstream PR-open / mark-ready** (gate rule in `_shared/evidence-pack.md`). Consumers (verify-app, specToProvenPR, shipRelease, review) read the pack — do not soften the verdict in prose. End the report with exactly:
+
+```
+verdict: <PASS|WARN|FAIL>
+evidence_path: <absolute path to verification/<run-id>/>
 ```
 
 ## Rules
 
-- **Accessibility snapshots by default** — they are faster, more structured, and catch accessibility issues for free. Only use screenshots when `--visual` is specified.
 - **Never modify code** — this skill is read-only verification. Report issues, don't fix them.
-- **Always release the browser lock** — even if verification fails partway through. A leaked lock blocks all future verification sessions.
 - **Respect the running app** — don't restart servers, modify databases, or change app state beyond normal UI interactions.
-- **Keep verification focused** — 3-8 checks is the sweet spot. More than 10 suggests the scope is too broad; suggest splitting into multiple runs.
-- **In auto mode, always confirm the plan** — don't execute without user approval, since diff-inference may miss or misinterpret changes.
+- **Every run writes a pack** — a run without `pack.json` + `report.md` is not a verification run.
+- **Confirm the plan in auto mode** unless `--yes` or parent-invoked.
+- **Always release the browser lock**, even on partial failure.
 
 ## Next steps
 

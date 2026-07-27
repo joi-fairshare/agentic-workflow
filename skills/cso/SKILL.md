@@ -1,8 +1,8 @@
 ---
 name: cso
 description: "OWASP Top 10 + STRIDE threat model. Runs on a plan (pre-impl mode) or a PR diff (post-impl mode). Outputs severity-rated findings with mitigations."
-argument-hint: "[--plan|--diff] [path-or-pr#] [--output <path>]"
-allowed-tools: Bash(gh *), Bash(git *), Agent, Read, Write, Glob, Grep, Skill
+argument-hint: "[--plan|--diff] [path-or-pr#] [--output <path>] [--slim]"
+allowed-tools: Bash(gh *), Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # CSO — Security Threat Modeling
@@ -183,47 +183,40 @@ If either call fails, surface the error:
 
 ## Overview
 
-Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan doc or a PR diff. Each finding gets a severity rating (CRITICAL / HIGH / MEDIUM / LOW) and a concrete mitigation. Output goes to `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`. Fits the pipeline at two points: pre-ship gate, or fanned out from `/autoplan` for early plan-stage security check.
+Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan doc or a PR diff. Each finding gets a severity rating and a concrete mitigation. Plan-mode output lands at the canonical `plans/<feature>/security-review.md`; diff mode writes to `security/`. Fits the pipeline at two points: pre-ship gate, or fanned out from `/autoplan` for early plan-stage security check.
+
+**Severity rubric** (2 lines, scale per `_shared/severity.md`): CRITICAL = exploitable as designed / data loss / cannot ship; HIGH = real vulnerability needing preconditions, or an unmet security requirement.
+MEDIUM = hardening gap worth fixing, non-blocking; LOW = defense-in-depth nit.
 
 ## Inputs
 
 - Mode flag: `--plan <path>` or `--diff <pr-or-branch>`
-- Auto-detect: if no flag, try `gh pr view --json number,state` on current branch — if it succeeds, use `--diff <pr#>`; else `--plan` against `ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1`
-- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/security-review.md` to land the review inside the canonical feature dir; without this flag the default `security/<target-slug>-threat-model.md` path is used.
+- Auto-detect: if no flag, try `gh pr view --json number,state` on current branch — if it succeeds, use `--diff <pr#>`; else `--plan` against the newest plan per `_shared/plan-discovery.md`:
+  ```bash
+  SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/cso/SKILL.md")")/../_shared"
+  source "$SHARED_DIR/repo-slug.sh"
+  PLAN_DIR=$(ls -1dt "$AW_DIR/plans/"*/ 2>/dev/null | head -1)
+  ```
+- `--output <path>` (optional) — explicit output file path overriding the mode default. `/autoplan` passes `--output <feature-dir>/security-review.md`.
+- `--slim` (optional) — compact output: Coverage table, findings, and verdict only
 
 ## Steps
 
-1. Resolve mode and target.
-2. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
-3. Read source material:
-   - Plan mode: read the plan doc.
-   - Diff mode: `gh pr diff <pr#>` OR `git diff main...HEAD` if branch-based.
-4. **OWASP Top 10 pass** — for each, check if applicable to source material; if yes, identify any finding:
-   - A01 Broken Access Control
-   - A02 Cryptographic Failures
-   - A03 Injection (SQL, command, template, etc.)
-   - A04 Insecure Design
-   - A05 Security Misconfiguration
-   - A06 Vulnerable & Outdated Components
-   - A07 Identification & Authentication Failures
-   - A08 Software & Data Integrity Failures
-   - A09 Security Logging & Monitoring Failures
-   - A10 Server-Side Request Forgery (SSRF)
-5. **STRIDE pass** — for each, identify any finding:
-   - **S**poofing
-   - **T**ampering
-   - **R**epudiation
-   - **I**nformation Disclosure
-   - **D**enial of Service
-   - **E**levation of Privilege
-6. For each finding: title, severity (CRITICAL / HIGH / MEDIUM / LOW), description, attack scenario, mitigation.
-7. Resolve target slug:
+1. Resolve mode and target (Inputs block above).
+2. Read source material:
+   - Plan mode: read the sibling docs per the `_shared/plan-layout.md` reader matrix — `plan.md` + `engineering.md` + `product.md` (legacy aliases: `requirements.md` → product.md, `design.md` → engineering.md, only if the canonical file is absent). A TL;DR alone cannot surface A01/A03 — the engineering doc is where access control and injection surfaces live.
+   - Diff mode: `gh pr diff <pr#>` OR `git diff main...HEAD` if branch-based. Also check the newest `plans/*/security-review.md` for a prior plan-stage threat model of this feature and read it if present.
+3. **OWASP Top 10 pass** — evaluate ALL ten categories A01–A10 (enumerated in the Coverage table below); every category must appear in the output (findings, `No findings.`, or `N/A — <reason>`).
+4. **STRIDE pass** — identify findings for each of: **S**poofing · **T**ampering · **R**epudiation · **I**nformation Disclosure · **D**enial of Service · **E**levation of Privilege.
+5. For each finding: title, severity (per the rubric above and `_shared/severity.md`), description, attack scenario, mitigation.
+6. Resolve target slug:
    - Plan mode: `<feature>` (parent dir of plan.md)
    - Diff mode: `pr-<pr#>` or `branch-<branch-name>`
-8. Resolve output path:
+7. Resolve output path:
    - If `--output <path>` was provided, use it verbatim. Ensure the parent dir exists with `mkdir -p "$(dirname <path>)"`.
-   - Otherwise default to `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`. Ensure `~/.agentic-workflow/$REPO_SLUG/security/` exists.
-9. Write to the resolved output path:
+   - Plan mode default: the **canonical** `$AW_DIR/plans/<feature>/security-review.md` — the same path `/autoplan` uses, so diff-mode runs and downstream skills can always find the plan-stage model. Optionally also copy to `$AW_DIR/security/<target-slug>-threat-model.md` if the user asks for it.
+   - Diff mode default: `$AW_DIR/security/<target-slug>-threat-model.md`. Ensure the `security/` dir exists.
+8. Write to the resolved output path:
    ```markdown
    # Threat Model — <target>
 
@@ -234,13 +227,32 @@ Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan do
    ## Summary
    <3–5 sentences. Worst findings, overall posture.>
 
+   ## Coverage
+   <All 10 rows mandatory — an unchecked category must never look clean.>
+   | Category | Status |
+   |---|---|
+   | A01 Broken Access Control | findings: N / No findings. / N/A — <reason> |
+   | A02 Cryptographic Failures | … |
+   | A03 Injection | … |
+   | A04 Insecure Design | … |
+   | A05 Security Misconfiguration | … |
+   | A06 Vulnerable & Outdated Components | … |
+   | A07 Identification & Authentication Failures | … |
+   | A08 Software & Data Integrity Failures | … |
+   | A09 Security Logging & Monitoring Failures | … |
+   | A10 SSRF | … |
+
    ## OWASP Top 10 findings
+   <ALL 10 headings A01–A10 are mandatory. A heading with nothing to report
+   contains the literal `No findings.` or `N/A — <reason>` — never omit it.>
    ### A01 — Broken Access Control
    - **<title>** [CRITICAL]
      - Where: <file:line or plan-line>
      - Attack: <scenario>
      - Mitigation: <concrete fix>
-   <etc. for each Axx with findings; omit if no findings>
+   ### A02 — Cryptographic Failures
+   <findings, `No findings.`, or `N/A — <reason>`>
+   <etc. through A10>
 
    ## STRIDE findings
    ### S — Spoofing
@@ -251,22 +263,17 @@ Runs a two-axis security review (OWASP Top 10 + STRIDE) against either a plan do
    - **Critical findings:** N
    - **High findings:** N
    - **Recommendation:** SHIP | FIX-CRITICAL-FIRST | DO-NOT-SHIP
+     (rule-derived: any CRITICAL ⇒ DO-NOT-SHIP; any HIGH ⇒ FIX-CRITICAL-FIRST; else SHIP)
+   <End the file with the normalized final line per `_shared/severity.md` (CD9
+   mapping: SHIP→PASS, FIX-CRITICAL-FIRST→NEEDS_WORK, DO-NOT-SHIP→BLOCKED):>
+   verdict: <PASS|NEEDS_WORK|BLOCKED>
    ```
 
 ## Outputs
 
-- Default: `~/.agentic-workflow/$REPO_SLUG/security/<target-slug>-threat-model.md`
-- When `--output <path>` is supplied: that exact path (used by `/autoplan` to land the review inside `plans/<feature>/security-review.md`)
-
-## Pre-ship integration
-
-`/shipRelease` does NOT currently auto-invoke `/cso`. To enable a security gate, users can:
-
-1. **Manual gate** (recommended for now): run `/cso --diff` before invoking `/shipRelease`. If CRITICAL findings exist, address them before shipping.
-
-2. **Hook gate** (advanced): add a pre-push hook that calls `claude /cso --diff` and exits non-zero on CRITICAL findings. See `.claude/rules/hooks.md` for hook conventions.
-
-Future work: extend `/shipRelease` to optionally auto-invoke `/cso` with a `--cso-gate` flag that blocks ship on CRITICAL findings.
+- Plan mode default: `~/.agentic-workflow/<repo-slug>/plans/<feature>/security-review.md` (canonical — matches `/autoplan` placement; optional copy to `security/` on request)
+- Diff mode default: `~/.agentic-workflow/<repo-slug>/security/<target-slug>-threat-model.md`
+- When `--output <path>` is supplied: that exact path
 
 ## Next steps
 

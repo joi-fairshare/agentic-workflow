@@ -1,8 +1,8 @@
 ---
 name: autoplan
 description: "Plan meta-orchestrator. Runs productReview + archReview + planDesignReview + planDevexReview + cso(plan) in parallel via subagents and consolidates findings with cross-lens tension surfacing."
-argument-hint: "[plan-path]"
-allowed-tools: Bash(ls *), Agent, Read, Write, Glob, Grep, Skill
+argument-hint: "[plan-path] [--mode mvp|growth|scale|pivot] [--slim]"
+allowed-tools: Bash(ls *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Autoplan — Plan Meta-Orchestrator
@@ -183,42 +183,48 @@ If either call fails, surface the error:
 
 ## Overview
 
-Dispatches five subagents in parallel — product, architecture, design, devex, security — each producing its own review file. After all return, consolidates: dedupes overlapping findings, surfaces cross-lens tensions (e.g., "product wants X but security blocks Y"), recommends top 3 next actions. One command for full plan vetting.
+Dispatches five subagents in parallel — product, architecture, design, devex, security — each writing its own review file directly into the feature dir. After all return, consolidates: dedupes findings into one normalized severity table, surfaces cross-lens tensions (e.g., "product wants X but security blocks Y"), derives an overall verdict, recommends top 3 next actions. One command for full plan vetting.
 
 ## Inputs
 
-- Plan doc path (arg), OR auto-discover with:
+- Plan doc path (arg), OR auto-discover per `_shared/plan-discovery.md`:
   ```bash
-  ls -t ~/.agentic-workflow/$REPO_SLUG/plans/*/plan.md | head -1
+  SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/autoplan/SKILL.md")")/../_shared"
+  source "$SHARED_DIR/repo-slug.sh"
+  PLAN_DIR=$(ls -1dt "$AW_DIR/plans/"*/ 2>/dev/null | head -1)
   ```
+  Resolve files inside the plan dir per `_shared/plan-layout.md`. If nothing is found, stop and ask the user for the plan path.
+- `--mode mvp|growth|scale|pivot` (optional) — forwarded verbatim to `productReview` (its default is `mvp`, which under-reviews growth/scale-stage plans).
+- `--slim` (optional) — forwarded verbatim to every lens: write compact reviews (tables and verdict only, minimal prose).
 
 ## Steps
 
-1. Resolve plan doc path and `$REPO_SLUG` (per `.claude/rules/skills.md` convention). Derive `<feature>` as the parent dir name of the plan.md. Compute the absolute feature dir path: `$HOME/.agentic-workflow/$REPO_SLUG/plans/<feature>/`.
+1. Resolve the plan doc path via the Inputs block above. Derive `<feature>` as the parent dir name of the plan.md. Compute the absolute feature dir path: `$AW_DIR/plans/<feature>/`.
 
-2. **Dispatch 5 subagents in parallel.** Send ONE message containing five `Agent` tool calls (parallel-dispatch pattern from CLAUDE.md). Each subagent receives the absolute plan.md path, the absolute feature-dir path, and explicit instructions:
+2. **Dispatch 5 subagents in parallel** per `_shared/parallel-dispatch.md`: send ONE message containing five `Agent` tool calls. Every agent receives the absolute plan.md path and an explicit `--output` path inside the feature dir — no agent invents its own output location, and nothing needs moving afterward. Append `--slim` to every invocation when given.
 
-   - **`productReview` agent** → "Read `<plan-path>`, then invoke the `productReview` skill against it. The skill writes to a top-level `plans/{timestamp}-product-review-<slug>.md` path under `~/.agentic-workflow/$REPO_SLUG/`. After it completes, report back the **exact absolute path** of the file it wrote. Do not move or rename it."
-   - **`archReview` agent** → "Read `<plan-path>`, then invoke the `archReview` skill against it. The skill writes to a top-level `plans/{timestamp}-arch-review-<slug>.md` path under `~/.agentic-workflow/$REPO_SLUG/`. After it completes, report back the **exact absolute path** of the file it wrote. Do not move or rename it."
-   - **`planDesignReview` agent** → "Invoke the `planDesignReview` skill with `--plan <plan-path> --output <feature-dir>/design-review.md`. It will write directly to that path."
-   - **`planDevexReview` agent** → "Invoke the `planDevexReview` skill with `--plan <plan-path> --output <feature-dir>/devex-review.md`. It will write directly to that path."
-   - **`cso --plan` agent** → "Invoke the `cso` skill with `--plan <plan-path> --output <feature-dir>/security-review.md`. It will write directly to that path."
+   - **`productReview` agent** → "Invoke the `productReview` skill with `--plan <plan-path> --output <feature-dir>/product-review.md`" — append `--mode <mode>` when `--mode` was given.
+   - **`archReview` agent** → "Invoke the `archReview` skill with `--plan <plan-path> --output <feature-dir>/arch-review.md`."
+   - **`planDesignReview` agent** → "Invoke the `planDesignReview` skill with `--plan <plan-path> --output <feature-dir>/design-review.md`."
+   - **`planDevexReview` agent** → "Invoke the `planDevexReview` skill with `--plan <plan-path> --output <feature-dir>/devex-review.md`."
+   - **`cso --plan` agent** → "Invoke the `cso` skill with `--plan <plan-path> --output <feature-dir>/security-review.md`."
 
-3. **Wait for all 5 subagents to complete.** For the `productReview` and `archReview` agents, capture the actual output path each one reports.
-
-4. **Normalize paths into the feature dir.** For productReview/archReview outputs (which were written to top-level `plans/`), MOVE (not copy) them into the feature dir using their canonical names:
+3. **Existence-check before consolidation** (per `_shared/parallel-dispatch.md`). After all 5 agents return, verify each expected output exists and is non-empty:
 
    ```bash
-   FEATURE_DIR="$HOME/.agentic-workflow/$REPO_SLUG/plans/<feature>"
-   mv "<productReview-reported-path>" "$FEATURE_DIR/product-review.md"
-   mv "<archReview-reported-path>" "$FEATURE_DIR/arch-review.md"
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/autoplan/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   FEATURE_DIR="$AW_DIR/plans/<feature>"
+   for f in product-review arch-review design-review devex-review security-review; do
+     [ -s "$FEATURE_DIR/$f.md" ] && echo "OK: $f.md" || echo "MISSING OUTPUT: $f.md"
+   done
    ```
 
-   Using `mv` (not `cp`) avoids leaving duplicate copies at top-level `plans/`. The new skills (`planDesignReview`, `planDevexReview`, `cso`) already wrote directly to the feature dir via the `--output` flag.
+   A missing or empty output is a **named failure**: record it in the Lens status table and in the summary. Never fill in findings from memory for a lens whose file is missing.
 
-5. Read all 5 review files. Some may be partial if a subagent reported BLOCKED — record but continue.
+4. Read every present review file. Fill the Lens status table from the Step 3 check output plus each file's own `verdict:` line — never from memory.
 
-6. **Consolidate:** produce `plans/<feature>/consolidated-review.md`:
+5. **Consolidate:** produce `plans/<feature>/consolidated-review.md`:
    ```markdown
    # Consolidated Plan Review — <feature>
    
@@ -226,22 +232,28 @@ Dispatches five subagents in parallel — product, architecture, design, devex, 
    **Reviewed:** <ISO date>
    **Lenses applied:** product · arch · design · devex · security
    
+   ## Normalized findings
+   <Schema per `_shared/severity.md`. Map each lens's vocabulary via its legacy table
+   (P0→CRITICAL, P1→HIGH, etc.). Dedupe overlapping findings across lenses: keep one
+   row, list every raising lens in the lens column. Empty ⇒ literal `None.`>
+   | id | severity | lens | location | finding | recommended fix |
+   |---|---|---|---|---|---|
+   
    ## Top tensions (cross-lens)
-   <Numbered list. Each item: short title, the lenses in tension, the trade-off, recommended resolution.>
+   <Numbered list. Each item: short title, the lenses in tension, the two finding ids
+   in tension, the trade-off, recommended resolution.
+   Floor: at least 1 tension for every pair of lenses that both produced HIGH-or-worse
+   findings. If a HIGH-producing pair genuinely has no tension, state it explicitly:
+   "No tension between <lens A> and <lens B>: <reason>." An empty section without
+   these statements is invalid.>
    
    ## Per-lens highlights
    ### Product
    - Top wins: <bullets>
    - Top gaps: <bullets>
    - File: `plans/<feature>/product-review.md`
-   ### Architecture
-   <same shape>
-   ### Design
-   <same shape>
-   ### Devex
-   <same shape>
-   ### Security
-   <same shape>
+   ### Architecture / Design / Devex / Security
+   <same shape each>
    
    ## Recommended next actions
    1. <action> — <why> — <which lens raised it>
@@ -251,27 +263,29 @@ Dispatches five subagents in parallel — product, architecture, design, devex, 
    ## Lens status
    | Lens | File | Status |
    |---|---|---|
-   | Product | product-review.md | ✓ / partial / BLOCKED |
+   | Product | product-review.md | ✓ / partial / MISSING — from Step 3 output |
    | Architecture | arch-review.md | … |
    | Design | design-review.md | … |
    | Devex | devex-review.md | … |
    | Security | security-review.md | … |
+   
+   ## Overall verdict
+   <Rule-derived per `_shared/severity.md` (CD9) from the Normalized findings table —
+   never judgment-called: any CRITICAL ⇒ BLOCKED; any HIGH ⇒ NEEDS_WORK; only
+   MEDIUM/LOW or lenses skipped-with-reason ⇒ PASS. A MISSING lens caps the verdict
+   at NEEDS_WORK. One sentence citing the driving finding ids, then end the file with
+   the literal final line:>
+   verdict: <PASS|NEEDS_WORK|BLOCKED>
    ```
 
-7. Print a short summary to stdout (5-line table of statuses + top 3 next actions) so the user sees the result without opening the file.
+6. Print a short summary to stdout (5-line lens status table + overall verdict + top 3 next actions) so the user sees the result without opening the file.
 
 ## Outputs
 
-All under `~/.agentic-workflow/$REPO_SLUG/plans/<feature>/`:
-- `product-review.md`
-- `arch-review.md`
-- `design-review.md`
-- `devex-review.md`
-- `security-review.md`
-- `consolidated-review.md`
+All under `~/.agentic-workflow/<repo-slug>/plans/<feature>/`: `product-review.md` · `arch-review.md` · `design-review.md` · `devex-review.md` · `security-review.md` · `consolidated-review.md`
 
 ## Next steps
 
+- If the overall verdict is **not BLOCKED** — `/specToProvenPR <feature-dir>/plan.md` — hand the vetted plan to staged implementation; the consolidated review and lens files ride along in the feature dir
+- If **BLOCKED** — address the CRITICAL findings (edit the plan or re-run `/officeHours`), then re-run `/autoplan`
 - `/design-shotgun` — if visual exploration is recommended by the design lens
-- `/review` — if the plan was already implemented and the consolidated review surfaced code-level concerns to verify
-- Pick a top-3 next action and run it directly

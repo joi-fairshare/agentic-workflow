@@ -2,7 +2,7 @@
 name: design-evolve-ios
 description: Extract design tokens from a local Swift file or Xcode project directory and merge updates into the existing design-tokens.json, preserving tokens not present in the reference.
 argument-hint: <path/to/Theme.swift or project dir>
-allowed-tools: Read, Write, Edit, Glob, AskUserQuestion
+allowed-tools: Bash(SHARED_DIR=*), Read, Write, Edit, Glob, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 <!-- === PREAMBLE START === -->
@@ -271,88 +271,37 @@ Both `.impeccable.md` and `design-tokens.json` must exist. If either is missing:
 
 ## Step 2: Validate Argument
 
-The argument must be a local filesystem path to either:
-- A Swift file (`.swift` extension)
-- A directory containing Swift files or an Xcode project
-
-If no argument provided, ask via AskUserQuestion:
+The argument must be a local path to a `.swift` file or a directory containing Swift files / an Xcode project. If no argument provided, ask via AskUserQuestion:
 > "Provide the path to a Theme.swift file or Xcode project directory to extract tokens from:"
 
 Verify the path exists using Read or Glob. If not found:
 > "Path not found: `<path>`. Check the path and retry."
 
-## Step 3: Extract Tokens from Reference
+## Step 3: Extract Tokens from Reference (shared procedure)
 
-Use `Glob` and `Read` to find and parse Swift files at the given path:
-- If a single `.swift` file: read it directly
-- If a directory: `Glob("<path>/**/*.swift")` and read any files containing `Color(`, `Font.`, or spacing constants
+Resolve the shared dir from this skill's own symlink:
 
-Extract color, typography, and spacing tokens using the same approach as `/design-analyze-ios` Step 2–4.
-
-## Step 4: Present Diff
-
-Compare extracted tokens against existing `design-tokens.json`:
-
-```
-iOS Design Evolution Diff
-==========================
-
-Source: <path>
-
-NEW tokens (not in current language):
-  color.brand-purple: #7C3AED
-  spacing.2xl: 48px
-
-DIFFERENT values (exist but differ):
-  color.primary: current=#6366F1 → new=#4F46E5
-  spacing.lg: current=24px → new=20px
-
-UNCHANGED (same in both):
-  color.background: #FFFFFF
-  spacing.sm: 8px
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-evolve-ios/SKILL.md")")/../_shared"
+echo "extraction: $SHARED_DIR/ios-token-extraction.md"
 ```
 
-## Step 5: Ask What to Adopt
+Locate the Swift sources at the given path:
+- A single `.swift` file → read it directly
+- A directory → `Glob("<path>/**/*.swift")` and read files containing `Color(`, `Font.`, or spacing constants
 
-For each changed category (new tokens, different values), ask via AskUserQuestion:
-> "Which elements from `<path>` would you like to adopt?
-> - **Adopt**: take the new value as-is
-> - **Adapt**: use as inspiration, modify manually
-> - **Ignore**: keep current value unchanged"
+Read `$SHARED_DIR/ios-token-extraction.md` and follow it exactly — colors (xcassets + Swift patterns), typography, the restricted spacing rule (CGFloat type + spacing/layout name pattern only), and the completeness gate (<3 colors or 0 typography ⇒ report shortfall + AskUserQuestion).
 
-## Step 6: Update Design Files
+## Step 4: Merge (shared algorithm)
 
-Apply choices:
-1. Update `design-tokens.json` with adopted/adapted tokens (preserve all tokens not in reference)
-2. Update `.impeccable.md` if the reference introduces new aesthetic direction
+Read `$SHARED_DIR/token-merge.md` and follow it exactly:
 
-## Step 7: Report
-
-```
-iOS Design Language Updated
-============================
-
-Adopted:  N tokens from <path>
-Adapted:  N tokens (modified)
-Ignored:  N tokens (kept current)
-
-Updated files:
-  design-tokens.json (N changes)
-  .impeccable.md (if updated)
-
-Next steps:
-  • Run /design-implement-ios to regenerate Theme.swift with new values
-  • Run /design-verify-ios to check implementation against updated design
-```
-
-## Rules
-
-- Never overwrite existing tokens without user confirmation
-- Show exact before/after values for all changes
-- Preserve token structure — only update values, don't reorganize
-- Tokens in `design-tokens.json` NOT present in the reference are always preserved
+- **Step A** — category diff table (NEW / DIFFERENT / UNCHANGED) against current `design-tokens.json`, source = `<path>`
+- **Step B** — AskUserQuestion Adopt / Adapt / Ignore per group; **Adapt requires the follow-up AskUserQuestion capturing the literal replacement value**
+- **Step C** — write merged `design-tokens.json` (tokens not present in the reference are always preserved); **unconditionally** append the consultation to `.impeccable.md ## Sources`; set `baseline_stale` in `screens.json` when anything was adopted or adapted
+- **Step D** — report counts and exact before→after values
 
 ## Next steps
 
-- `/design-mockup-ios` — build a SwiftUI mockup with the updated tokens
+- `/design-mockup-ios` — rebuild the SwiftUI mockup with the updated tokens (existing baselines are now marked stale)
 - `/design-refine` — apply the evolved language to existing views

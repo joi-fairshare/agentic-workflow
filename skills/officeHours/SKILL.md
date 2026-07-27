@@ -1,8 +1,8 @@
 ---
 name: officeHours
-description: "Spec-driven brainstorming session with EARS-format requirements. Outputs domain-specific docs (product.md, engineering.md, design-brief.md, TASKS.md) to plans/ directory — each assignable to its owning team."
+description: "Spec-driven brainstorming session with EARS-format requirements. Outputs plan.md (the canonical handoff) plus domain-specific docs (product.md, engineering.md, design-brief.md, TASKS.md) to plans/ directory — each assignable to its owning team."
 argument-hint: "[feature-or-problem-description]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep, Skill, WebFetch
+allowed-tools: Bash(git *), Bash(mkdir *), Bash(date *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, WebFetch, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Office Hours — Spec-Driven Brainstorming
@@ -194,26 +194,16 @@ Wait for their response before continuing.
 
 Read project context to ground the brainstorming session:
 
-- Read `CLAUDE.md` if it exists
-- Read `README.md` if it exists
-- **Read bootstrap-generated planning docs** — check `planning/` for existing product context and read whichever of these exist:
-  - `planning/PRODUCT_ROADMAP.md` — existing product roadmap and priorities
-  - `planning/BUSINESS_PLAN.md` — business model, target users, monetization
-  - `planning/GO_TO_MARKET.md` — target segments, launch strategy
-  - `planning/COMPETITIVE_ANALYSIS.md` — market landscape, positioning
-  - `planning/ARCHITECTURE.md` — current technical architecture
-  - Any other relevant docs in `planning/`
-- Use Glob to find any other relevant planning docs (`docs/*.md`, `*.md` at root)
-- Skim the most relevant files to understand the project's current state
+- Read `CLAUDE.md` and `README.md` if they exist
+- **Read bootstrap-generated planning docs** — whichever of these exist in `planning/`: `PRODUCT_ROADMAP.md`, `BUSINESS_PLAN.md`, `GO_TO_MARKET.md`, `COMPETITIVE_ANALYSIS.md`, `ARCHITECTURE.md`, plus any other relevant docs there
+- Use Glob to find any other relevant planning docs (`docs/*.md`, `*.md` at root) and skim the most relevant files
 
 **If product planning docs exist** (`PRODUCT_ROADMAP.md`, `BUSINESS_PLAN.md`, etc.), use them to pre-populate Q1 and Q2 context. Before asking Q1, summarize what the existing docs say about the topic: *"I found existing planning docs — here's what they say about [topic]: [summary]. Does this give us useful starting context, or is there a gap this feature addresses that the docs don't capture?"*
 
 **External reference docs:** Scan each planning doc for an `## External References` section — the bootstrap skill appends these when `--product-docs` sources were provided. Collect all referenced sources across all docs, deduplicate by URL/path, and surface them before the first question:
 
 > **External reference docs available:**
-> - [SharePoint] [Roadmap Q1 2026](https://...) — Product priorities and timelines *(from PRODUCT_ROADMAP.md)*
-> - [File] `~/docs/strategy.pdf` — Strategic direction *(from BUSINESS_PLAN.md)*
-> - [Confluence] [PRD: Feature X](https://...) — ⚠️ Not accessible at bootstrap time *(from GO_TO_MARKET.md)*
+> - [{Type}] [{title}]({url-or-path}) — {note} *(from {doc}.md)* — mark inaccessible ones ⚠️
 >
 > Should I consult any of these during our session? (yes / no / specify which)
 
@@ -257,7 +247,7 @@ Wait for the user's response.
 
 ## Step 4: EARS Menu
 
-After Q3, present the EARS requirement types as a menu. Pre-select types based on the Q1-Q3 conversation:
+After Q4, present the EARS requirement types as a menu. Pre-select types based on the Q1-Q4 conversation:
 
 - **Ubiquitous** is always pre-selected (every feature has core "shall" requirements)
 - **Event-driven** is pre-selected if Q2 revealed specific triggers
@@ -285,7 +275,7 @@ Wait for the user's response. Parse their selection (numbers, "all", or "drop N"
 
 ## Step 5: EARS Deep Dive
 
-For each selected EARS type, run a focused sub-question. Present draft requirements based on the conversation so far and ask the user to refine them.
+For each selected EARS type, run a focused sub-question. Present draft requirements based on the conversation so far and ask the user to refine them. **After each sub-question, wait for the user's response before moving on.**
 
 ### 5a: Ubiquitous Requirements (always runs)
 
@@ -301,15 +291,11 @@ Present 2-3 draft event-driven requirements based on triggers identified in Q2.
 
 Then ask: **"Are these the right triggers? Are there events I'm missing, or events that should be deferred to v2?"**
 
-Wait for the user's response.
-
 ### 5c: State-driven Requirements (if selected)
 
 Present 2-3 draft state-driven requirements based on conditions identified in Q2.
 
 Then ask: **"Are these the right states to handle? Any states where the system should behave differently that we haven't covered?"**
-
-Wait for the user's response.
 
 ### 5d: Optional Requirements (if selected)
 
@@ -317,15 +303,11 @@ Present 2-3 draft optional requirements based on conditional behavior identified
 
 Then ask: **"Are these the right conditions? Which of these are MVP vs. future?"**
 
-Wait for the user's response.
-
 ### 5e: Unwanted Behavior Requirements (if selected)
 
 Present 2-3 draft unwanted-behavior requirements based on failure modes from Q3.
 
 Then ask: **"Are these the right failure scenarios? What's the worst thing that could happen, and how should the system respond?"**
-
-Wait for the user's response.
 
 ### 5f: Approach (always runs)
 
@@ -333,15 +315,11 @@ Based on the codebase, tech stack, existing infrastructure, and the requirements
 
 Then ask: **"Which of these resonates? Is there something I'm missing about your position?"**
 
-Wait for the user's response.
-
 ### 5g: Success Criteria (always runs)
 
 Present 2-3 derived acceptance criteria from the requirements gathered so far. Distinguish between leading indicators (can measure in days) and lagging indicators (takes weeks).
 
 Then ask: **"How will we know this works? What would you measure, and when would you check?"**
-
-Wait for the user's response.
 
 ## Step 6: Generate Four Domain-Owned Output Files
 
@@ -439,10 +417,7 @@ _How we'll measure whether this solves the problem._
 ---
 
 ## Cross-References
-
-- **Engineering Design:** `engineering.md` (technical approach, architecture decisions)
-- **Design Brief:** `design-brief.md` (key interactions, experience goals)
-- **Tasks:** `TASKS.md` (breakdown, dependencies)
+`engineering.md` (technical approach) · `design-brief.md` (key interactions) · `TASKS.md` (breakdown)
 ```
 
 **Sections for unselected EARS types are omitted entirely** (not shown as empty). The **Traceability table** links each requirement to at least one acceptance criterion.
@@ -499,14 +474,10 @@ _Derived from product requirements but expressed as system-level constraints._
 ## Dependencies & Risks
 
 **External Dependencies:**
-- {Service, library, or API we depend on}
-- {Another external system or team we need}
+- {Service, library, API, or team we depend on — one bullet each}
 
 **Technical Risks:**
-- {Performance risk — what could be slow}
-- {Scaling risk — what breaks at high volume}
-- {Security risk — what attack surface this creates}
-- {Data risk — what could be lost or corrupted}
+- {Performance / scaling / security / data risks — one bullet each}
 
 **Mitigation Strategies:**
 {For each high-priority risk, how we plan to address it}
@@ -521,10 +492,7 @@ _Technical uncertainties that need resolution before or during implementation._
 ---
 
 ## Cross-References
-
-- **Product Requirements:** `product.md` (user-facing behavior, acceptance criteria)
-- **Design Brief:** `design-brief.md` (key interactions to support)
-- **Tasks:** `TASKS.md` (implementation breakdown)
+`product.md` (user-facing behavior) · `design-brief.md` (key interactions) · `TASKS.md` (breakdown)
 ```
 
 ### design-brief.md — Owner: Design
@@ -538,14 +506,10 @@ _Owner: Design Team_
 ## Experience Goals
 
 **Desired Feeling:**
-{What the ideal interaction feels like from Q4 — the emotional qualities to achieve}
-
-Examples: Fast, confident, effortless, informed, delightful, reassuring, playful, professional, etc.
+{Emotional qualities to achieve, from Q4 — e.g. fast, confident, effortless, reassuring}
 
 **Anti-Goals (what this should NOT feel like):**
-{Opposite qualities we want to avoid — derived from failure modes in Q3}
-
-Examples: Confusing, slow, tedious, opaque, overwhelming, etc.
+{Opposite qualities to avoid, from Q3 failure modes — e.g. confusing, slow, tedious, opaque}
 
 ## Key Moments to Design
 
@@ -556,11 +520,7 @@ _Ranked by importance — focus design effort on these interactions first._
 **Current pain point:** {What goes wrong today — from Q3}
 **Success looks like:** {Observable user behavior when this works well}
 
-### 2. {Interaction name}
-**Why it matters:** {User impact}
-**Current pain point:** {What goes wrong today}
-**Success looks like:** {Observable user behavior}
-
+### 2. {Interaction name} — same shape, ranked next
 ...
 
 ## UX Principles for This Feature
@@ -598,10 +558,7 @@ _What must be true for this design to succeed — usability constraints only, no
 Path: `design-tokens.json`, `.impeccable.md`
 
 **Relevant Tokens for This Feature:**
-- Colors: {e.g., "accent color for primary actions"}
-- Typography: {e.g., "monospace for data display"}
-- Spacing: {e.g., "s4 for card padding"}
-- Motion: {e.g., "150ms ease for state transitions"}
+- {Colors / typography / spacing / motion — e.g. "accent for primary actions", "150ms ease transitions"}
 
 **Existing Patterns to Reuse:**
 {If pattern discovery has run, reference discovered containers/providers/components}
@@ -609,10 +566,7 @@ Path: `design-tokens.json`, `.impeccable.md`
 ---
 
 ## Cross-References
-
-- **Product Requirements:** `product.md` (user-facing behavior, acceptance criteria)
-- **Engineering Design:** `engineering.md` (technical approach — coordinate on integration points)
-- **Tasks:** `TASKS.md` (design task breakdown)
+`product.md` (user-facing behavior) · `engineering.md` (integration points) · `TASKS.md` (breakdown)
 ```
 
 ### TASKS.md — Owner: Engineering (cross-team visibility)
@@ -644,20 +598,7 @@ status: todo
 **Reference:** See `engineering.md` [section or ADR] for implementation details
 
 ---
-id: TASK-2
-domain: design
-depends: []
-complexity: medium
-reqs: [REQ-U1, REQ-E1]
-owner: unassigned
-status: todo
----
-## TASK-2: {title}
-
-**What:** {One-sentence description}
-**Why:** {Which requirement(s) this implements}
-**Definition of Done:** {Observable completion criteria — e.g., "mockup approved by product"}
-**Reference:** See `design-brief.md` [section] for experience goals and constraints
+{TASK-2: same frontmatter + body shape — domain: design, Reference: design-brief.md}
 
 ---
 id: TASK-3
@@ -702,10 +643,7 @@ graph TD
 ---
 
 ## Cross-References
-
-- **Product Requirements:** `product.md` (requirements that tasks implement)
-- **Engineering Design:** `engineering.md` (implementation details for engineering tasks)
-- **Design Brief:** `design-brief.md` (experience goals and constraints for design tasks)
+`product.md` (requirements) · `engineering.md` (implementation details) · `design-brief.md` (experience goals)
 ```
 
 Task guidelines:
@@ -717,45 +655,42 @@ Task guidelines:
 - Each task should be atomic — one logical unit of work
 - Task descriptions use "What/Why/Definition of Done/Reference" structure — NO implementation details in task body (those live in domain docs)
 
-## Step 6.5: Dark Factory Spec Validation (if enabled)
+## Step 6.5: Spec Self-Check (always runs)
 
-**Start the pipeline** with the objective of finding criterion failures across the four docs:
-```
-mcp__prism-mcp__session_start_pipeline — project: REPO_SLUG,
-  objective: "Adversarially evaluate these four spec docs for the '{feature}' feature. Check: (1) product.md contains no technical implementation details, (2) engineering.md contains no user personas or business metrics, (3) design-brief.md contains no technical constraints, (4) TASKS.md references domain docs rather than duplicating implementation details, (5) all selected EARS requirement types are present with at least 2 requirements each, (6) every product.md requirement traces to at least one acceptance criterion, (7) TASKS.md dependency graph is topologically sorted with no circular dependencies. For each failing criterion, provide file:line evidence.",
-  working_directory: "<absolute path to plan output dir: ~/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/>",
-  max_iterations: 2
-```
+Before writing, evaluate the four drafted docs against the seven criteria below yourself and print the pass/fail table. This check is always on — no flag, no external service.
 
-Store the returned `pipeline_id`. Poll until complete:
-```
-mcp__prism-mcp__session_check_pipeline_status — pipeline_id: <pipeline_id>
-```
+| # | Criterion | Pass? | Evidence (doc:section on ✗) |
+|---|---|---|---|
+| 1 | product.md contains no technical implementation details | ✓/✗ | … |
+| 2 | engineering.md contains no user personas or business metrics | ✓/✗ | … |
+| 3 | design-brief.md contains no technical constraints | ✓/✗ | … |
+| 4 | TASKS.md references domain docs rather than duplicating implementation details | ✓/✗ | … |
+| 5 | All selected EARS types present with ≥2 requirements each | ✓/✗ | … |
+| 6 | Every product.md requirement traces to ≥1 acceptance criterion | ✓/✗ | … |
+| 7 | TASKS.md dependency graph is topologically sorted with no cycles | ✓/✗ | … |
 
-When complete:
-- `COMPLETED` — docs passed adversarial evaluation. Show: `Spec validated ✓` then proceed to Step 7.
-- `FAILED` — surface the evaluator's findings with the specific criterion failures and `file:line` evidence. Ask the user:
-  > "The adversarial evaluator flagged these issues: {findings}. Fix them before writing? (yes/no)"
-  If yes: regenerate the flagged sections and re-run the pipeline once. If no: proceed to Step 7 anyway and note the issues in the report.
+On any ✗: fix the flagged section and re-run the check (max 2 passes). If a ✗ remains, ask the user:
+> "Self-check flagged: {failing criteria + evidence}. Fix before writing? (yes/no)"
+If no: proceed to Step 7 and note the open issues in the Step 8 report.
+
+**Optional adversarial delegation:** per `_shared/dark-factory.md` (officeHours doc-quality objective template) — gate-checked there; skip silently when not enabled. Delegated findings feed the same table above.
 
 ## Step 7: Write the Output Directory
 
 Generate a URL-safe slug from the title (lowercase, hyphens, no special chars). Create the output directory and write all four files:
 
 ```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/officeHours/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG/plans/${TIMESTAMP}-{slug}"
+mkdir -p "$AW_DIR/plans/${TIMESTAMP}-{slug}"
 ```
 
-Write the four files to:
-- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/product.md`
-- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/engineering.md`
-- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/design-brief.md`
-- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/TASKS.md`
+Write the four files to `$AW_DIR/plans/{timestamp}-{slug}/`: `product.md`, `engineering.md`, `design-brief.md`, `TASKS.md`. These filenames are the canonical manifest in `_shared/plan-layout.md` — downstream lenses resolve them via its reader matrix, so never rename them.
 
 ## Step 7.5: Write the consolidated plan summary
 
-After the four domain docs are written, write `plans/{timestamp}-{slug}/plan.md` — a 1-page consolidated summary that downstream skills (`/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`) auto-discover via `ls -t plans/*/plan.md | head -1`. This file is the canonical handoff — every plan-stage skill reads it first.
+After the four domain docs are written, write `plans/{timestamp}-{slug}/plan.md` — a 1-page consolidated summary that downstream skills (`/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`) auto-discover per `_shared/plan-discovery.md`. This file is the canonical handoff — every plan-stage skill reads it first.
 
 Structure:
 
@@ -780,6 +715,11 @@ Structure:
 ## Open questions
 <bullet list — anything ambiguous>
 
+## Sources consulted
+<Provenance of external grounding: every planning doc, external reference (URL or
+file path), and WebFetch result actually read during Step 2 — one bullet each,
+with what it contributed. If none: `None.`>
+
 ## Domain documents
 - [Product](product.md) — owner: product
 - [Engineering](engineering.md) — owner: engineering
@@ -793,7 +733,18 @@ Structure:
 ```
 
 Write the file to:
-- `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/plan.md`
+- `$AW_DIR/plans/{timestamp}-{slug}/plan.md`
+
+## Step 7.6: Traceability Self-Audit
+
+Re-read the **written** product.md and verify every `REQ-*` ID appears in its Traceability table with at least one AC. Print:
+
+| REQ | AC(s) | Covered? |
+|---|---|---|
+| REQ-U1 | AC-1 | ✓/✗ |
+| … one row per requirement … | | |
+
+**If any REQ is uncovered, the run has NOT succeeded.** Fix product.md (add the missing AC or the missing Traceability row), re-verify, and only then continue. Do not print the Step 8 success report while any REQ lacks an AC.
 
 ## Step 8: Report
 
@@ -802,7 +753,8 @@ Show a summary to the user:
 ```
 Office Hours complete!
 
-Plan written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-{slug}/
+Plan written to: ~/.agentic-workflow/<repo-slug>/plans/{timestamp}-{slug}/
+(filenames are canonical per _shared/plan-layout.md)
 
   plan.md          → Canonical handoff — 1-page consolidated summary for downstream skills
   product.md       → Product Team     — {N} requirements, {N} acceptance criteria, {N} success metrics
@@ -810,11 +762,7 @@ Plan written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-{slug}/
   design-brief.md  → Design Team      — {N} key moments, {N} UX principles, {N} design constraints
   TASKS.md         → All Teams        — {N} tasks ({e.g. "4 engineering, 2 design, 1 product"}) | Est. effort: {e.g. "~18h eng, ~8h design"}
 
-Separation of Concerns:
-  ✓ Zero crossover between domain docs
-  ✓ Each doc is standalone (read only your domain's doc to get started)
-  ✓ Cross-references point to other docs for coordination
-  ✓ TASKS.md references domain docs for implementation details (no duplication)
+Separation of Concerns: ✓ zero crossover — each doc standalone; cross-references only for coordination
 
 Summary:
   Problem: {one-line problem statement from Q1}
@@ -834,17 +782,17 @@ Suggested next steps:
 ### Sub-skill Dispatch
 
 Present naturally at the end of the session:
-> "Plan is ready. Would you like a review? I can run an architectural review, a product review, or both."
+> "Plan is ready. Would you like a review? I can fan out all five lenses in parallel with `/autoplan` (recommended), or run a single architectural or product review."
 
 Based on response:
-- Architectural concerns → Skill tool: `archReview`
-- Product/founder lens → Skill tool: `productReview`
-- Both → invoke in sequence: `archReview` then `productReview`
+- Full review (recommended) → Skill tool: `autoplan`
+- Architectural concerns only → Skill tool: `archReview`
+- Product/founder lens only → Skill tool: `productReview`
 - Neither → done
 
 ## Outputs
 
-All under `~/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-{slug}/`:
+All under `~/.agentic-workflow/<repo-slug>/plans/{timestamp}-{slug}/` (manifest per `_shared/plan-layout.md`):
 
 - `plan.md` — canonical 1-page handoff (auto-discovered by `/autoplan`, `/planDesignReview`, `/planDevexReview`, `/cso --plan`, `/design-shotgun`)
 - `product.md` — Product Team domain doc

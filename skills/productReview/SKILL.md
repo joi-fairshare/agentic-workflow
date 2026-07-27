@@ -1,8 +1,8 @@
 ---
 name: productReview
 description: "Founder/product lens review of plans with 4 scope modes -- mvp, growth, scale, pivot. Challenges assumptions and tightens scope."
-argument-hint: "[--mode mvp|growth|scale|pivot] [plan-file-or-description]"
-allowed-tools: Bash(git *), Agent, Read, Write, Glob, Grep
+argument-hint: "[--mode mvp|growth|scale|pivot] [--plan <path> | plan-file-or-description] [--output <path>] [--slim]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(date *), Bash(mkdir *), Bash(SHARED_DIR=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Product Review — Founder Lens
@@ -183,41 +183,30 @@ If either call fails, surface the error:
 
 ## Step 1: Parse Arguments and Resolve Plan
 
-**Parse the mode flag:**
-- Look for `--mode` followed by one of: `mvp`, `growth`, `scale`, `pivot`
-- Default to `mvp` if no mode is specified
+**Parse flags:**
+- `--mode` followed by one of: `mvp`, `growth`, `scale`, `pivot` — default `mvp`
+- `--plan <path>` — plan file or directory (equivalent to the positional path)
+- `--output <path>` (optional) — explicit output file path. `/autoplan` passes `--output <feature-dir>/product-review.md`.
+- `--slim` (optional) — compact output: verdict, Lens checklist, and Concerns table only
 
 **Resolve the plan to review:**
-1. If a file path or directory path is given as argument, use it directly
+1. If a file or directory path is given (positional or `--plan`), use it directly
 2. If a text description is given, use it directly as the plan content
-3. If neither is provided, auto-discover the most recent plan in `$HOME/.agentic-workflow/$REPO_SLUG/plans/`. Plans may be either a directory (new SDD format with `requirements.md`, `design.md`, `TASKS.md`) or a single `.md` file (legacy format). Check both and prefer whichever is newest:
+3. If neither is provided, auto-discover per `_shared/plan-discovery.md`:
 
 ```bash
-# Find newest plan directory (SDD format) and newest plan file (legacy format)
-NEWEST_DIR=$(ls -dt "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*/ 2>/dev/null | head -1)
-NEWEST_FILE=$(ls -t "$HOME/.agentic-workflow/$REPO_SLUG/plans/"*.md 2>/dev/null | head -1)
-
-# Compare timestamps -- prefer whichever is more recent
-if [ -n "$NEWEST_DIR" ] && [ -n "$NEWEST_FILE" ]; then
-  if [ "$NEWEST_DIR" -nt "$NEWEST_FILE" ]; then
-    PLAN_TARGET="$NEWEST_DIR"
-  else
-    PLAN_TARGET="$NEWEST_FILE"
-  fi
-elif [ -n "$NEWEST_DIR" ]; then
-  PLAN_TARGET="$NEWEST_DIR"
-elif [ -n "$NEWEST_FILE" ]; then
-  PLAN_TARGET="$NEWEST_FILE"
-fi
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/productReview/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+PLAN_DIR=$(ls -1dt "$AW_DIR/plans/"*/ 2>/dev/null | head -1)
 ```
 
-**If `PLAN_TARGET` is a directory** (SDD format), read all three files inside it (`requirements.md`, `design.md`, `TASKS.md`) and review them holistically. The review framework maps naturally:
-- **Scope check** -- `requirements.md` (EARS requirements) + `TASKS.md` (task list)
-- **Persona clarity** -- `requirements.md` (Target User section)
+**If the target is a plan directory**, read `plan.md` + `product.md` + `engineering.md` (+ `TASKS.md` if present) — the reader matrix in `_shared/plan-layout.md`. Legacy aliases per `_shared/plan-layout.md`: fall back to `requirements.md` (→ product.md) and `design.md` (→ engineering.md) only if the canonical file is absent. The review framework maps:
+- **Scope check** -- `product.md` (EARS requirements) + `TASKS.md` (task list)
+- **Persona clarity** -- `product.md` (Problem Statement / persona)
 - **Timeline reality** -- `TASKS.md` (complexity estimates)
-- **Riskiest assumption** -- `design.md` (Architecture Decisions + Open Questions)
+- **Riskiest assumption** -- `engineering.md` (Architecture Decisions + Open Questions)
 
-**If `PLAN_TARGET` is a single file** (legacy format), read and review it as before.
+**If the target is a single file** (legacy format), read and review it as before.
 
 If no plan is found at all, tell the user:
 > "No plan found. Provide a file path, a description, or run `/officeHours` first to generate a design doc."
@@ -232,7 +221,7 @@ Read project context to inform the review:
 
 ## Step 3: Review Through the Mode Lens
 
-Apply the selected mode's review framework to the plan:
+Apply the selected mode's review framework to the plan. **Every lens item of the active mode is a mandatory deliverable:** it must yield at least one concrete finding or an explicit `N/A — <reason>` row in the Step 4 Lens checklist. Silently dropping an item is not allowed.
 
 ### MVP Mode (default)
 
@@ -276,7 +265,12 @@ Focus on strategic direction:
 
 ## Step 4: Generate Review
 
-Produce a structured review document:
+Produce a structured review document. Severity uses the shared scale in `_shared/severity.md` (CRITICAL / HIGH / MEDIUM / LOW).
+
+The verdict is **rule-derived from the Concerns table**, never a vibe:
+- any CRITICAL concern, or ≥2 HIGH concerns ⇒ **RETHINK**
+- any HIGH concern ⇒ at least **ITERATE**
+- otherwise ⇒ **SHIP**
 
 ```markdown
 # Product Review: {plan title}
@@ -285,7 +279,19 @@ _Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
 
 ## Verdict: {SHIP | ITERATE | RETHINK}
 
-{One paragraph justification for the verdict}
+{One paragraph justification citing the concern ids that drove the verdict}
+
+## Lens checklist ({mode})
+
+_One row per lens item of the active mode — all 5 rows mandatory._
+
+| Lens item | Result |
+|---|---|
+| {item 1, e.g. Scope check} | {finding summary, or N/A — <reason>} |
+| {item 2} | … |
+| {item 3} | … |
+| {item 4} | … |
+| {item 5} | … |
 
 ## Strengths
 1. {What's strong about this plan}
@@ -294,10 +300,12 @@ _Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
 
 ## Concerns
 
+_≥3 rows, or an explicit line "Fewer than 3 concerns because <reason>."_
+
 | # | Severity | Concern | Recommendation |
 |---|----------|---------|----------------|
-| 1 | {high/medium/low} | {concern} | {what to do} |
-| 2 | {high/medium/low} | {concern} | {what to do} |
+| 1 | {CRITICAL/HIGH/MEDIUM/LOW} | {concern} | {what to do} |
+| 2 | {CRITICAL/HIGH/MEDIUM/LOW} | {concern} | {what to do} |
 | ... | ... | ... | ... |
 
 ## Scope Suggestions
@@ -320,15 +328,23 @@ _Reviewed by `/productReview` on {ISO date} | Mode: {mode}_
 {Single concrete next step -- be specific}
 ```
 
+End the file with the normalized final line per `_shared/severity.md` (CD9 mapping: SHIP→PASS, ITERATE→NEEDS_WORK, RETHINK→BLOCKED):
+
+```
+verdict: <PASS|NEEDS_WORK|BLOCKED>
+```
+
 ## Step 5: Write the Review
 
-Generate a URL-safe slug from the plan title (lowercase, hyphens, no special chars). Write the file:
+If `--output <path>` was provided, write to that exact path (ensure the parent dir exists with `mkdir -p`). Otherwise generate a URL-safe slug from the plan title (lowercase, hyphens, no special chars) and write to the default path:
 
 ```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/productReview/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to: `$HOME/.agentic-workflow/$REPO_SLUG/plans/{timestamp}-product-review-{slug}.md`
+Default: `$AW_DIR/plans/{timestamp}-product-review-{slug}.md`
 
 ## Step 6: Report
 
@@ -337,9 +353,9 @@ Show a summary to the user:
 ```
 Product Review complete! ({mode} mode)
 
-Verdict: {SHIP | ITERATE | RETHINK}
+Verdict: {SHIP | ITERATE | RETHINK} (normalized: {PASS | NEEDS_WORK | BLOCKED})
 
-Review written to: ~/.agentic-workflow/{repo-slug}/plans/{timestamp}-product-review-{slug}.md
+Review written to: {resolved output path}
 
 Top concerns:
   1. [{severity}] {concern summary}

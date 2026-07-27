@@ -1,7 +1,8 @@
 ---
 name: design-evolve
 description: Detect web vs iOS automatically and delegate to /design-evolve-web (Dembrandt on a new URL) or /design-evolve-ios (extract from local Swift reference). Merges updates into design-tokens.json.
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+argument-hint: "[<url> (web) | <path/to/Theme.swift or dir> (ios)]"
+allowed-tools: Bash(git *), Bash(ls *), Bash(SHARED_DIR=*), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -268,32 +269,32 @@ Detects whether this is a web or iOS project and delegates to the appropriate de
 > - Web: `/design-evolve-web <url>`
 > - iOS: `/design-evolve-ios <path/to/Theme.swift>`
 
-## Platform Detection
+## Step 1: Argument-Shape Routing
 
-Use the `Glob` tool to check for iOS indicators:
+The argument shape usually decides the platform — validate it before any project detection:
 
+- Argument starts with `http://` or `https://` → **web**. Dispatch to `design-evolve-web`.
+- Argument is an existing filesystem path (a `.swift` file, or a directory containing Swift files / an Xcode project) — verify with Glob/Read → **iOS**. Dispatch to `design-evolve-ios`.
+- No argument, or the argument matches neither shape (e.g. path does not exist) → fall through to Step 2. Ask only when detection is ambiguous — never silently guess a platform from a malformed argument.
+
+## Step 2: Platform Detection (only when the argument shape didn't decide)
+
+Resolve the shared dir from this skill's own symlink, then follow the shared detection contract:
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-evolve/SKILL.md")")/../_shared"
+echo "contract: $SHARED_DIR/platform-detection.md"
 ```
-Glob("Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
-```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+Read `$SHARED_DIR/platform-detection.md` and apply it exactly — the recursive iOS globs (`Glob("**/Package.swift")` etc.) with excludes, the web `package.json` check, and the resolution table (both/neither present ⇒ AskUserQuestion). Sub-skills for this dispatcher: iOS → `design-evolve-ios`, web → `design-evolve-web`.
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+## Dispatch Contract
 
-## Platform Resolution
-
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("design-evolve-ios")` with original arguments |
-| Web only | Invoke `Skill("design-evolve-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I evolve the design for? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform? (web / ios)" → invoke chosen |
-
-All user-supplied arguments are passed through to the sub-skill unchanged.
+1. Echo before dispatching: `dispatch: <sub-skill> args=<args>`
+2. Dispatch literally, passing all user-supplied arguments through unchanged:
+   - Web: `Skill(skill="design-evolve-web", args="<original args verbatim>")`
+   - iOS: `Skill(skill="design-evolve-ios", args="<original args verbatim>")`
+3. `design-evolve-web` requires a URL — if web was chosen and no URL is present, **stop** and ask. `design-evolve-ios` prompts for a path itself when the argument is absent.
 
 ## Next steps
 

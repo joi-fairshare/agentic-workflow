@@ -1,8 +1,8 @@
 ---
 name: bugReport
 description: Report-only variant of bugHunt — produces a structured bug report with health scores but does NOT fix the bugs. Use for triage and prioritization.
-argument-hint: "[area-or-module-to-audit]"
-allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Agent, Read, Glob, Grep, Write
+argument-hint: "[--runtime] [--depth N] [area-or-module-to-audit]"
+allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo *), Bash(go *), Bash(bundle *), Bash(coverage *), Bash(SHARED_DIR=*), Bash(source *), Bash(cat *), Agent, Read, Glob, Grep, Write, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Bug Report
@@ -183,29 +183,25 @@ If either call fails, surface the error:
 
 **IMPORTANT: This skill is read-only. Do NOT modify any source code, test files, or configuration. Only write the output report.**
 
+> **Read-only exception:** running the detected test suite (`$TEST_CMD`) may itself write build artifacts, coverage output, or test snapshots as side effects. That is tolerated — but never edit source, tests, or config yourself.
+
 ## Step 1: Parse Scope
 
-Parse the area or module from the argument.
+Parse the argument:
 
-- **If an argument is provided**, scope the audit to that directory, package, or module.
-- **If no argument is provided**, audit the entire project.
+- **Area/module** — scope the audit to that directory, package, or module. No argument ⇒ audit the entire project.
+- **`--runtime`** — additionally verify behavior in the running app (Step 3.5). Without it, behavior claims stay static-only.
+- **`--depth N`** — dispatch-chain depth guard (default 0). At N ≥ 2, do not suggest or dispatch further skills — report only.
 
 ## Step 2: Scan
 
-Run all available quality tools and collect their output. Do not stop on failure — collect everything.
+Detect the project's toolchain per `skills/_shared/test-runner-detection.md` (sets `TEST_CMD` / `COVERAGE_CMD`), then run each **detected** tool and collect output. Do not stop on failure — collect everything.
 
-```bash
-# Typecheck
-npm run typecheck 2>&1 || npx tsc --noEmit 2>&1 || echo "SKIP: no typecheck configured"
+- **Tests:** run `$TEST_CMD` (scoped where supported, e.g. `npm test -- <path>`, `pytest <path>`). No runner detected ⇒ record test dimension as **"n/a — excluded from scoring"**.
+- **Typecheck:** the stack's checker if configured (JS: `npm run typecheck` / `npx tsc --noEmit`; mypy/`cargo check`/`go vet` equivalents). Not configured ⇒ **"n/a — excluded from scoring"**.
+- **Lint:** the stack's linter if configured (JS: `npm run lint` / `npx eslint <path>`; ruff/clippy/golangci-lint equivalents). Not configured ⇒ **"n/a — excluded from scoring"**.
 
-# Lint
-npm run lint 2>&1 || npx eslint . 2>&1 || echo "SKIP: no linter configured"
-
-# Tests
-npm test 2>&1 || echo "SKIP: no tests configured"
-```
-
-If the scope is a specific module/directory, pass the path to the tools where supported (e.g., `npx eslint <path>`, `npm test -- <path>`).
+**Never score a missing toolchain as a failure** — a healthy non-JS repo must not score catastrophically because npm commands don't apply (see the scoring rule in the shared file).
 
 Capture and store:
 - **Test output:** pass count, fail count, skip count, coverage percentage (if reported)
@@ -227,33 +223,48 @@ For each failure, warning, or error found in Step 2:
 | `test-gap` | Missing test coverage for an important code path |
 | `false-positive` | Tool is wrong — the code is correct |
 
+Rate each `bug` with the shared severity scale from `skills/_shared/severity.md`: **CRITICAL / HIGH / MEDIUM / LOW** (same vocabulary as `/review` and `/cso`).
+
+Static tool output alone cannot confirm runtime behavior — without `--runtime`, mark suspected behavior defects as `bug (suspected — static evidence only)`.
+
+## Step 3.5: Runtime Verification (only with `--runtime`)
+
+Observe actual behavior instead of inferring it from static output:
+
+> `Skill(skill="verify-app", args="--yes")`
+
+Fold the resulting evidence pack (`skills/_shared/evidence-pack.md`) into the audit: each FAIL check/journey becomes a Bugs-table row with source `runtime`, and the pack path is cited in the report. Skip this step entirely without the flag.
+
 ## Step 4: Score
 
-Compute health scores on a 0-100 scale.
+Compute health scores on a 0-100 scale — **for detected dimensions only**.
 
-### Test Health (weight: 40%)
+**Unknown-dimension rule:** a dimension whose toolchain is not configured ("n/a" from Step 2) reports `—` in the dashboard — never a substitute number like 50 — and its weight is redistributed proportionally across the detected dimensions. Example: no typecheck configured ⇒ weights renormalize to test 40/70 ≈ 57%, lint 30/70 ≈ 43%.
+
+### Test Health (base weight: 40%)
 ```
 score = (pass_count / total_count) * 100
 ```
 If coverage data is available, blend it: `score = (pass_rate * 0.6) + (coverage_pct * 0.4)`.
-If no tests exist, score = 0.
+Runner detected but zero tests exist ⇒ score = 0. No runner detected ⇒ `—` (n/a, excluded).
 
-### Type Health (weight: 30%)
+### Type Health (base weight: 30%)
 ```
 score = max(0, 100 - (error_count * 5))
 ```
-Each typecheck error deducts 5 points. Floor at 0. If no typecheck is configured, score = 50 (unknown).
+Each typecheck error deducts 5 points. Floor at 0. Not configured ⇒ `—` (n/a, excluded).
 
-### Lint Health (weight: 30%)
+### Lint Health (base weight: 30%)
 ```
 score = max(0, 100 - (error_count * 3) - (warning_count * 1))
 ```
-Each error deducts 3 points, each warning deducts 1. Floor at 0. If no linter is configured, score = 50 (unknown).
+Each error deducts 3 points, each warning deducts 1. Floor at 0. Not configured ⇒ `—` (n/a, excluded).
 
 ### Overall Health
 ```
-overall = (test_health * 0.4) + (type_health * 0.3) + (lint_health * 0.3)
+overall = Σ(score_i × weight_i) / Σ(weight_i)   over detected dimensions only
 ```
+If no dimension is detectable, overall is `—` with the note "no toolchain detected — nothing to score".
 
 ## Step 5: Write Report
 
@@ -271,20 +282,21 @@ Report format:
 
 ## Health Score Dashboard
 
-| Metric | Score | Details |
-|--------|-------|---------|
-| Test Health | {score}/100 | {pass}/{total} tests passing, {coverage}% coverage |
-| Type Health | {score}/100 | {n} typecheck errors |
-| Lint Health | {score}/100 | {n} errors, {n} warnings |
-| **Overall** | **{score}/100** | |
+| Metric | Score | Weight | Details |
+|--------|-------|--------|---------|
+| Test Health | {score}/100 or — | {renormalized %} | {pass}/{total} tests passing, {coverage}% coverage — or "n/a — excluded from scoring" |
+| Type Health | {score}/100 or — | {renormalized %} | {n} typecheck errors — or "n/a — excluded from scoring" |
+| Lint Health | {score}/100 or — | {renormalized %} | {n} errors, {n} warnings — or "n/a — excluded from scoring" |
+| **Overall** | **{score}/100 or —** | | weights renormalized over detected dimensions |
 
 ## Bugs
 
-| # | Severity | File | Line | Description |
-|---|----------|------|------|-------------|
-| 1 | {critical/high/medium/low} | `{file}` | {line} | {description} |
+| # | Severity | Source | File | Line | Description |
+|---|----------|--------|------|------|-------------|
+| 1 | {CRITICAL/HIGH/MEDIUM/LOW} | {static \| runtime \| suspected} | `{file}` | {line} | {description} |
 
 {If no bugs found: "No bugs detected."}
+{If --runtime ran: "Runtime evidence pack: {path to verification/<run-id>/pack.json} — verdict {PASS|WARN|FAIL}"}
 
 ## Tech Debt
 
@@ -304,7 +316,13 @@ Report format:
 
 ## False Positives
 
-{Count} items classified as false positives (suppressed from bug list).
+Every suppressed item is listed — suppression is never invisible:
+
+| # | Tool | File | Line | Reported issue | Justification for suppression |
+|---|------|------|------|----------------|-------------------------------|
+| 1 | {tool} | `{file}` | {line} | {what the tool claimed} | {why the code is actually correct} |
+
+{If none: "No false positives."}
 
 ## Recommended Fix Priority
 
@@ -322,18 +340,18 @@ Based on severity and impact, address issues in this order:
 Bug report complete.
 
 Scope: {module or "full project"}
-Overall health: {score}/100
-  Test:  {score}/100
-  Type:  {score}/100
-  Lint:  {score}/100
+Overall health: {score}/100 (— dimensions excluded from scoring)
+  Test:  {score}/100 or —
+  Type:  {score}/100 or —
+  Lint:  {score}/100 or —
 
-Found: {n} bugs, {n} tech debt items, {n} test gaps
-Report: ~/.agentic-workflow/{REPO_SLUG}/qa/{filename}
+Found: {n} bugs, {n} tech debt items, {n} test gaps, {n} false positives (itemized in report)
+Report: ~/.agentic-workflow/<repo-slug>/qa/{filename}
 
-Run /bugHunt to fix individual bugs.
+Fix a specific bug with full context: /bugHunt --from-report <report-path> --item N
 ```
 
 ## Next steps
 
-- `/bugHunt` — auto-fix the reported issues with verification
+- `/bugHunt --from-report <report-path> --item N` — auto-fix a numbered bug from this report with verification
 - `/rootCause` — deep-dive a specific bug from the report

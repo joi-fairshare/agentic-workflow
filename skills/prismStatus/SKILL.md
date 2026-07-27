@@ -2,7 +2,7 @@
 name: prismStatus
 description: "Health check for prism-mcp. Reports dashboard reachability, MCP server connection, knowledge base population, and version."
 argument-hint: "[--port <port>]"
-allowed-tools: Bash(curl *), Bash(claude mcp *), Skill, mcp__prism-mcp__session_health_check, mcp__prism-mcp__session_load_context
+allowed-tools: Bash(curl *), Bash(claude mcp *), Bash(PORT=*), Bash(SHARED_DIR=*), Bash(source *), Bash(jq *), mcp__prism-mcp__session_health_check, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Prism Status — Verify Mind Palace Health
@@ -181,6 +181,8 @@ If either call fails, surface the error:
 
 <!-- === PREAMBLE END === -->
 
+> **Preamble exemption:** If the preamble's prism-mcp calls failed, continue anyway — diagnosing that failure is this skill's purpose; Session Close ledger/handoff are exempt for this skill.
+
 ## Overview
 
 Probes the prism-mcp dashboard HTTP endpoint, the MCP server connection, and the per-repo knowledge base. Returns a single status report; writes no file. Useful at session start (matches the `prism-context.sh` SessionStart hook) and on demand.
@@ -191,30 +193,38 @@ Probes the prism-mcp dashboard HTTP endpoint, the MCP server connection, and the
 
 ## Steps
 
-1. Resolve port:
-   - If `--port` arg provided, use it.
-   - Else read `$PRISM_DASHBOARD_PORT`.
-   - Else default `7180`.
+Assign `PORT` explicitly at the top of **every** bash block (shell state does not persist between blocks): `--port` arg if provided, else `$PRISM_DASHBOARD_PORT`, else `7180`.
 
-2. **Dashboard reachability:**
+1. **Dashboard reachability:**
    ```bash
+   PORT="${PRISM_DASHBOARD_PORT:-7180}"   # replace with the --port value if one was given
    curl -fsS --max-time 3 "http://localhost:$PORT/health"
    ```
    Capture exit code and body. Report ✓ on 0, ✗ on non-zero.
 
-3. **MCP tool surface:**
+2. **MCP tool surface:**
    Call MCP tool `mcp__prism-mcp__session_health_check`. Report ✓ on success, ✗ + error on failure.
 
-4. **Knowledge base population for current repo:**
-   Resolve `REPO_SLUG` per the convention in `.claude/rules/skills.md`. Call MCP tool `mcp__prism-mcp__session_load_context` with `project=<repo-slug>` and `level="minimal"`. Report ✓ "KB has N entries" or ✗ "KB empty".
-
-5. **Version:**
+3. **Knowledge base population for current repo:**
+   Resolve the repo slug via the shared helper:
    ```bash
-   claude mcp get prism-mcp 2>&1 | grep -iE "version|prism-mcp-server"
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/prismStatus/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   echo "repo-slug: $REPO_SLUG"
    ```
-   Parse and report version (e.g., "5.1.0"). On failure, report unknown.
+   Call MCP tool `mcp__prism-mcp__session_load_context` with `project=$REPO_SLUG` and `level="minimal"`. Report ✓ "KB has N entries" or ✗ "KB empty".
 
-6. Summarize with a 4-line block, one per check, each prefixed `✓ ` or `✗ `. If any check failed, add a fix suggestion line at the bottom (re-run setup.sh, check env, etc.).
+4. **Version** — structured sources, in order of preference:
+   1. The `version` field of the `session_health_check` response from check 2, if present.
+   2. The dashboard `/health` JSON body:
+      ```bash
+      PORT="${PRISM_DASHBOARD_PORT:-7180}"   # replace with the --port value if one was given
+      curl -fsS --max-time 3 "http://localhost:$PORT/health" | jq -r '.version // "unknown"'
+      ```
+   3. Fallback: `claude mcp get prism-mcp` output, taking the first strict semver match (`[0-9]+.[0-9]+.[0-9]+`).
+   Report the version (e.g., "5.1.0"); "unknown" if all three fail.
+
+5. Summarize with a 4-line block — one line per check (dashboard, MCP surface, KB, version) — each prefixed `✓ ` or `✗ `. If any check failed, add a fix suggestion line at the bottom (re-run setup.sh, check env, etc.).
 
 ## Outputs
 

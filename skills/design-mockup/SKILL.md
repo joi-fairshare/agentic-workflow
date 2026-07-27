@@ -1,7 +1,8 @@
 ---
 name: design-mockup
 description: Detect web vs iOS automatically and delegate to /design-mockup-web (HTML mockup + Playwright baseline) or /design-mockup-ios (SwiftUI preview + simulator baseline).
-allowed-tools: Bash(git *), Bash(ls *), Glob, Read, AskUserQuestion, Skill
+argument-hint: <screen-name>
+allowed-tools: Bash(git *), Bash(ls *), Bash(mkdir *), Bash(SHARED_DIR=*), Glob, Read, AskUserQuestion, Skill, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -264,34 +265,28 @@ Design pipeline:
 
 Detects whether this is a web or iOS project and delegates to the appropriate mockup skill. Contains no implementation logic.
 
-> **Tip:** If you already know the platform, invoke directly: `/design-mockup-web <screen-name>` or `/design-mockup-ios`
+> **Tip:** If you already know the platform, invoke directly: `/design-mockup-web <screen-name>` or `/design-mockup-ios <screen-name>`
 
-## Platform Detection
+## Step 1: Platform Detection
 
-Use the `Glob` tool to check for iOS indicators:
+Resolve the shared dir from **this skill's own** symlink and follow the canonical detection + resolution rules:
 
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/design-mockup/SKILL.md")")/../_shared"
+echo "$SHARED_DIR/platform-detection.md"
 ```
-Glob("**/Package.swift")
-Glob("**/*.xcodeproj")
-Glob("**/*.xcworkspace")
-```
 
-Use the `Read` tool to check for web indicators:
-- Read `package.json` — check if `dependencies` or `devDependencies` includes any of: `next`, `react`, `vite`, `vue`, `@angular/core`
+`Read` the echoed `platform-detection.md` and apply its Detection globs (with excludes) and its Platform Resolution table, phrasing the both/neither `AskUserQuestion` as "Which platform should I create a mockup for? (web / ios)".
 
-**iOS detected** = any Glob above returns a match.
-**Web detected** = `package.json` exists AND its deps include one of the above frameworks.
+## Step 2: Dispatch
 
-## Platform Resolution
+Both sub-skills take `<screen-name>` — design-mockup-ios now **requires** it too (baselines are per-screen: `mockup-ios-<screen>.png`). Per the dispatch contract in `platform-detection.md`:
 
-| Detected | Action |
-|----------|--------|
-| iOS only | Invoke `Skill("design-mockup-ios")` with original arguments |
-| Web only | Invoke `Skill("design-mockup-web")` with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I create a mockup for? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I create a mockup for? (web / ios)" → invoke chosen |
-
-All user-supplied arguments (e.g., `<screen-name>`) are passed through to the sub-skill unchanged.
+1. If `<screen-name>` is empty, **stop** and ask for it — never dispatch with a blank required argument.
+2. Echo the dispatch line: `dispatch: design-mockup-web args=<args>` (or `design-mockup-ios`).
+3. Dispatch literally, passing all user-supplied arguments through unchanged:
+   - Web: `Skill(skill="design-mockup-web", args="<original args verbatim>")`
+   - iOS: `Skill(skill="design-mockup-ios", args="<original args verbatim>")`
 
 ## Next steps
 

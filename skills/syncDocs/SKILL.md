@@ -1,8 +1,8 @@
 ---
 name: syncDocs
 description: Post-ship documentation updater — refreshes README, ARCHITECTURE.md, CHANGELOG, and CLAUDE.md to reflect recent changes.
-argument-hint: "[--scope readme,architecture,changelog,claude]"
-allowed-tools: Bash(git *), Agent, Read, Write, Edit, Glob, Grep
+argument-hint: "[release-id] [--scope readme,architecture,changelog,claude] [--since <ref>] [--commit]"
+allowed-tools: Bash(git *), Bash(gh *), Bash(ls *), Bash(grep *), Bash(mkdir *), Bash(SHARED_DIR=*), Bash(source *), Agent, Read, Write, Edit, Glob, Grep, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 <!-- MEMORY: SKIP -->
 
@@ -182,14 +182,17 @@ If either call fails, surface the error:
 
 <!-- === PREAMBLE END === -->
 
-## Step 1: Parse Scope
+## Step 1: Parse Arguments
 
-Parse the `--scope` argument. Accepted values (comma-separated, case-insensitive):
+- **Release-id** (positional, optional) — canonical CD7 form `<ISO-date>-<short-sha>`. Passed by `/canary` on HEALTHY. The report in Step 5 is written **inside** `releases/<release-id>/` so the whole release stays in one folder.
+- `--since <ref>` (optional) — the git ref the change range starts from. `/canary` passes the release's merge SHA so the docs sync covers exactly the shipped release, not an unrelated tag range.
+- `--commit` (optional) — commit doc changes directly to the current branch. **Default (flag absent): branch + PR** (this toolkit ships a block-push-main hook; committing to main post-merge would be blocked anyway).
+- `--scope` — accepted values (comma-separated, case-insensitive):
 
 | Value | Target file |
 |-------|-------------|
 | `readme` | `README.md` |
-| `architecture` | `planning/ARCHITECTURE.md` |
+| `architecture` | first match of `Glob("{,planning/,docs/}ARCHITECTURE.md")` |
 | `changelog` | `CHANGELOG.md` |
 | `claude` | `CLAUDE.md` |
 
@@ -202,17 +205,13 @@ If a target file does not exist in the repo, skip it and note it in the report.
 Determine the range of recent changes:
 
 ```bash
-# Find the last tag, or fall back to last 20 commits
-LAST_REF=$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")
+# --since <ref> wins; else last tag; else last 20 commits
+LAST_REF="{--since ref if provided}"
+[ -n "$LAST_REF" ] || LAST_REF=$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")
 
-# Commit summaries
-git log --oneline "$LAST_REF"..HEAD
-
-# File-level change stats
-git diff "$LAST_REF"..HEAD --stat
-
-# Detailed diff for context
-git diff "$LAST_REF"..HEAD
+git log --oneline "$LAST_REF"..HEAD    # commit summaries
+git diff "$LAST_REF"..HEAD --stat      # file-level change stats
+git diff "$LAST_REF"..HEAD             # detailed diff for context
 ```
 
 Store this change context — all agents in Step 3 will receive it.
@@ -226,6 +225,8 @@ Each agent receives:
 - The commit log and diff stats from Step 2
 - Specific instructions per document type (below)
 
+**Common rules (append to every agent prompt):** make targeted edits with the Edit tool — do NOT rewrite the entire file; if nothing needs updating, return `NO_CHANGES` (subject to the Step 3.5 post-check).
+
 ### README Agent
 
 > You are updating `README.md` to reflect recent code changes. You have the current file contents and a list of recent commits with their diffs.
@@ -235,19 +236,15 @@ Each agent receives:
 > - Update feature lists, badges, and setup instructions ONLY if the recent changes affect them.
 > - Add new sections only if a major new feature was introduced.
 > - Remove references to features/files that no longer exist.
-> - Do NOT rewrite the entire file. Make targeted edits using the Edit tool.
-> - If nothing needs updating, return "NO_CHANGES".
 
 ### ARCHITECTURE Agent
 
-> You are updating `planning/ARCHITECTURE.md` to reflect recent code changes. You have the current file contents and a list of recent commits with their diffs.
+> You are updating the resolved ARCHITECTURE.md (first match of `{,planning/,docs/}ARCHITECTURE.md`) to reflect recent code changes. You have the current file contents and a list of recent commits with their diffs.
 >
 > Rules:
 > - Update the directory tree if files/directories were added, removed, or moved.
 > - Update component descriptions if their responsibilities changed.
 > - Update key rules or patterns if new ones were introduced or old ones changed.
-> - Do NOT rewrite the entire file. Make targeted edits using the Edit tool.
-> - If nothing needs updating, return "NO_CHANGES".
 
 ### CHANGELOG Agent
 
@@ -260,7 +257,7 @@ Each agent receives:
 > - Derive entries from commit messages. Group related commits.
 > - Do NOT modify existing entries.
 > - If the changelog does not exist, create it with a standard header and the new entry.
-> - If nothing meaningful needs updating (e.g., only CI/chore commits), return "NO_CHANGES".
+> - `NO_CHANGES` is only valid when the range contains nothing meaningful (e.g., only CI/chore commits).
 
 ### CLAUDE.md Agent
 
@@ -271,45 +268,63 @@ Each agent receives:
 > - Update the commands section if new scripts were added or existing ones changed.
 > - Update patterns section if new patterns were introduced.
 > - Update tech stack if dependencies changed significantly.
-> - Do NOT rewrite the entire file. Make targeted edits using the Edit tool.
-> - If nothing needs updating, return "NO_CHANGES".
+
+## Step 3.5: NO_CHANGES Post-Check
+
+An agent may not return `NO_CHANGES` unconditionally — verify it. From the Step 2 diff stats, collect **new paths and new scripts** (added files/directories; new entries in `package.json` `scripts`, `Makefile` targets, etc.). For each doc whose agent returned `NO_CHANGES`, grep the target doc for those additions **where that doc type should mention them** (README: commands/features; ARCHITECTURE: directory tree; CLAUDE.md: commands/structure; CHANGELOG: any non-chore commit). If a relevant addition is absent, the `NO_CHANGES` claim is a violation: **re-dispatch that agent once**, listing the specific missed paths/scripts. If it still returns `NO_CHANGES`, record the discrepancy in the report instead of silently accepting it.
 
 ## Step 4: Commit
 
 After all agents complete, check if any files were actually modified:
 
 ```bash
-git status --porcelain README.md planning/ARCHITECTURE.md CHANGELOG.md CLAUDE.md
+git status --porcelain README.md CHANGELOG.md CLAUDE.md {resolved ARCHITECTURE path}
 ```
 
-If any docs were changed:
+If no docs were changed, note "No updates needed" and skip to Step 5.
+
+If docs were changed — **default path (no `--commit`)**: create a branch and open a PR (post-merge you are on the default branch, and this toolkit's block-push-main hook would reject a direct push anyway):
 
 ```bash
-git add README.md planning/ARCHITECTURE.md CHANGELOG.md CLAUDE.md 2>/dev/null
+git checkout -b docs-sync-{release-id or timestamp}
+git add README.md CHANGELOG.md CLAUDE.md {resolved ARCHITECTURE path} 2>/dev/null
 git commit -m "docs: sync documentation with recent changes"
+git push origin docs-sync-{release-id or timestamp}
+gh pr create --title "docs: sync documentation" --body "Automated docs sync via /syncDocs for {release-id or ref range}."
 ```
 
-Only add files that exist and were modified. Capture the commit SHA.
-
-If no docs were changed, note "No updates needed" and skip the commit.
+**With `--commit`**: add + commit directly on the current branch (no push, no PR). Only add files that exist and were modified. Capture the commit SHA (or PR URL).
 
 ## Step 5: Report
 
-Write the sync report to `~/.agentic-workflow/$REPO_SLUG/releases/{timestamp}-docs-sync.md` where `{timestamp}` is `YYYYMMDD-HHmmss` format:
+Resolve the release dir and write the report **inside it** (one-folder-per-release invariant, CD7):
+
+```bash
+SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/syncDocs/SKILL.md")")/../_shared"
+source "$SHARED_DIR/repo-slug.sh"
+RELEASE_DIR="$AW_DIR/releases/{release-id}"  # arg wins; else newest releases/<ISO-date>-<short-sha>/ dir; else mint from tip SHA
+[ -n "{release-id}" ] || RELEASE_DIR=$(ls -1dt "$AW_DIR/releases/"*/ 2>/dev/null | head -1)
+[ -n "$RELEASE_DIR" ] || RELEASE_DIR="$AW_DIR/releases/$(date +%F)-$(git rev-parse --short HEAD)"
+mkdir -p "$RELEASE_DIR"
+```
+
+Write `$RELEASE_DIR/docs-sync.md`:
 
 ```markdown
 # Documentation Sync
 
 - **Date:** {ISO timestamp}
+- **Release:** {release-id or "n/a (standalone)"}
 - **Ref range:** {LAST_REF}..HEAD
-- **Commit:** {SHA or "no commit needed"}
+- **Commit:** {SHA / PR URL / "no commit needed"}
+- **NO_CHANGES post-check:** {clean / re-dispatched agents + outcome / recorded discrepancies}
 
 ## Documents Updated
 
 | Document | Status | Changes |
 |----------|--------|---------|
 | README.md | {updated/skipped/not found} | {brief description or "—"} |
-| planning/ARCHITECTURE.md | {updated/skipped/not found} | {brief description or "—"} |
+| {resolved ARCHITECTURE path} | {updated/skipped/not found} | {brief description or "—"} |
 | CHANGELOG.md | {updated/created/skipped/not found} | {brief description or "—"} |
 | CLAUDE.md | {updated/skipped/not found} | {brief description or "—"} |
 ```
@@ -320,8 +335,8 @@ Print a summary to the user:
 Docs synced.
   Updated: {list of updated docs}
   Skipped: {list of skipped/unchanged docs}
-  Commit:  {SHA or "no changes"}
-  Report:  ~/.agentic-workflow/{repo-slug}/releases/{filename}
+  Commit:  {SHA | PR URL | "no changes"}
+  Report:  {RELEASE_DIR}/docs-sync.md
 ```
 
 ## Next steps

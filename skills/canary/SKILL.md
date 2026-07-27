@@ -2,7 +2,7 @@
 name: canary
 description: "Post-deploy monitoring. Watches error rate, latency, logs, and custom probes for a configurable window. Verdict: HEALTHY (chain syncDocs), DEGRADED (warn), UNHEALTHY (alert + rootCause)."
 argument-hint: "[release-id] [--duration <sec>] [--setup]"
-allowed-tools: Bash(curl *), Bash(jq *), Bash(kubectl *), Bash(grep *), Bash(tail *), Read, Write, Skill
+allowed-tools: Bash, Read, Write, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
 # Canary — Post-Deploy Monitoring
@@ -241,9 +241,13 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
 
 1. If `--setup`: run wizard and exit.
 
-2. Resolve release-id (arg or latest from `releases/`).
+2. Resolve `$REPO_SLUG` from this skill's own symlink (shell state does not persist between Bash calls — re-source in every bash block that uses it):
+   ```bash
+   SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/canary/SKILL.md")")/../_shared"
+   source "$SHARED_DIR/repo-slug.sh"
+   ```
 
-3. Resolve `$REPO_SLUG` per `.claude/rules/skills.md` convention.
+3. Resolve release-id (arg or latest `releases/<ISO-date>-<short-sha>/` dir from the discovery command above).
 
 4. Load `.agentic-workflow/canary.json`. If missing, suggest `--setup` and exit.
 
@@ -251,9 +255,9 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
 
 5. Determine duration (`--duration` arg > config `duration` > default 900).
 
-6. Compute baseline values on first probe minute:
-   - Initial `errorRateUrl` value → `baseline.errorRate`
-   - Initial `latencyUrl` p95 → `baseline.p95`
+6. Resolve baseline values (**pre-deploy first**):
+   - Read `releases/<release-id>/baseline.json` (persisted by `/landAndDeploy` **before** it deployed) → `baseline.errorRate`, `baseline.p95`, `baseline.logAnomalyCount`.
+   - **Fallback:** if the file is missing (standalone deploy, older landAndDeploy), use the first probe minute's values and print a warning: "no pre-deploy baseline found — using post-deploy first-minute values; a regression introduced by this deploy may be masked."
 
 7. Probe loop — every 60 s for `ceil(duration / 60)` iterations (so the final tail is probed even when duration isn't a multiple of 60):
    - Fetch `errorRateUrl` → current error rate
@@ -266,11 +270,12 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
    - **UNHEALTHY** if ANY of:
      - A `critical:true` custom probe failed at any point
      - Error rate exceeded `baseline.errorRate * errorRateUnhealthyMultiplier` for ≥2 consecutive minutes
-     - Any log anomaly pattern matched (critical)
+     - Log anomalies exceeded the **rate threshold**: pattern matches in ≥2 distinct minutes, or ≥3 matches within a single minute, above `baseline.logAnomalyCount` (a single isolated match is NOT UNHEALTHY — noisy prod logs must not flip the verdict on one line)
    - **DEGRADED** if ANY of (and not UNHEALTHY):
      - A non-critical custom probe failed
      - Error rate exceeded `baseline.errorRate * errorRateDegradedMultiplier`
      - p95 latency exceeded `baseline.p95 * latencyDegradedMultiplier`
+     - Exactly one isolated log anomaly match occurred
    - **HEALTHY** otherwise.
 
 9. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/canary.md`:
@@ -301,13 +306,19 @@ Write `.agentic-workflow/canary.json`. Exit without monitoring.
    ```
 
 10. Branch on verdict:
-    - **HEALTHY:** if `--skip-docs` was passed (directly or propagated from shipRelease/landAndDeploy), print "skipping /syncDocs auto-chain (--skip-docs)" and exit. Otherwise invoke `/syncDocs` via `Skill` tool.
+    - **HEALTHY:** if `--skip-docs` was passed (directly or propagated from shipRelease/landAndDeploy), print "skipping /syncDocs auto-chain (--skip-docs)" and exit. Otherwise invoke `/syncDocs` via `Skill` tool, passing the release-id and `--since <merge-sha>` (from `deploy.md`) so docs-sync scopes to exactly this release.
     - **DEGRADED:** print warning to stdout. Do NOT auto-chain.
-    - **UNHEALTHY:** print alert + suggest `/rootCause`. Do NOT auto-chain.
+    - **UNHEALTHY:** print alert and suggest `/rootCause`, passing **structured incident context** (rootCause's production-incident entry point) instead of a bare suggestion:
+      ```json
+      { "merge_sha": "<full-sha>", "release_id": "<release-id>",
+        "symptom": "<which trigger fired: probe name / error-rate multiplier / anomaly pattern>",
+        "logs_excerpt": "<the matching log lines and the timeline rows around the trigger>" }
+      ```
+      Do NOT auto-chain.
 
 ## Outputs
 
-- `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/canary.md`
+- `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/canary.md` — globbed by `/weeklyRetro` for release-health trends
 - `.agentic-workflow/canary.json` (only on `--setup`)
 
 ## Next steps
