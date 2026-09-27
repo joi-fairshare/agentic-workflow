@@ -10,6 +10,6 @@ if [ -n "$REMOTE_URL" ]; then
 else
   REPO_SLUG=$(basename "$(pwd)")
 fi
-AW_DIR="$HOME/.agentic-workflow/$REPO_SLUG"
+AW_DIR="${AW_STATE_DIR:-$HOME/.agentic-workflow}/$REPO_SLUG"
 mkdir -p "$AW_DIR"
 export REPO_SLUG AW_DIR

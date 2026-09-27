@@ -38,7 +38,7 @@ if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-LOCK_FILE="$HOME/.agentic-workflow/.${LOCK_NAME}.lock"
+LOCK_FILE="${AW_STATE_DIR:-$HOME/.agentic-workflow}/.${LOCK_NAME}.lock"
 SKILL_LOCK_TIMEOUT="${SKILL_LOCK_TIMEOUT:-120}"
 
 _lock_is_stale() {

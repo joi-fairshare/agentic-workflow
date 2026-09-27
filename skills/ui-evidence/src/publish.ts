@@ -1,0 +1,67 @@
+// skills/ui-evidence/src/publish.ts — every write is ask-first; a DB
+// provenance of "unknown" hard-gates the Linear upload regardless of the
+// answer to ask (RF-2); a failed Linear upload still posts the PR comment
+// with local paths and a retry note (RF-4).
+export interface RunStep {
+  name: string;
+  status: "passed" | "failed" | "broken";
+  screenshot: string;
+}
+
+export interface RunSummary {
+  steps: RunStep[];
+  visual: "unchecked" | "looks-right" | "looks-off" | "sloppy";
+  visualReasons: string[];
+  lintFindings: Array<{ rule: string; selector: string; detail: string }>;
+}
+
+export interface PublishDeps {
+  runId: string;
+  localDir: string;
+  provenance: "seeded" | "unknown";
+  linearIssueId: string | null;
+  uploadToLinear: (filePath: string, issueId: string) => Promise<{ url: string } | { error: string }>;
+  postPrComment: (body: string) => Promise<boolean>;
+  ask: (question: string) => Promise<boolean>;
+}
+
+export interface PublishResult {
+  linearUploaded: boolean;
+  prCommentPosted: boolean;
+  localPaths: string[];
+}
+
+function renderComment(summary: RunSummary, note: string | null): string {
+  const priority = [...summary.steps.filter((s) => s.status !== "passed"), ...summary.lintFindings];
+  const rows = summary.steps.map((s) => `| ${s.name} | ${s.status} | ${s.screenshot} |`);
+  // "unchecked", "looks-off", and "sloppy" all sort first, per spec (the PR
+  // comment table leads with unclear/looks-off/sloppy, not looks-right).
+  const visualFlag = summary.visual === "looks-right" ? "" : " ⚠";
+  const header = `## UI evidence — visual: ${summary.visual}${visualFlag || (priority.length > 0 ? " ⚠" : "")}`;
+  const reasonsLine = summary.visualReasons.length > 0 ? `\nVisual reasons: ${summary.visualReasons.join("; ")}` : "";
+  const noteLine = note !== null ? `\n\n${note}` : "";
+  return [header, "", "| Step | Status | Screenshot |", "|---|---|---|", ...rows, reasonsLine, noteLine].join("\n");
+}
+
+export async function publishEvidence(deps: PublishDeps, summary: RunSummary): Promise<PublishResult> {
+  const localPaths = summary.steps.map((s) => s.screenshot);
+
+  const okToPublish = await deps.ask(
+    `Publish UI evidence for run ${deps.runId}? ${deps.provenance === "seeded" ? "DB provenance: seeded (Linear upload allowed)." : "DB provenance: unknown (Linear upload will be skipped; evidence stays local)."}`,
+  );
+  if (!okToPublish) return { linearUploaded: false, prCommentPosted: false, localPaths };
+
+  let linearUploaded = false;
+  let uploadNote: string | null = null;
+  if (deps.provenance === "seeded" && deps.linearIssueId !== null) {
+    const results = await Promise.all(localPaths.map((p) => deps.uploadToLinear(p, deps.linearIssueId as string)));
+    const failed = results.find((r) => "error" in r);
+    linearUploaded = failed === undefined;
+    if (failed !== undefined) uploadNote = `Linear upload failed (${failed.error}) — local paths only; will retry on next push.`;
+  } else if (deps.provenance === "unknown") {
+    uploadNote = "DB provenance unknown — evidence kept local only, not uploaded to Linear.";
+  }
+
+  const prCommentPosted = await deps.postPrComment(renderComment(summary, uploadNote));
+  return { linearUploaded, prCommentPosted, localPaths };
+}

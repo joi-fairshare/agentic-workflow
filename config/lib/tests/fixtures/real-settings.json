@@ -1,0 +1,25 @@
+{
+  "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" },
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; sleep 0.05; true" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": ".*", "hooks": [ { "type": "command", "command": "SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; true" } ] },
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "~/.claude/hooks/block-destructive.sh" },
+        { "type": "command", "command": "~/.claude/hooks/block-push-main.sh" },
+        { "type": "command", "command": "~/.claude/hooks/detect-secrets.sh" },
+        { "type": "command", "command": "~/.claude/hooks/rtk-rewrite.sh" }
+      ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/git-context.sh" } ] },
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/prism-context.sh" } ] },
+      { "matcher": "compact", "hooks": [ { "type": "command", "command": "python3 /Users/dev/.claude/hooks/prism-route/on_prompt.py --v4" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 /Users/dev/.claude/hooks/prism-route/on_prompt.py --v4" } ] }
+    ]
+  }
+}

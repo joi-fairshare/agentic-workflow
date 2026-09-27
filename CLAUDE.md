@@ -36,10 +36,11 @@ agentic-workflow/
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline script, and safety hooks
 ├── mcp-bridge/    # MCP bridge + REST API (Fastify, SQLite)
+├── scorer/        # Daily cost/involvement report from ~/.claude/projects transcripts
 ├── planning/      # Project documentation
 ├── .claude/rules/ # Glob-scoped domain rules (auto-loaded by Claude Code)
 ├── .serena/       # Serena LSP project configuration
-├── scripts/       # Utility scripts (serena-docker wrapper)
+├── scripts/       # Utility scripts (serena-docker wrapper, probe.sh, install-scorer.sh)
 └── setup.sh       # One-command setup: skills, statusline, hooks, config, bridge, Serena
 ```
 
@@ -51,6 +52,19 @@ cd mcp-bridge && npm test               # Vitest (all tests, in-memory SQLite)
 cd mcp-bridge && npm run test:coverage  # Run with 100% coverage enforcement
 cd mcp-bridge && npm run build          # TypeScript → dist/
 
+# Scorer
+cd scorer && npm test                   # Vitest
+cd scorer && npm run test:coverage      # 100% coverage target
+scorer --since 7d                       # Report to ~/.agentic-workflow/scorer/reports/
+scorer probe                            # Summarize the hook-input probe
+
+# Hook library and probe
+bash config/lib/tests/merge-hook.test.sh
+bash config/hooks/tests/probe-log.test.sh
+scripts/probe.sh on|off|status
+scripts/tests/probe.test.sh
+scripts/install-scorer.sh               # Build scorer, install CLI + launchd job
+
 # Setup (from repo root)
 ./setup.sh             # Symlink skills, copy config, install statusline, install hooks (safety + rtk), build bridge, build Serena Docker image, register MCP servers (incl. headroom, prism-mcp), create output dir
 ```
@@ -59,7 +73,7 @@ cd mcp-bridge && npm run build          # TypeScript → dist/
 
 Before merging any PR:
 1. `npm run typecheck` passes with zero errors
-2. `npm test` passes with all tests green (99 bridge)
+2. `npm test` passes in both `mcp-bridge` and `scorer`, and the two bash test scripts pass
 3. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
 4. No `any` types outside of Fastify integration boundaries
 

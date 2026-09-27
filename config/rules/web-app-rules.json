@@ -1,0 +1,53 @@
+{
+  "_comment": "Seed rule table (Plan 5, Task 3). A living document — a handful of real, checkable rules pulled from this repo's own CLAUDE.md/planning docs (the only concrete style source in this worktree; the target repo's own AGENTS.md/best-practices supersede this seed once available there), not placeholders. Each rule is file-glob-scoped so rule-check.ts only asks about hunks it actually applies to.",
+  "rules": [
+    {
+      "id": "no-any-types",
+      "description": "No `any` types in TypeScript — every new type must be concrete or generic, never `any`.",
+      "glob": "**/*.ts",
+      "deterministicCheck": "eslint --rule '@typescript-eslint/no-explicit-any: error'"
+    },
+    {
+      "id": "kebab-case-filenames",
+      "description": "Files and directories are kebab-case.",
+      "glob": "**/*.{ts,sh}",
+      "deterministicCheck": null
+    },
+    {
+      "id": "zod-schema-pascalcase-suffix",
+      "description": "Zod schemas are PascalCase with a `Schema` suffix (e.g. `BriefScopeInputSchema`).",
+      "glob": "**/src/**/*.ts",
+      "deterministicCheck": null
+    },
+    {
+      "id": "hooks-fail-open",
+      "description": "Every `aw:*` hook must fail open (allow, or a silent exit 0) on a judge/sqlite failure — never block the user's agents by throwing or hanging.",
+      "glob": "config/hooks/*.sh",
+      "deterministicCheck": null
+    },
+    {
+      "id": "hooks-tagged-and-guarded",
+      "description": "Every `aw:*` hook starts with `[ -n \"${AW_JUDGE_CHILD:-}\" ] && exit 0` and is tagged `# aw:<name>` in its installed settings.json entry.",
+      "glob": "config/hooks/*.sh",
+      "deterministicCheck": null
+    },
+    {
+      "id": "hundred-percent-coverage",
+      "description": "100% coverage is required for `judge`/`scorer` additions; `/* v8 ignore */` is prohibited.",
+      "glob": "judge/src/**/*.ts",
+      "deterministicCheck": "npm run test:coverage"
+    },
+    {
+      "id": "one-logical-change-per-commit",
+      "description": "One logical change per commit; commit messages use `type: short description`.",
+      "glob": "**/*",
+      "deterministicCheck": null
+    },
+    {
+      "id": "settings-merge-owner-tagged",
+      "description": "`setup.sh`/install scripts never remove hook entries they don't own — always go through `merge_hook`, never edit settings.json by hand.",
+      "glob": "scripts/install-*.sh",
+      "deterministicCheck": null
+    }
+  ]
+}

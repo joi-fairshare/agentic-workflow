@@ -64,3 +64,7 @@ The steps below apply to **PreToolUse hooks**. SessionStart hooks have different
 3. Exit 0 to allow the action, exit 2 to block with a message on stdout
 4. Add an entry to `setup.sh`'s hook installation section
 5. Document it in this file and in CLAUDE.md's `config/` directory comment
+
+## Probe Hook (cheap-agent-harness rollout step 0.5)
+
+`probe-log.sh <Event>` appends raw hook stdin to `~/.agentic-workflow/probe/<Event>.jsonl`. It prints nothing and always exits 0. `scripts/probe.sh on|off|status` installs and removes it on `UserPromptSubmit`, `Stop`, `SubagentStop`, `TeammateIdle`, `SubagentStart`, and `PreToolUse`/`PostToolUse` (matcher `Agent|SendMessage`). Every probe command ends in `# aw:probe`, and `config/lib/merge-hook.sh` only ever touches commands with its own tag. `scorer probe` summarizes the logs.

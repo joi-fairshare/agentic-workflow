@@ -1,0 +1,15 @@
+review-code
+check-arch
+hunt-bugs
+report-bugs
+enhance-query
+design-review-plan
+devex-review-plan
+review-product
+retro-weekly
+docs-sync
+spec-to-pr
+autoplan
+cso
+verify-web
+agentic-workflow

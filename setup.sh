@@ -36,6 +36,106 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+# --- --profile <name> [--target <dir>] [--dry-run] ---
+# Applies a repo profile's skillOverrides via the native settings.local.json
+# mechanism (see config/lib/apply-profile.sh). Gated on config/lib/diff-skill-pairs.sh
+# for the 14 camelCase/kebab-case skill pairs (Task 1 of the startup-diet plan) —
+# refuses to write if any of the 11 assumed-safe case-fold pairs unexpectedly DIFFERS.
+if [ "${1:-}" = "--profile" ]; then
+  PROFILE_NAME="${2:-}"
+  TARGET_DIR=""
+  DRY_RUN=0
+  shift 2 || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --target) TARGET_DIR="$2"; shift 2 ;;
+      --dry-run) DRY_RUN=1; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  if [ -z "$PROFILE_NAME" ] || [ -z "$TARGET_DIR" ]; then
+    echo "usage: setup.sh --profile <web-app|ios|personal> --target <dir> [--dry-run]"
+    exit 1
+  fi
+
+  PROFILE_FILE="$SCRIPT_DIR/config/profiles/$PROFILE_NAME.json"
+  if [ ! -f "$PROFILE_FILE" ]; then
+    echo "no such profile: $PROFILE_NAME (looked for $PROFILE_FILE)"
+    exit 1
+  fi
+
+  source "$SCRIPT_DIR/scripts/find-duplicate-skills.sh"
+  source "$SCRIPT_DIR/config/lib/diff-skill-pairs.sh"
+  source "$SCRIPT_DIR/config/lib/apply-profile.sh"
+
+  AW_SKILLS_DIR="$HOME/.claude/skills"
+  WA_SKILLS_DIR="$TARGET_DIR/.claude/skills"
+
+  echo "=== diff-skill-pairs: checking the 14 known camelCase/kebab-case skill pairs ==="
+  REFUSE=0
+  if [ -d "$AW_SKILLS_DIR" ] && [ -d "$WA_SKILLS_DIR" ]; then
+    PAIRS_FILE="$(mktemp)"
+    AW_LIST="$(mktemp)"; WA_LIST="$(mktemp)"
+    ls "$AW_SKILLS_DIR" > "$AW_LIST" 2>/dev/null || true
+    ls "$WA_SKILLS_DIR" > "$WA_LIST" 2>/dev/null || true
+    find_duplicate_skills "$AW_LIST" "$WA_LIST" > "$PAIRS_FILE" || true
+    EXACT_NAME_PAIRS="autoplan cso verify-web"
+    diff_skill_pairs "$AW_SKILLS_DIR" "$WA_SKILLS_DIR" "$PAIRS_FILE" | while IFS=$'\t' read -r verdict a b; do
+      echo "  $verdict	$a	$b"
+      if skill_pair_refuse "$verdict" "$a" "$EXACT_NAME_PAIRS"; then
+        echo "REFUSE	$verdict	$a" >> "$PAIRS_FILE.refuse"
+      fi
+    done
+    if [ -f "$PAIRS_FILE.refuse" ]; then
+      echo "REFUSING: a case-fold pair's kebab-case copy is MISSING — turning off the camelCase copy would remove the skill entirely. Resolve by hand before re-running."
+      cat "$PAIRS_FILE.refuse"
+      rm -f "$PAIRS_FILE" "$AW_LIST" "$WA_LIST" "$PAIRS_FILE.refuse"
+      exit 1
+    fi
+    rm -f "$PAIRS_FILE" "$AW_LIST" "$WA_LIST"
+  else
+    echo "  (skipping: skills dirs not found at $AW_SKILLS_DIR or $WA_SKILLS_DIR)"
+  fi
+
+  REPO_SLUG="$(basename "$(dirname "$TARGET_DIR")")-$(basename "$TARGET_DIR")"
+  MANIFEST_DIR="$HOME/.agentic-workflow/managed/profiles"
+  MANIFEST_FILE="$MANIFEST_DIR/$REPO_SLUG.json"
+  SETTINGS_FILE="$TARGET_DIR/.claude/settings.local.json"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "=== --dry-run: would apply $PROFILE_FILE to $SETTINGS_FILE (manifest: $MANIFEST_FILE) ==="
+    TMP_SETTINGS="$(mktemp)"
+    if [ -f "$SETTINGS_FILE" ]; then cp "$SETTINGS_FILE" "$TMP_SETTINGS"; else echo '{}' > "$TMP_SETTINGS"; fi
+    TMP_MANIFEST="$(mktemp)"
+    if [ -f "$MANIFEST_FILE" ]; then cp "$MANIFEST_FILE" "$TMP_MANIFEST"; else echo '{}' > "$TMP_MANIFEST"; fi
+    apply_profile "$TMP_SETTINGS" "$PROFILE_FILE" "$TMP_MANIFEST"
+    diff <(cat "$SETTINGS_FILE" 2>/dev/null || echo '{}') "$TMP_SETTINGS" || true
+    rm -f "$TMP_SETTINGS" "$TMP_MANIFEST"
+    exit 0
+  fi
+
+  mkdir -p "$MANIFEST_DIR" "$(dirname "$SETTINGS_FILE")"
+  apply_profile "$SETTINGS_FILE" "$PROFILE_FILE" "$MANIFEST_FILE"
+  echo "applied $PROFILE_NAME profile to $SETTINGS_FILE"
+  echo "=== resolved skillOverrides (user > shared-project > local) ==="
+  jq -s '.[0] * .[1] * .[2]' "$HOME/.claude/settings.json" "$TARGET_DIR/.claude/settings.json" "$SETTINGS_FILE" 2>/dev/null | jq '.skillOverrides' || true
+  exit 0
+fi
+
+# --- --install-agents ---
+# Installs config/agents/*.md (lean pinned-model agent types) to ~/.claude/agents/,
+# ownership tracked in ~/.agentic-workflow/managed/agents.json (a content-hash manifest).
+if [ "${1:-}" = "--install-agents" ]; then
+  source "$SCRIPT_DIR/config/lib/install-agents.sh"
+  mkdir -p "$HOME/.agentic-workflow/managed"
+  MANIFEST="$HOME/.agentic-workflow/managed/agents.json"
+  [ -f "$MANIFEST" ] || echo '{}' > "$MANIFEST"
+  install_agents "$SCRIPT_DIR/config/agents" "$HOME/.claude/agents" "$MANIFEST"
+  echo "installed lean agent types to $HOME/.claude/agents (manifest: $MANIFEST)"
+  exit 0
+fi
+
 # Check for native build tools (required by better-sqlite3 when no prebuilt binary exists)
 if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
   echo ""
@@ -330,6 +430,12 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
       "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
     echo "  hooks.SessionStart: removed legacy bridge-context hook"
   fi
+
+  # Print installed hooks by owner (aw:* = agentic-workflow, prism = prism connect)
+  # shellcheck source=config/lib/merge-hook.sh
+  source "$SCRIPT_DIR/config/lib/merge-hook.sh"
+  echo "  hooks by owner:"
+  hook_owners "$SETTINGS_FILE" | awk -F'\t' '{printf "    %-18s %-8s %s\n", $1, $3, $4}'
 fi
 
 # --- Shell Integration (terminal width sync for statusline) ---
@@ -440,6 +546,23 @@ if [ -f "$BRIDGE_DIR/package.json" ]; then
 else
   echo "  MCP bridge: package.json not found, skipping"
 fi
+
+"$SCRIPT_DIR/scripts/install-scorer.sh"
+bash "$SCRIPT_DIR/scripts/install-judge.sh"
+
+echo ""
+echo "=== Installing wake gating (lever 1A) ==="
+bash "$SCRIPT_DIR/scripts/install-wake-gating.sh"
+
+echo ""
+echo "=== Installing context-guard (lever 2B) ==="
+bash "$SCRIPT_DIR/scripts/install-context-guard.sh"
+
+echo ""
+echo "=== Installing evaluator gates (lever 3) ==="
+bash "$SCRIPT_DIR/scripts/install-scope-gate.sh"
+bash "$SCRIPT_DIR/scripts/install-done-gate.sh"
+bash "$SCRIPT_DIR/scripts/install-external-write-guard.sh"
 
 # Register with Claude Code
 echo ""

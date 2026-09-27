@@ -1,0 +1,15 @@
+reviewCode
+checkArch
+huntBugs
+reportBugs
+enhanceQuery
+designReviewPlan
+devexReviewPlan
+reviewProduct
+retroWeekly
+docsSync
+specToPr
+autoplan
+cso
+verify-web
+brandkit

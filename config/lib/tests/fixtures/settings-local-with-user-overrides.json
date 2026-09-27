@@ -1,0 +1,5 @@
+{
+  "skillOverrides": {
+    "some-manual-skill": "name-only"
+  }
+}
