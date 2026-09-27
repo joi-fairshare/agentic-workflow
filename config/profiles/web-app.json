@@ -1,0 +1,30 @@
+{
+  "skillOverrides": {
+    "addressReview": "off",
+    "archReview": "off",
+    "bugHunt": "off",
+    "bugReport": "off",
+    "enhancePrompt": "off",
+    "planDesignReview": "off",
+    "planDevexReview": "off",
+    "productReview": "off",
+    "weeklyRetro": "off",
+    "syncDocs": "off",
+    "specToProvenPR": "off",
+    "design-analyze-ios": "off",
+    "design-mockup-ios": "off",
+    "design-verify-ios": "off",
+    "design-evolve-ios": "off",
+    "design-implement-ios": "off",
+    "brandkit": "off",
+    "brutalist-skill": "off",
+    "minimalist-skill": "off",
+    "soft-skill": "off",
+    "stitch-skill": "off",
+    "gpt-tasteskill": "off",
+    "image-to-code-skill": "off",
+    "imagegen-frontend-mobile": "off",
+    "imagegen-frontend-web": "off",
+    "redesign-skill": "off"
+  }
+}

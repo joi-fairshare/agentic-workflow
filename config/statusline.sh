@@ -38,6 +38,27 @@ if [ -z "$COLS" ] || ! [ "$COLS" -gt 0 ] 2>/dev/null; then
 fi
 : "${COLS:=200}"
 
+# --- Judge segment (cheap-agent-harness Plan 2) ---
+# `judge ✓` healthy, `judge ⚠ n failures` degraded, `judge ✗ down` missing/erroring.
+# Shells out to `judge health` rather than reading decisions.sqlite directly, so
+# every judge-health consumer (this, the SessionStart hook, the scorer report)
+# agrees by construction.
+judge_segment() {
+  if ! command -v judge &>/dev/null; then
+    echo "judge ✗ down"
+    return
+  fi
+  local out status failures
+  out="$(judge health 2>/dev/null)" || { echo "judge ✗ down"; return; }
+  status="$(echo "$out" | jq -r '.status // empty' 2>/dev/null)"
+  failures="$(echo "$out" | jq -r '.failures24h // 0' 2>/dev/null)"
+  case "$status" in
+    ok) echo "judge ✓" ;;
+    degraded) echo "judge ⚠ $failures failures" ;;
+    *) echo "judge ✗ down" ;;
+  esac
+}
+
 # Fallback for empty or invalid input
 if [ -z "$INPUT" ] || ! echo "$INPUT" | jq empty 2>/dev/null; then
   if [ "$COLS" -ge 116 ] 2>/dev/null; then

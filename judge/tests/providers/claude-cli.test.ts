@@ -1,0 +1,222 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { makeClaudeCliProvider } from "../../src/providers/claude-cli.js";
+import type { QuestionRef } from "../../src/types.js";
+
+const question: QuestionRef<"send" | "batch" | "drop"> = {
+  name: "wake-gate", outputs: ["send", "batch", "drop"], prompt: "Classify this message.", contentClass: "message-meta",
+};
+
+describe("claude-cli provider", () => {
+  it("has claude-cli in its name and covers every content class, including image (Plan 6, review fix #1)", () => {
+    const provider = makeClaudeCliProvider({ spawn: vi.fn(), tmpDirFactory: () => "/tmp/x" });
+    expect(provider.name).toBe("claude-cli");
+    for (const cls of ["code", "diff", "brief", "transcript", "message-meta", "image"] as const) expect(provider.classes.has(cls)).toBe(true);
+  });
+
+  it("invokes exactly the measured command shape, including --json-schema built from the question's outputs", async () => {
+    const spawn = vi.fn().mockResolvedValue({
+      code: 0, timedOut: false,
+      stdout: JSON.stringify({ structured_output: { decision: "send" }, result: JSON.stringify({ decision: "send" }) }),
+    });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/judge-abc" });
+    await provider.decide(question, { text: "hi" }, 5000);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const [args, opts] = spawn.mock.calls[0] as [string[], { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }];
+    expect(args).toEqual([
+      "-p", "--model", "haiku", "--effort", "low", "--no-session-persistence",
+      "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+      "--settings", '{"disableAllHooks":true,"alwaysThinkingEnabled":false}',
+      "--disable-slash-commands", "--tools", "",
+      "--system-prompt", "Classify this message.",
+      "--json-schema", '{"type":"object","properties":{"decision":{"type":"string","enum":["send","batch","drop"]}},"required":["decision"]}',
+      "--output-format", "json",
+      JSON.stringify({ text: "hi" }),
+    ]);
+    expect(opts.cwd).toBe("/tmp/judge-abc");
+    expect(opts.env.MAX_THINKING_TOKENS).toBe("0");
+    expect(opts.env.AW_JUDGE_CHILD).toBe("1");
+    expect(opts.timeoutMs).toBe(5000);
+  });
+
+  it("passes the budgetMs argument through as the child timeout, not a hardcoded 5000", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "send" } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    await provider.decide(question, {}, 1234);
+    const [, opts] = spawn.mock.calls[0] as [string[], { timeoutMs: number }];
+    expect(opts.timeoutMs).toBe(1234);
+  });
+
+  it("parses the decision out of .structured_output first", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "batch" }, result: JSON.stringify({ decision: "send" }) }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const result = await provider.decide(question, {}, 5000);
+    expect(result).toEqual({ status: "decided", decision: "batch", confidence: 1, reason_code: "claude-cli" });
+  });
+
+  it("falls back to parsing .result as JSON when .structured_output is absent", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ result: JSON.stringify({ decision: "batch" }) }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const result = await provider.decide(question, {}, 5000);
+    expect(result).toEqual({ status: "decided", decision: "batch", confidence: 1, reason_code: "claude-cli" });
+  });
+
+  it("is unavailable, not an error, on timeout (RF-1)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: true, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "unavailable", reason_code: "timeout" });
+  });
+
+  it("is an error with reason exit-null when the exit code itself is null (not a timeout)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: false, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "exit-null" });
+  });
+
+  it("is an error when there is no structured_output and no result field at all", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({}) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("is an error on a non-zero exit", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 1, timedOut: false, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "exit-1" });
+  });
+
+  it("is an error when stdout is not the expected JSON envelope", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: "not json" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "unparseable-output" });
+  });
+
+  it("is an error when neither .structured_output nor a parseable .result is present (RF-3)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ result: "not json" }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("is an error when .structured_output is present but has no decision field", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: {} }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("is an error when the parsed .result has no decision field and there is no structured_output", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ result: JSON.stringify({}) }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("propagates a spawn rejection as an error, not a throw (RF-1)", async () => {
+    const spawn = vi.fn().mockRejectedValue(new Error("ENOENT"));
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "error", reason_code: "spawn-failed" });
+  });
+});
+
+describe("claude-cli provider — extra fields (chosenIndex, reasons)", () => {
+  it("threads any field beyond decision through as extra", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "batch", chosenIndex: 2 } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const result = await provider.decide(question, {}, 5000);
+    expect(result).toEqual({ status: "decided", decision: "batch", confidence: 1, reason_code: "claude-cli", extra: { chosenIndex: 2 } });
+  });
+});
+
+describe("claude-cli provider — image branch (Task 5, review fix #5)", () => {
+  const imageQuestion: QuestionRef<"looks-right" | "looks-off" | "sloppy"> = {
+    name: "visual-critique", outputs: ["looks-right", "looks-off", "sloppy"], prompt: "Use the Read tool to look at after.png.", contentClass: "image",
+  };
+
+  it("uses the Read tool, cwd = evidenceDir, and closed stdin (verified invocation)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "looks-right", reasons: [] } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/judge-abc" });
+    await provider.decide(imageQuestion, { afterScreenshot: "after.png", baselineScreenshot: null, evidenceDir: "/tmp/run-42" }, 20000);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const [args, opts] = spawn.mock.calls[0] as [string[], { cwd: string; timeoutMs: number }];
+    expect(args).toContain("--tools");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read");
+    expect(args).toContain("--allowedTools");
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("Read(./**)");
+    expect(opts.cwd).toBe("/tmp/run-42");
+    expect(opts.timeoutMs).toBe(20000);
+  });
+
+  it("does not use the --tools \"\" text-branch invocation for an image question", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "looks-right" } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000);
+    const [args] = spawn.mock.calls[0] as [string[]];
+    const toolsIndex = args.indexOf("--tools");
+    expect(args[toolsIndex + 1]).not.toBe("");
+  });
+
+  it("threads reasons through as extra on a decided image result", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "looks-off", reasons: ["misaligned button"] } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const result = await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000);
+    expect(result).toEqual({ status: "decided", decision: "looks-off", confidence: 1, reason_code: "claude-cli", extra: { reasons: ["misaligned button"] } });
+  });
+
+  it("is unavailable on timeout for the image branch too", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: true, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "unavailable", reason_code: "timeout" });
+  });
+
+  it("is an error on a non-zero exit for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 1, timedOut: false, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "exit-1" });
+  });
+
+  it("is an error when stdout is unparseable for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: "not json" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "unparseable-output" });
+  });
+
+  it("falls back to parsing .result when .structured_output is absent for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ result: JSON.stringify({ decision: "sloppy" }) }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "decided", decision: "sloppy", confidence: 1, reason_code: "claude-cli" });
+  });
+
+  it("is an error when neither structured_output nor a parseable result field is present for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ result: "not json" }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("is an error when structured_output has no decision field for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: {} }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("propagates a spawn rejection as an error for the image branch", async () => {
+    const spawn = vi.fn().mockRejectedValue(new Error("ENOENT"));
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "spawn-failed" });
+  });
+});
+
+describe("claude-cli provider — image branch, remaining branches", () => {
+  const imageQuestion: QuestionRef<"looks-right" | "looks-off" | "sloppy"> = {
+    name: "visual-critique", outputs: ["looks-right", "looks-off", "sloppy"], prompt: "Use the Read tool.", contentClass: "image",
+  };
+
+  it("is an error with exit-null when the exit code is null but not a timeout, for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: false, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "exit-null" });
+  });
+
+  it("is an error when neither structured_output nor a result field exists at all for the image branch", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({}) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+});

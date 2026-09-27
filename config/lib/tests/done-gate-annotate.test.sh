@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOOK="$DIR/../../hooks/done-gate-annotate.sh"
+
+setup_fake_judge() {
+  local bin_dir brief_json; bin_dir="$(mktemp -d)"; brief_json="${1:-}"
+  cat > "$bin_dir/judge" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "brief" ] && [ "\$2" = "get" ]; then
+  if [ -n '$brief_json' ]; then
+    printf '%s' '$brief_json'
+    exit 0
+  fi
+  exit 1
+fi
+EOF
+  chmod +x "$bin_dir/judge"
+  echo "$bin_dir"
+}
+
+test_matching_final_message_annotates_satisfied() {
+  local bin_dir out
+  bin_dir="$(setup_fake_judge '{"acceptanceCriteria":"tests pass and PR opened"}')"
+  out="$(PATH="$bin_dir:$PATH" bash "$HOOK" <<< '{"tool_use_id":"tu1","tool_response":{"result":"Done: tests pass and PR opened, see #123."}}')"
+  echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("plausibly met"; "i")' > /dev/null \
+    || { echo "FAIL: expected a 'plausibly met' annotation, got $out"; exit 1; }
+  echo "PASS: test_matching_final_message_annotates_satisfied"
+}
+
+test_mismatched_final_message_annotates_flagged_but_still_allows() {
+  local bin_dir out rc
+  bin_dir="$(setup_fake_judge '{"acceptanceCriteria":"the migration runs cleanly on staging"}')"
+  set +e
+  out="$(PATH="$bin_dir:$PATH" bash "$HOOK" <<< '{"tool_use_id":"tu2","tool_response":{"result":"Done, ran the unit tests."}}')"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { echo "FAIL: this hook only annotates, must never exit nonzero, got $rc"; exit 1; }
+  echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("NOT clearly addressed")' > /dev/null \
+    || { echo "FAIL: expected a mismatch annotation, got $out"; exit 1; }
+  echo "PASS: test_mismatched_final_message_annotates_flagged_but_still_allows"
+}
+
+test_no_brief_found_adds_no_annotation() {
+  local bin_dir out
+  bin_dir="$(setup_fake_judge)"
+  out="$(PATH="$bin_dir:$PATH" bash "$HOOK" <<< '{"tool_use_id":"tu3","tool_response":{"result":"done"}}')"
+  [ -z "$out" ] || { echo "FAIL: expected no output when no brief is found (exempt dispatch, or mapping never landed), got: $out"; exit 1; }
+  echo "PASS: test_no_brief_found_adds_no_annotation"
+}
+
+test_matching_final_message_annotates_satisfied
+test_mismatched_final_message_annotates_flagged_but_still_allows
+test_no_brief_found_adds_no_annotation
+echo "All done-gate-annotate tests passed."
+
+test_judge_missing_from_path_still_exits_0_no_annotation() {
+  local out rc
+  set +e
+  out="$(PATH="/usr/bin:/bin" bash "$HOOK" <<< '{"tool_use_id":"tu4","tool_response":{"result":"done"}}')"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { echo "FAIL: expected exit 0 when judge is missing from PATH entirely, got $rc"; exit 1; }
+  [ -z "$out" ] || { echo "FAIL: expected no annotation when judge is unreachable, got: $out"; exit 1; }
+  echo "PASS: test_judge_missing_from_path_still_exits_0_no_annotation"
+}
+
+test_judge_nonzero_garbage_stdout_still_exits_0() {
+  local bin_dir out rc
+  bin_dir="$(mktemp -d)"
+  cat > "$bin_dir/judge" <<'EOF'
+#!/usr/bin/env bash
+echo 'not valid json {{{'
+exit 1
+EOF
+  chmod +x "$bin_dir/judge"
+  set +e
+  out="$(PATH="$bin_dir:$PATH" bash "$HOOK" <<< '{"tool_use_id":"tu5","tool_response":{"result":"done"}}')"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { echo "FAIL: garbage/nonzero judge output must never make this hook exit nonzero, got $rc"; exit 1; }
+  [ -z "$out" ] || { echo "FAIL: expected no annotation when the brief lookup returns unparsable garbage, got: $out"; exit 1; }
+  echo "PASS: test_judge_nonzero_garbage_stdout_still_exits_0"
+}
+
+test_judge_missing_from_path_still_exits_0_no_annotation
+test_judge_nonzero_garbage_stdout_still_exits_0
