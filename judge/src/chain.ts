@@ -9,12 +9,15 @@ export interface ChainSpec {
 // provider is unavailable or fails — otherwise "rules" would be unreachable.
 // `image` routes to claude-cli (Plan 6, Task 5 — verified 2026-09-27 that
 // `claude -p` can read an image via the Read tool), falling back to rules.
+// `jev` is primary on every text class now that TypeSafe has passed vendor
+// review for company code (spec F2); `claude-cli` stays as the fallback when
+// jev is unavailable/errors. `image` is excluded — Jev is text-only.
 export const DEFAULT_CHAIN: ChainSpec = {
   classes: {
-    code: ["claude-cli", "rules"],
-    diff: ["claude-cli", "rules"],
-    brief: ["claude-cli", "rules"],
-    transcript: ["claude-cli", "rules"],
+    code: ["jev", "claude-cli", "rules"],
+    diff: ["jev", "claude-cli", "rules"],
+    brief: ["jev", "claude-cli", "rules"],
+    transcript: ["jev", "claude-cli", "rules"],
     "message-meta": ["jev", "claude-cli", "rules"],
     image: ["claude-cli", "rules"],
   },

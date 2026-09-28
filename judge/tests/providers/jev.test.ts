@@ -8,9 +8,9 @@ const question: QuestionRef<"send" | "batch" | "drop"> = {
 };
 
 describe("jev provider", () => {
-  it("only covers message-meta (F2: no company-code classes until vendor review)", () => {
+  it("covers every text class, not image (F2: vendor review cleared company-code classes 2026-09-28; Jev is text-only)", () => {
     const provider = makeJevProvider({ fetch: vi.fn(), apiKey: async () => "k" });
-    expect(provider.classes).toEqual(new Set(["message-meta"]));
+    expect(provider.classes).toEqual(new Set(["message-meta", "code", "diff", "brief", "transcript"]));
   });
 
   it("is unavailable, not an error, with no API key (RF-2)", async () => {

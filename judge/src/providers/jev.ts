@@ -24,11 +24,15 @@ interface ChoiceAnswer {
  * answer is `{ type: "choice", choice, probabilities, confidence }`. This
  * replaces the placeholder question/options/answer/confidence shape shipped
  * before the key landed (see git history on this file for the prior version).
+ *
+ * Company-code classes (code/diff/brief/transcript) were added after
+ * TypeSafe's vendor review cleared sending that content to Jev (spec F2).
+ * `image` stays off Jev regardless of vendor review — Jev is text-only.
  */
 export function makeJevProvider(deps: { fetch: Fetch; apiKey: () => Promise<string | null> }): Provider {
   return {
     name: "jev",
-    classes: new Set(["message-meta"]),
+    classes: new Set(["message-meta", "code", "diff", "brief", "transcript"]),
     decide: async <O extends string>(question: QuestionRef<O>, input: unknown, budgetMs: number): Promise<ProviderResult<O>> => {
       if (question.outputs.length > MAX_CHOICE_OPTIONS) return { status: "error", reason_code: "too-many-options" };
       const apiKey = await deps.apiKey();
