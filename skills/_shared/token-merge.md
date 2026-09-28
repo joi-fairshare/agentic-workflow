@@ -29,14 +29,14 @@ UNCHANGED (same in both):
 
 ## Step B: Ask what to adopt
 
-For each category group (new tokens, different values), ask via AskUserQuestion:
+For each category group (new tokens, different values), **ask the user**:
 
 > "Which elements would you like to adopt from \<source\>?
 > - **Adopt**: take the new value as-is
 > - **Adapt**: use the new value as inspiration but modify
 > - **Ignore**: keep current value unchanged"
 
-**Adapt** = a follow-up AskUserQuestion per adapted token that captures the **literal replacement value** (e.g. "You chose Adapt for color.primary (new=#0F172A). Enter the exact value to use:"). Never write "adapted" without a concrete value.
+**Adapt** = a follow-up **Ask the user** per adapted token that captures the **literal replacement value** (e.g. "You chose Adapt for color.primary (new=#0F172A). Enter the exact value to use:"). Never write "adapted" without a concrete value.
 
 ## Step C: Write the merged files
 

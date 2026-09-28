@@ -1,0 +1,1 @@
+{"conversation_id":"cu-1","generation_id":"g-9","hook_event_name":"subagentStart","workspace_roots":["/tmp"],"subagent_id":"sa-1","subagent_type":"generalPurpose","task":"Fix the flaky test\nAcceptance: vitest passes","parent_conversation_id":"cu-1","tool_call_id":"tc-1","subagent_model":"x","is_parallel_worker":false,"git_branch":"main"}

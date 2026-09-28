@@ -9,177 +9,8 @@ allowed-tools: Bash(git *), Bash(mkdir *), Bash(date *), Bash(SHARED_DIR=*), Age
 
 Runs a structured brainstorming session and produces four domain-owned outputs — one per team — so every participant leaves with a clear assignment rather than a monolithic doc no one owns.
 
-<!-- === PREAMBLE START === -->
-
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
->
-> | Skill | Purpose |
-> |-------|---------|
-> | `/review` | Multi-agent PR code review |
-> | `/postReview` | Publish review findings to GitHub |
-> | `/addressReview` | Implement review fixes in parallel |
-> | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
-> | `/rootCause` | 4-phase systematic debugging |
-> | `/bugHunt` | Fix-and-verify loop with regression tests |
-> | `/bugReport` | Structured bug report with health scores |
-> | `/shipRelease` | Sync, test, push, open PR |
-> | `/syncDocs` | Post-ship doc updater |
-> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
-> | `/productReview` | Founder/product lens plan review |
-> | `/archReview` | Engineering architecture plan review |
-> | `/withInterview` | Interview user to clarify requirements before executing |
-> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
-> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
-> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
-> | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
-> | `/design-evolve-web` | Merge new URL into design language (web) |
-> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
-> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
-> | `/design-mockup-web` | Generate HTML mockup from design language |
-> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
-> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
-> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
-> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
-> | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
-> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
-> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
-> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
-> | `/verify-web` | Playwright browser verification of running web app |
-> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
-> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
-> | `/planDesignReview` | Design-lens review of plan docs |
-> | `/planDevexReview` | DX-lens review of plan docs |
-> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
-> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
-> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
-> | `/canary` | Post-deploy monitoring with custom probes |
-> | `/prismStatus` | Health check for prism-mcp |
-> | `/specToProvenPR` | Approved spec → proven, review-clean PRs, one shippable stage at a time |
->
-> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> ### Meta-Orchestration Convention
->
-> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
-
-## Codebase Navigation
-
-Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster and more precise than file scanning.
-
-| Task | Tool |
-|------|------|
-| Find a function, class, or symbol | `serena: find_symbol` |
-| What references symbol X? | `serena: find_referencing_symbols` |
-| Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
-
-## Preamble — Bootstrap Check
-
-Before running this skill, verify the environment is set up:
-
-```bash
-# Derive repo slug
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$REMOTE_URL" ]; then
-  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
-else
-  REPO_SLUG=$(basename "$(pwd)")
-fi
-echo "repo-slug: $REPO_SLUG"
-
-# Check bootstrap status
-SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
-done
-
-BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
-
-RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
-
-echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-running: $BRIDGE_OK"
-echo "rules-directory: $RULES_OK"
-```
-
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
-
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
-> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
-
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
-If **no**: warn that some features may not work, then continue.
-
-If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
-
-Create the output directory for this repo:
-```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
-```
-
-## Session Context
-
-Load prior work state for this repo from prism-mcp before starting.
-
-**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
-- `/officeHours add dark mode` → `"dark mode UI feature"`
-- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
-- `/review 42` → use the PR title once fetched: `"PR {title} review"`
-- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
-
-**2. Load context from prism-mcp:**
-```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
-  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
-```
-
-Store the returned `expected_version` — you will need it at Session Close.
-
-**3. Surface results:**
-- If the response contains a non-empty summary or prior decisions:
-  > **Prior context:** {summary}
-  Use this to inform your approach before continuing.
-- If prism-mcp returns an error, surface it and stop:
-  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
-
-## Session Close
-
-> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
-
-Save a structured ledger entry and update the live handoff state for this repo.
-
-**1. Save ledger entry (immutable audit trail):**
-```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
-  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
-  summary: "<one paragraph describing what was accomplished this session>",
-  todos: ["<any open items left incomplete>", ...],
-  files_changed: ["<paths of files created or modified>", ...],
-  decisions: ["<key decisions made during this skill run>", ...]
-```
-
-**2. Update handoff state (mutable live state for next session):**
-```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
-  expected_version: <value returned by session_load_context>,
-  open_todos: ["<open items not yet completed>", ...],
-  active_branch: "<current git branch from: git branch --show-current>",
-  last_summary: "<one sentence: what this skill just did>",
-  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
-```
-
-If either call fails, surface the error:
-> "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->
+<!-- preamble -->
+**Before anything else:** read `$HOME/.agentic-workflow/toolkit/skills/_preamble.md` and follow it (skill index, provider capability map, bootstrap check, session context). Run its **Session Close** section when this skill finishes.
 
 ## Step 1: Get the Topic
 
@@ -194,9 +25,9 @@ Wait for their response before continuing.
 
 Read project context to ground the brainstorming session:
 
-- Read `CLAUDE.md` and `README.md` if they exist
+- Read `AGENTS.md` (or `CLAUDE.md` if that is all the repo has) and `README.md` if they exist
 - **Read bootstrap-generated planning docs** — whichever of these exist in `planning/`: `PRODUCT_ROADMAP.md`, `BUSINESS_PLAN.md`, `GO_TO_MARKET.md`, `COMPETITIVE_ANALYSIS.md`, `ARCHITECTURE.md`, plus any other relevant docs there
-- Use Glob to find any other relevant planning docs (`docs/*.md`, `*.md` at root) and skim the most relevant files
+- Search files for any other relevant planning docs (`docs/*.md`, `*.md` at root) and skim the most relevant files
 
 **If product planning docs exist** (`PRODUCT_ROADMAP.md`, `BUSINESS_PLAN.md`, etc.), use them to pre-populate Q1 and Q2 context. Before asking Q1, summarize what the existing docs say about the topic: *"I found existing planning docs — here's what they say about [topic]: [summary]. Does this give us useful starting context, or is there a gap this feature addresses that the docs don't capture?"*
 
@@ -207,11 +38,11 @@ Read project context to ground the brainstorming session:
 >
 > Should I consult any of these during our session? (yes / no / specify which)
 
-If the user says yes (or specifies sources), fetch accessible URLs via WebFetch and read accessible local files before Q1 — treat their content as additional grounding context alongside the planning docs. Note sources marked `⚠️ Not accessible` but do not attempt to fetch them. If no `## External References` sections are found across any planning doc, skip this block entirely.
+If the user says yes (or specifies sources), fetch accessible URLs (fetch a URL) and read accessible local files before Q1 — treat their content as additional grounding context alongside the planning docs. Note sources marked `⚠️ Not accessible` but do not attempt to fetch them. If no `## External References` sections are found across any planning doc, skip this block entirely.
 
 ## Step 3: Problem & User Discovery
 
-Work through each question sequentially. For each one, present your analysis based on the project context, then pause and wait for the user's response before moving on. This is a conversation -- do not use AskUserQuestion, just present each question naturally and wait.
+Work through each question sequentially. For each one, present your analysis based on the project context, then pause and wait for the user's response before moving on. This is a conversation -- do not use the structured **Ask the user** tool here, just present each question naturally and wait.
 
 ### Q1: What problem are you solving?
 
@@ -680,7 +511,7 @@ If no: proceed to Step 7 and note the open issues in the Step 8 report.
 Generate a URL-safe slug from the title (lowercase, hyphens, no special chars). Create the output directory and write all four files:
 
 ```bash
-SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/officeHours/SKILL.md")")/../_shared"
+SHARED_DIR="$HOME/.agentic-workflow/toolkit/skills/_shared"
 source "$SHARED_DIR/repo-slug.sh"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 mkdir -p "$AW_DIR/plans/${TIMESTAMP}-{slug}"
@@ -717,7 +548,7 @@ Structure:
 
 ## Sources consulted
 <Provenance of external grounding: every planning doc, external reference (URL or
-file path), and WebFetch result actually read during Step 2 — one bullet each,
+file path), and fetched URL actually read during Step 2 — one bullet each,
 with what it contributed. If none: `None.`>
 
 ## Domain documents
@@ -785,9 +616,9 @@ Present naturally at the end of the session:
 > "Plan is ready. Would you like a review? I can fan out all five lenses in parallel with `/autoplan` (recommended), or run a single architectural or product review."
 
 Based on response:
-- Full review (recommended) → Skill tool: `autoplan`
-- Architectural concerns only → Skill tool: `archReview`
-- Product/founder lens only → Skill tool: `productReview`
+- Full review (recommended) → **Invoke skill `autoplan`**
+- Architectural concerns only → **Invoke skill `archReview`**
+- Product/founder lens only → **Invoke skill `productReview`**
 - Neither → done
 
 ## Outputs

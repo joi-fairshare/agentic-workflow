@@ -17,8 +17,8 @@ Config absent or not enabled ⇒ **skip silently — don't mention dark factory 
 ## Flow
 
 1. **Build the objective** from the consumer's template below — concrete, with the failing command / target description filled in.
-2. `mcp__prism-mcp__session_task_route { task: <objective>, project: $REPO_SLUG }`.
-3. If the route target is `claw`: `mcp__prism-mcp__prism_infer { prompt: <objective>, project: $REPO_SLUG, conversation_id: <if known>, cloud_fallback: false }`.
+2. `mcp: prism-mcp/session_task_route { task: <objective>, project: $REPO_SLUG }`.
+3. If the route target is `claw`: `mcp: prism-mcp/prism_infer { prompt: <objective>, project: $REPO_SLUG, conversation_id: <if known>, cloud_fallback: false }`.
 4. **Host verifies before accepting** — run `TEST_CMD` (or the consumer's own check) against the produced output. Retry up to `max_iterations` times with the failure fed back into the prompt.
 5. Unavailable, refused, or failed verification ⇒ fall through to the consumer's manual path. Never accept unverified output.
 

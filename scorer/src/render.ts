@@ -25,7 +25,17 @@ export function renderReport(m: Metrics, v: Verdict, judgeRows: JudgeReportRow[]
   }
   lines.push(`Format health: ${v.status === "ok" ? "ok" : "no new transcript lines since the last run"}`, ...[...v.problems, ...v.notices].map((p) => `- ${p}`), "");
   const c = m.cost;
+  const na = "n/a";
   lines.push(
+    "## By provider", "",
+    `Providers: ${m.providers.join(", ")}. Cursor transcripts carry no token usage, so its cost columns are n/a.`, "",
+    "| Provider | Sessions | API calls | Context tokens | Output tokens | Subagents | Human messages | Corrections | Interrupts |",
+    "|---|---|---|---|---|---|---|---|---|",
+    ...m.byProvider.map((p) => {
+      const cost = p.hasUsage ? [String(p.calls), formatTokens(p.contextTokens), formatTokens(p.outputTokens), String(p.subagents)] : [na, na, na, na];
+      return `| ${p.provider} | ${p.sessions} | ${cost.join(" | ")} | ${p.prompts} | ${p.corrections} | ${p.interrupts} |`;
+    }),
+    "",
     "## Cost", "", "| Signal | Value |", "|---|---|",
     `| API calls | ${c.calls} |`,
     `| Context tokens re-sent | ${formatTokens(c.contextTokens)} |`,

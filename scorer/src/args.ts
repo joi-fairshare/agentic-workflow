@@ -1,10 +1,17 @@
 import path from "node:path";
 
+import type { ProviderName } from "./transcript/source.js";
+import { isProviderName, PROVIDERS } from "./transcript/source.js";
+
 export interface CliOptions {
   command: "report" | "probe" | "context-tokens";
   since: Date;
   until: Date;
-  projectsDir: string;
+  projectsDir: string; // Claude Code transcripts
+  codexSessionsDir: string;
+  cursorProjectsDir: string;
+  // null = every provider whose transcript directory exists (resolved in run.ts).
+  providers: ProviderName[] | null;
   stateDir: string;
   // Whether --state-dir was actually passed on the command line, vs. left at
   // its home-dir default — needed so the judge-db path lookup (run.ts's
@@ -26,6 +33,9 @@ export function parseArgs(argv: string[], now: Date, home: string): ParseResult 
     since: new Date(now.getTime() - UNIT_MS.d),
     until: now,
     projectsDir: path.join(home, ".claude", "projects"),
+    codexSessionsDir: path.join(home, ".codex", "sessions"),
+    cursorProjectsDir: path.join(home, ".cursor", "projects"),
+    providers: null,
     stateDir: path.join(home, ".agentic-workflow"),
     stateDirExplicit: false,
     prLookup: true,
@@ -43,10 +53,17 @@ export function parseArgs(argv: string[], now: Date, home: string): ParseResult 
       continue;
     }
     if (arg === "--no-pr-lookup") { options.prLookup = false; continue; }
-    if (arg !== "--since" && arg !== "--projects-dir" && arg !== "--state-dir") return { ok: false, error: `unknown argument: ${arg}` };
+    if (!VALUE_FLAGS.has(arg)) return { ok: false, error: `unknown argument: ${arg}` };
     const value = args.shift();
     if (value === undefined) return { ok: false, error: `${arg} needs a value` };
     if (arg === "--projects-dir") options.projectsDir = value;
+    if (arg === "--codex-dir") options.codexSessionsDir = value;
+    if (arg === "--cursor-dir") options.cursorProjectsDir = value;
+    if (arg === "--provider") {
+      const providers = parseProviders(value);
+      if (typeof providers === "string") return { ok: false, error: providers };
+      options.providers = providers;
+    }
     if (arg === "--state-dir") { options.stateDir = value; options.stateDirExplicit = true; }
     if (arg === "--since") {
       const since = parseSince(value, now);
@@ -55,6 +72,17 @@ export function parseArgs(argv: string[], now: Date, home: string): ParseResult 
     }
   }
   return { ok: true, options };
+}
+
+const VALUE_FLAGS: ReadonlySet<string> = new Set(["--since", "--projects-dir", "--codex-dir", "--cursor-dir", "--state-dir", "--provider"]);
+
+// "all" | "claude" | "codex,cursor" …
+function parseProviders(value: string): ProviderName[] | string {
+  if (value === "all") return [...PROVIDERS];
+  const names = value.split(",").map((n) => n.trim());
+  const valid = names.filter(isProviderName);
+  if (valid.length !== names.length) return `--provider must be ${PROVIDERS.join("|")}|all (comma-separated ok): ${value}`;
+  return [...new Set(valid)];
 }
 
 function parseSince(value: string, now: Date): Date | string {

@@ -1,0 +1,1 @@
+{"conversation_id":"cu-auto","generation_id":"g-8","hook_event_name":"beforeMCPExecution","workspace_roots":["/tmp"],"tool_name":"save_issue","tool_input":"{\"title\":\"x\"}","mcp_server_name":"linear","command":"npx linear-mcp"}

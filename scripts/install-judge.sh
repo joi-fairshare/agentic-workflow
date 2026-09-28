@@ -2,15 +2,45 @@
 # Build judge and install the ~/.local/bin/judge CLI wrapper.
 #
 # Split out of setup.sh so it can be run on its own, matching install-scorer.sh.
+#
+#   install-judge.sh              build the CLI + install the SessionStart
+#                                 health hook (standalone default)
+#   install-judge.sh --build-only build the provider-neutral CLI only
+#   install-judge.sh --hook-only  install the SessionStart health hook only
+#   --provider claude|codex|cursor  which host gets the hook (default claude)
+#
+# setup.sh runs --build-only in its shared phase and --hook-only --provider X
+# from providers/<X>/install.sh, so each hook lands only for selected
+# providers (Claude: after ~/.claude/settings.json has been seeded). Codex and
+# Cursor entries run through config/hooks/adapters/<provider>.sh. AW_DRY_RUN=1
+# prints what the Codex/Cursor hook install would do and writes nothing.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 JUDGE_DIR="$SCRIPT_DIR/judge"
+# shellcheck source=../config/hooks/adapters/install-lib.sh
+source "$SCRIPT_DIR/config/hooks/adapters/install-lib.sh"
+aw_parse_provider_args "$@" || exit 1
+set -- ${AW_ARGS[@]+"${AW_ARGS[@]}"}
+
+DO_BUILD=1
+DO_HOOK=1
+case "${1:-}" in
+  --build-only) DO_HOOK=0 ;;
+  --hook-only) DO_BUILD=0 ;;
+  "") ;;
+  *) echo "usage: install-judge.sh [--build-only|--hook-only] [--provider claude|codex|cursor]" >&2; exit 1 ;;
+esac
 
 echo ""
 echo "Installing judge..."
 
-if [ -f "$JUDGE_DIR/package.json" ]; then
+if [ ! -f "$JUDGE_DIR/package.json" ]; then
+  echo "  judge: package.json not found, skipping"
+  exit 0
+fi
+
+if [ "$DO_BUILD" = "1" ]; then
   (cd "$JUDGE_DIR" && npm install && npm run build)
   BIN_DIR="${CLAUDE_LOCAL_BIN:-$HOME/.local/bin}"
   mkdir -p "$BIN_DIR" "${AW_STATE_DIR:-$HOME/.agentic-workflow}/judge"
@@ -21,7 +51,22 @@ EOF
   chmod +x "$BIN_DIR/judge"
   echo "  judge: built, CLI at $BIN_DIR/judge"
   case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "  WARN: $BIN_DIR is not on PATH" ;; esac
+fi
 
+if [ "$DO_HOOK" = "1" ] && [ "$AW_PROVIDER" != "claude" ]; then
+  aw_hooks_init "$AW_PROVIDER"
+  case "$AW_PROVIDER" in
+    codex) EVENT=SessionStart ;;
+    cursor) EVENT=sessionStart ;;
+  esac
+  if [ "${AW_DRY_RUN:-0}" = "1" ]; then
+    echo "  [dry-run] would install judge-health ($EVENT) for $AW_PROVIDER in $AW_HOOKS_CONFIG"
+  else
+    aw_hooks_stage
+    aw_hook_set "$EVENT" aw:judge-health judge-health.sh
+    echo "  judge: $EVENT health hook installed for $AW_PROVIDER in $AW_HOOKS_CONFIG"
+  fi
+elif [ "$DO_HOOK" = "1" ]; then
   SETTINGS_FILE="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
   HOOKS_DIR="${CLAUDE_HOOKS_DIR:-$HOME/.claude/hooks}"
   # shellcheck source=config/lib/merge-hook.sh
@@ -37,6 +82,4 @@ EOF
   # — never turned on as a side effect of installing judge itself (the user
   # approves live steps one at a time; "install judge" silently activating
   # the send gate on every future SendMessage would violate that).
-else
-  echo "  judge: package.json not found, skipping"
 fi

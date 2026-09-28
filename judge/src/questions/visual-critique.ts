@@ -19,9 +19,12 @@ export const visualCritique: QuestionModule<VisualCritiqueInput, "looks-right" |
   contentClass: "image",
   timeBudgetMs: 20000,
   threshold: 0.5,
+  extraProperties: { reasons: { type: "array", items: { type: "string" } } },
   prompt: (input) =>
     [
-      `Use the Read tool to look at ${input.afterScreenshot}.`,
+      // Provider-neutral wording: claude-cli and cursor-cli read the file
+      // from the evidence dir, codex-cli gets it attached as an image.
+      `Look at the screenshot ${input.afterScreenshot}.`,
       input.baselineScreenshot !== null
         ? `Then look at ${input.baselineScreenshot}, a screenshot of the same page on main before this change, and compare them.`
         : "There is no main-branch screenshot to compare against — judge it on its own.",

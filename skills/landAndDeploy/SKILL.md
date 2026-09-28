@@ -9,177 +9,8 @@ allowed-tools: Bash, Read, Write, Skill, AskUserQuestion, mcp__prism-mcp__sessio
 
 Bridges `/shipRelease` and `/canary`. Waits for PR merge, runs the user-defined deploy command, polls health, runs smoke tests, then auto-chains `/canary`.
 
-<!-- === PREAMBLE START === -->
-
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
->
-> | Skill | Purpose |
-> |-------|---------|
-> | `/review` | Multi-agent PR code review |
-> | `/postReview` | Publish review findings to GitHub |
-> | `/addressReview` | Implement review fixes in parallel |
-> | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
-> | `/rootCause` | 4-phase systematic debugging |
-> | `/bugHunt` | Fix-and-verify loop with regression tests |
-> | `/bugReport` | Structured bug report with health scores |
-> | `/shipRelease` | Sync, test, push, open PR |
-> | `/syncDocs` | Post-ship doc updater |
-> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
-> | `/productReview` | Founder/product lens plan review |
-> | `/archReview` | Engineering architecture plan review |
-> | `/withInterview` | Interview user to clarify requirements before executing |
-> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
-> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
-> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
-> | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
-> | `/design-evolve-web` | Merge new URL into design language (web) |
-> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
-> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
-> | `/design-mockup-web` | Generate HTML mockup from design language |
-> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
-> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
-> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
-> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
-> | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
-> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
-> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
-> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
-> | `/verify-web` | Playwright browser verification of running web app |
-> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
-> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
-> | `/planDesignReview` | Design-lens review of plan docs |
-> | `/planDevexReview` | DX-lens review of plan docs |
-> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
-> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
-> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
-> | `/canary` | Post-deploy monitoring with custom probes |
-> | `/prismStatus` | Health check for prism-mcp |
-> | `/specToProvenPR` | Approved spec → proven, review-clean PRs, one shippable stage at a time |
->
-> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> ### Meta-Orchestration Convention
->
-> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
-
-## Codebase Navigation
-
-Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster and more precise than file scanning.
-
-| Task | Tool |
-|------|------|
-| Find a function, class, or symbol | `serena: find_symbol` |
-| What references symbol X? | `serena: find_referencing_symbols` |
-| Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
-
-## Preamble — Bootstrap Check
-
-Before running this skill, verify the environment is set up:
-
-```bash
-# Derive repo slug
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$REMOTE_URL" ]; then
-  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
-else
-  REPO_SLUG=$(basename "$(pwd)")
-fi
-echo "repo-slug: $REPO_SLUG"
-
-# Check bootstrap status
-SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
-done
-
-BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
-
-RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
-
-echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-running: $BRIDGE_OK"
-echo "rules-directory: $RULES_OK"
-```
-
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
-
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
-> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
-
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
-If **no**: warn that some features may not work, then continue.
-
-If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
-
-Create the output directory for this repo:
-```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
-```
-
-## Session Context
-
-Load prior work state for this repo from prism-mcp before starting.
-
-**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
-- `/officeHours add dark mode` → `"dark mode UI feature"`
-- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
-- `/review 42` → use the PR title once fetched: `"PR {title} review"`
-- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
-
-**2. Load context from prism-mcp:**
-```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
-  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
-```
-
-Store the returned `expected_version` — you will need it at Session Close.
-
-**3. Surface results:**
-- If the response contains a non-empty summary or prior decisions:
-  > **Prior context:** {summary}
-  Use this to inform your approach before continuing.
-- If prism-mcp returns an error, surface it and stop:
-  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
-
-## Session Close
-
-> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
-
-Save a structured ledger entry and update the live handoff state for this repo.
-
-**1. Save ledger entry (immutable audit trail):**
-```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
-  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
-  summary: "<one paragraph describing what was accomplished this session>",
-  todos: ["<any open items left incomplete>", ...],
-  files_changed: ["<paths of files created or modified>", ...],
-  decisions: ["<key decisions made during this skill run>", ...]
-```
-
-**2. Update handoff state (mutable live state for next session):**
-```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
-  expected_version: <value returned by session_load_context>,
-  open_todos: ["<open items not yet completed>", ...],
-  active_branch: "<current git branch from: git branch --show-current>",
-  last_summary: "<one sentence: what this skill just did>",
-  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
-```
-
-If either call fails, surface the error:
-> "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->
+<!-- preamble -->
+**Before anything else:** read `$HOME/.agentic-workflow/toolkit/skills/_preamble.md` and follow it (skill index, provider capability map, bootstrap check, session context). Run its **Session Close** section when this skill finishes.
 
 ## Overview
 
@@ -193,7 +24,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
   - Default `--no-wait` when invoked standalone (user is at the terminal, expects fast feedback)
 - `--setup` flag: run interactive wizard to write `.agentic-workflow/deploy.json`, then exit.
 - `--skip-docs` flag (optional). Propagates from `/shipRelease` and forwards to `/canary` on auto-chain, suppressing the eventual `/syncDocs` invocation downstream. This skill does not call `/syncDocs` directly — it only forwards the flag.
-- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to consume `~/.agentic-workflow/$REPO_SLUG/releases/.pending-ship.json` (written by shipRelease Step 7) and fold its ship-phase metadata into a `## Ship Phase` subsection at the top of `deploy.md`. A CLI flag propagates reliably across the Skill tool boundary; env vars don't.
+- `--chained-from-ship` flag (optional). Set automatically by `/shipRelease` when chaining. Activates graceful-degrade if `deploy.json` is missing, and instructs this skill to consume `~/.agentic-workflow/$REPO_SLUG/releases/.pending-ship.json` (written by shipRelease Step 7) and fold its ship-phase metadata into a `## Ship Phase` subsection at the top of `deploy.md`. A CLI flag propagates reliably across the skill-invocation boundary; env vars don't.
 - Config file: `.agentic-workflow/deploy.json` in project root.
 
 ## Config schema (`.agentic-workflow/deploy.json`)
@@ -216,7 +47,7 @@ Reads `.agentic-workflow/deploy.json` for deploy command, health URL, smoke test
 
 ## --setup Wizard
 
-When invoked with `--setup`, prompt the user (one question per AskUserQuestion call):
+When invoked with `--setup`, **Ask the user** (one question per call):
 
 1. Deploy command (e.g., `npm run deploy:prod`)
 2. Health URL (e.g., `https://example.com/health`)
@@ -261,7 +92,7 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
 11. Run each `deploy.smokeTests[]` command sequentially. Capture each exit code and stdout.
     - Any non-zero → mark deploy DEGRADED.
 
-12. If `deploy.journey` is configured: drive the deployed app — invoke `Skill(skill="verify-app", args="--base-url <journey.baseUrl> --yes <journey.args>")`. A FAIL verdict → mark deploy DEGRADED and record the evidence-pack path in `deploy.md`.
+12. If `deploy.journey` is configured: drive the deployed app — **Invoke skill `verify-app`** with args `--base-url <journey.baseUrl> --yes <journey.args>`. A FAIL verdict → mark deploy DEGRADED and record the evidence-pack path in `deploy.md`.
 
 13. Write `~/.agentic-workflow/$REPO_SLUG/releases/<release-id>/deploy.md`. When invoked with `--chained-from-ship`, include a `## Ship Phase` subsection at the top from the `.pending-ship.json` metadata. The merge-SHA-based release-id ensures this file lives in the same subdir as `canary.md`, so the full release (ship + deploy + canary + docs-sync) lives under one folder.
     ```markdown
@@ -296,8 +127,8 @@ Write `.agentic-workflow/deploy.json` (create the dir if missing). Exit without 
     ```
 
 14. Branch on verdict:
-    - **SUCCESS:** auto-invoke `/canary` via the `Skill` tool, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
-    - **DEGRADED:** do NOT silently stop — ask via AskUserQuestion: "Deploy is DEGRADED ({reason}). Proceed to /canary monitoring, roll back, or stop?" Options: `Proceed to canary` (invoke `/canary` with the release-id), `Roll back` (print the rollback path — `gh pr revert` or repo-specific — and stop), `Stop` (record the choice in deploy.md and exit).
+    - **SUCCESS:** auto-**Invoke skill `canary`**, passing the release-id. If this skill received `--skip-docs` (directly or propagated from `/shipRelease`), forward `--skip-docs` to `/canary` so it suppresses its own `/syncDocs` auto-chain on HEALTHY.
+    - **DEGRADED:** do NOT silently stop — **Ask the user:** "Deploy is DEGRADED ({reason}). Proceed to /canary monitoring, roll back, or stop?" Options: `Proceed to canary` (invoke `/canary` with the release-id), `Roll back` (print the rollback path — `gh pr revert` or repo-specific — and stop), `Stop` (record the choice in deploy.md and exit).
     - **FAILED:** already handled in step 9.
 
 ## Outputs

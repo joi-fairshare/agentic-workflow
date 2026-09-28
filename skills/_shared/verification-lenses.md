@@ -20,8 +20,8 @@ A **journey** is a named, ordered list of steps `{action, target, assertion}` ex
 
 | Lens | Web binding | iOS binding |
 |---|---|---|
-| `functional` | journeys via `mcp__plugin_playwright_playwright__browser_navigate/click/fill_form/press_key/select_option`; assert via `browser_snapshot`; `browser_console_messages` clean; `browser_network_requests` no failed calls | journeys via `mcp__xcodebuildmcp__snapshot_ui` (coordinates/labels) + gesture tools when UI-automation enabled (capability probe per `_shared/sim-bootstrap.md`); assert via `snapshot_ui` |
-| `visual` | `browser_take_screenshot` per screen×viewport; baseline in screens.json ⇒ `mcp__design-comparison__compare_design`, record diff % (CD11 thresholds: ≤2% PASS, 2–10% WARN, >10% FAIL) | `mcp__xcodebuildmcp__screenshot`; baseline diff same way |
+| `functional` | journeys via `mcp: playwright/browser_navigate`, `browser_click`, `browser_fill_form`, `browser_press_key`, `browser_select_option`; assert via `browser_snapshot`; `browser_console_messages` clean; `browser_network_requests` no failed calls | journeys via `mcp: xcodebuildmcp/snapshot_ui` (coordinates/labels) + gesture tools when UI-automation enabled (capability probe per `_shared/sim-bootstrap.md`); assert via `snapshot_ui` |
+| `visual` | `browser_take_screenshot` per screen×viewport; baseline in screens.json ⇒ `mcp: design-comparison/compare_design`, record diff % (CD11 thresholds: ≤2% PASS, 2–10% WARN, >10% FAIL) | `mcp: xcodebuildmcp/screenshot`; baseline diff same way |
 | `accessibility` | `browser_snapshot` tree: labels, roles, heading order, keyboard reachability | `snapshot_ui`: a11y labels/identifiers on interactive elements |
 | `error-state` | invalid input / unknown route; assert visible error UI; console shows no uncaught exception | invalid input via journey; assert error UI in snapshot_ui |
 | `responsive` (web only) | `browser_resize` to the 3 CD4 viewports (mobile 375×812, tablet 768×1024, desktop 1440×900), re-snapshot each | — |

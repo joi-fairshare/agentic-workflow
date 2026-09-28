@@ -32,12 +32,17 @@ way to tune it without leaving the conversation.
 - A decision looks wrong: `judge undo <id>`, then consider `judge config set <question>
   threshold <higher>` if it keeps happening for that question.
 - The status line shows `judge ⚠ n failures` or `judge ✗ down`: run `judge health` for detail,
-  then check whether it's the CLI provider (Haiku via subscription — no API key needed) or the
-  Jev provider (needs `TYPESAFE_API_KEY`, unavailable — not a failure — until it's configured).
+  then check whether it's a CLI provider (`claude-cli`, `codex-cli`, or `cursor-cli` — the host
+  agent CLI's small model via subscription, no API key needed) or the Jev provider (needs `TYPESAFE_API_KEY`, unavailable — not a failure — until it's configured).
+  Any one of the `claude`, `codex`, or `cursor-agent` CLIs on `PATH` is enough. Order: config
+  `providers.agentClis` if set, else claude → codex → cursor with the current host (`AW_PROVIDER`)
+  first. `cursor-cli` is slow (~8–13s), so on Cursor-only machines text questions often time out
+  to `rules`. Set `providers.agentClis` in `~/.agentic-workflow/judge/config.json` to change the order.
 
 ## What this skill does not cover
 
-- Installing or updating `judge` itself — see `scripts/install-judge.sh`.
+- Installing or updating `judge` itself — see `scripts/install-judge.sh` (`--provider
+  claude|codex|cursor` picks which host gets the SessionStart health hook).
 - Adding a new question module — that's application code in `judge/src/questions/`, following
   the `QuestionModule` interface in `judge/src/question.ts`.
 - Wiring `judge wake-gate` into a live hook — that's Plan 4 (rollout step 4), gated on the

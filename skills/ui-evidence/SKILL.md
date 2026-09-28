@@ -6,10 +6,10 @@ description: Generate Playwright-based UI evidence for a web-app PR — plan wit
 # UI evidence
 
 1. Doctor the stack: `bash scripts/doctor.sh`. Refuse to proceed if unhealthy or foreign (RF-1).
-2. Dispatch `qa-runner` with the PR diff and `verify-web-app`'s route map to write a script (`script-schema.ts`'s shape).
+2. **Spawn a subagent** — the `qa-runner` custom agent (installed per provider) — with the PR diff and `verify-web-app`'s route map to write a script (`script-schema.ts`'s shape).
 3. `with_stack_lock_and_heavy_job_lock 120 node dist/run-script.js <script.json> <run-dir>`.
 4. Check DB provenance (`checkDbProvenance`) before deciding whether Linear upload is even offered.
-5. Visual rubric critique: one Haiku call per run via `judge visual-critique`, reading the run's own after-screenshot (and the main-branch baseline, when captured) through the Read tool with `cwd` set to the run's evidence dir. Falls back to `unchecked` on any failure, timeout, or out-of-enum result — never a default `looks-right`.
+5. Visual rubric critique: one cheap-model call per run via `judge visual-critique` (the configured judge provider), reading the run's own after-screenshot (and the main-branch baseline, when captured) through the judge provider's file-read tool with `cwd` set to the run's evidence dir. Falls back to `unchecked` on any failure, timeout, or out-of-enum result — never a default `looks-right`.
 6. `publishEvidence(...)` — every write asks first, per this repo's policy.
 
 ## Configuration

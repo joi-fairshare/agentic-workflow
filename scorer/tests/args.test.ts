@@ -9,7 +9,8 @@ describe("parseArgs", () => {
   it("defaults to a one-day report", () => {
     expect(parseArgs([], NOW, HOME)).toEqual({ ok: true, options: {
       command: "report", since: new Date("2026-09-25T12:00:00.000Z"), until: NOW,
-      projectsDir: "/home/j/.claude/projects", stateDir: "/home/j/.agentic-workflow", stateDirExplicit: false, prLookup: true,
+      projectsDir: "/home/j/.claude/projects", codexSessionsDir: "/home/j/.codex/sessions", cursorProjectsDir: "/home/j/.cursor/projects",
+      providers: null, stateDir: "/home/j/.agentic-workflow", stateDirExplicit: false, prLookup: true,
       contextTokensPath: null,
     } });
   });
@@ -40,7 +41,18 @@ describe("parseArgs", () => {
     expect(r).toEqual({ ok: true, options: expect.objectContaining({ command: "context-tokens", contextTokensPath: "/tmp/t.jsonl" }) });
   });
 
+  it("accepts --provider (single, list, all) and per-provider directories", () => {
+    const one = parseArgs(["--provider", "codex", "--codex-dir", "/c", "--cursor-dir", "/k"], NOW, HOME);
+    expect(one).toEqual({ ok: true, options: expect.objectContaining({ providers: ["codex"], codexSessionsDir: "/c", cursorProjectsDir: "/k" }) });
+    const list = parseArgs(["--provider", "cursor, claude,cursor"], NOW, HOME);
+    expect(list.ok && list.options.providers).toEqual(["cursor", "claude"]);
+    const all = parseArgs(["--provider", "all"], NOW, HOME);
+    expect(all.ok && all.options.providers).toEqual(["claude", "codex", "cursor"]);
+  });
+
   it.each([
+    [["--provider", "gemini"], "--provider must be claude|codex|cursor|all (comma-separated ok): gemini"],
+    [["--provider"], "--provider needs a value"],
     [["--since"], "--since needs a value"],
     [["--since", "yesterday"], "--since must be like 7d, 12h or an ISO date: yesterday"],
     [["--since", "2027-01-01"], "--since must be in the past: 2027-01-01"],

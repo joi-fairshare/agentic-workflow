@@ -9,6 +9,43 @@ HOOKS_DIR="${CLAUDE_HOOKS_DIR:-$HOME/.claude/hooks}"
 JUDGE_BIN="${AW_JUDGE_BIN:-judge}"
 # shellcheck source=../config/lib/merge-hook.sh
 source "$ROOT/config/lib/merge-hook.sh"
+# shellcheck source=../config/hooks/adapters/install-lib.sh
+source "$ROOT/config/hooks/adapters/install-lib.sh"
+# Usage: scripts/install-scope-gate.sh [--provider claude|codex|cursor] [--uninstall]
+aw_parse_provider_args "$@" || exit 1
+set -- ${AW_ARGS[@]+"${AW_ARGS[@]}"}
+
+# Codex: PreToolUse(Agent = spawn_agent) + SubagentStart. Cursor: scope-gate
+# on subagentStart (it can block, and carries the task text + tool_call_id);
+# subagent-start-map is not needed there (see config/hooks/adapters/README.md).
+if [ "$AW_PROVIDER" != "claude" ]; then
+  aw_hooks_init "$AW_PROVIDER"
+  if [ "${1:-}" = "--uninstall" ]; then
+    if [ "$AW_PROVIDER" = "codex" ]; then
+      aw_hook_unset PreToolUse aw:scope-gate
+      aw_hook_unset SubagentStart aw:subagent-start-map
+    else
+      aw_hook_unset subagentStart aw:scope-gate
+    fi
+    echo "  scope-gate: hook entries removed from $AW_HOOKS_CONFIG"
+    exit 0
+  fi
+  if ! command -v "$JUDGE_BIN" > /dev/null 2>&1; then
+    echo "  scope-gate: refusing to install — judge is not installed (run scripts/install-judge.sh first, or set AW_JUDGE_BIN)" >&2
+    exit 1
+  fi
+  aw_hooks_stage
+  if [ "$AW_PROVIDER" = "codex" ]; then
+    aw_hook_set PreToolUse aw:scope-gate scope-gate.sh '^(Agent|spawn_agent)$' 12
+    aw_hook_set SubagentStart aw:subagent-start-map subagent-start-map.sh
+    echo "  scope-gate: scope-gate (PreToolUse/Agent), subagent-start-map (SubagentStart) hooks installed for codex in $AW_HOOKS_CONFIG"
+  else
+    aw_hook_set subagentStart aw:scope-gate scope-gate.sh "" 12
+    aw_unsupported subagent-start-map "Cursor's subagentStart already carries the dispatch's tool_call_id, which scope-gate saves the brief under"
+    echo "  scope-gate: scope-gate (subagentStart) hook installed for cursor in $AW_HOOKS_CONFIG"
+  fi
+  exit 0
+fi
 
 if [ "${1:-}" = "--uninstall" ]; then
   merge_hook "$SETTINGS_FILE" PreToolUse aw:scope-gate null

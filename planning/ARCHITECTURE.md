@@ -1,41 +1,50 @@
-# Agentic Workflow Architecture
+# Vitalize Workflow Toolkit Architecture
 
 ## System Overview
 
-Agentic Workflow is a portable Claude Code toolkit with three independent components: 34 custom skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives), a documentation bootstrapper skill, a TypeScript MCP bridge server for inter-agent coordination, and a centralized output directory for cross-skill artifact sharing. The skills are installed by symlinking into `~/.claude/skills/` and invoked as slash commands inside Claude Code sessions. The MCP bridge runs as either a stdio MCP server (registered with `claude mcp add`) or a standalone Fastify REST API, persisting messages and tasks to a local SQLite database so agents can exchange context asynchronously.
+The Vitalize Workflow Toolkit (repo: `agentic-workflow`) is a portable, provider-agnostic workflow toolkit for AI coding agents. It supports **Claude Code**, **Codex**, and **Cursor** as equal hosts. The canonical core has these parts:
+
+- 44 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
+- a documentation bootstrapper skill
+- canonical safety hooks
+- a TypeScript MCP bridge server for inter-agent coordination
+- the judge and scorer packages
+- a centralized output directory for cross-skill artifact sharing
+
+A thin **provider adapter layer** (see below and `planning/PROVIDERS.md`) installs that core into each provider. Skills are symlinked into each installed provider's skills directory. They are invoked as `/<name>` in Claude Code and Cursor and as `$<name>` in Codex. The MCP bridge runs either as a stdio MCP server, registered with every installed provider, or as a standalone Fastify REST API. Both modes persist messages and tasks to a local SQLite database, so agents on any provider can exchange context asynchronously.
 
 ```mermaid
 graph TD
-    subgraph "Claude Code Session — Planning"
+    subgraph "Agent Session — Planning"
         User --> |"/officeHours"| OfficeHours[officeHours skill]
         User --> |"/productReview"| ProductReview[productReview skill]
         User --> |"/archReview"| ArchReview[archReview skill]
     end
 
-    subgraph "Claude Code Session — Review"
+    subgraph "Agent Session — Review"
         User --> |"/review 42"| Review[review skill]
         User --> |"/postReview"| PostReview[postReview skill]
         User --> |"/addressReview"| AddressReview[addressReview skill]
     end
 
-    subgraph "Claude Code Session — QA & Debug"
+    subgraph "Agent Session — QA & Debug"
         User --> |"/rootCause"| RootCause[rootCause skill]
         User --> |"/bugHunt"| BugHunt[bugHunt skill]
         User --> |"/bugReport"| BugReport[bugReport skill]
     end
 
-    subgraph "Claude Code Session — Ship & Retro"
+    subgraph "Agent Session — Ship & Retro"
         User --> |"/shipRelease"| ShipRelease[shipRelease skill]
         User --> |"/syncDocs"| SyncDocs[syncDocs skill]
         User --> |"/weeklyRetro"| WeeklyRetro[weeklyRetro skill]
     end
 
-    subgraph "Claude Code Session — Utilities"
+    subgraph "Agent Session — Utilities"
         User --> |"/enhancePrompt"| EnhancePrompt[enhancePrompt skill]
         User --> |"/bootstrap"| Bootstrap[bootstrap skill]
     end
 
-    subgraph "Claude Code Session — Design"
+    subgraph "Agent Session — Design"
         User --> |"/design-analyze"| DesignAnalyze[design-analyze skill]
         User --> |"/design-language"| DesignLanguage[design-language skill]
         User --> |"/design-evolve"| DesignEvolve[design-evolve skill]
@@ -53,7 +62,7 @@ graph TD
     end
 
     Review --> |"gh pr diff"| GitHub
-    Review --> |"Agent tool"| Triage[Triage Subagent]
+    Review --> |"spawn subagent"| Triage[Triage Subagent]
     Triage --> Reviewers[Parallel Reviewer Subagents]
 
     OfficeHours --> OutputDir
@@ -70,7 +79,7 @@ graph TD
     OutputDir["~/.agentic-workflow/repo-slug/"]
 
     PostReview --> |"gh api"| GitHub
-    AddressReview --> |"Agent tool"| Implementers[Parallel Implementer Subagents]
+    AddressReview --> |"spawn subagent"| Implementers[Parallel Implementer Subagents]
     Implementers --> |"git push"| GitHub
     ShipRelease --> |"gh pr create"| GitHub
 
@@ -82,6 +91,38 @@ graph TD
 
     Review -.-> |"send_context / assign_task"| MCP
 ```
+
+### Provider Adapter Layer
+
+Everything provider-specific is kept at the edges. The core is written once and each provider gets a thin adapter:
+
+```mermaid
+graph LR
+    subgraph "Canonical core (this repo)"
+        Skills["skills/*/SKILL.md<br/>(capability phrases)"]
+        Hooks["config/hooks/*.sh<br/>(canonical protocol)"]
+        Rules["AGENTS.md + .agents/rules/"]
+        MCPs["MCP servers<br/>(bridge, serena, headroom, prism-mcp, ...)"]
+    end
+
+    Setup["setup.sh --providers ..."] --> PClaude["providers/claude/"]
+    Setup --> PCodex["providers/codex/"]
+    Setup --> PCursor["providers/cursor/"]
+
+    Skills --> |symlink| PClaude & PCodex & PCursor
+    Hooks --> |native| PClaude
+    Hooks --> |"adapters/codex.sh"| PCodex
+    Hooks --> |"adapters/cursor.sh"| PCursor
+    Rules --> |"scripts/sync-rules.sh"| Emitted[".claude/rules/, .cursor/rules/*.mdc,<br/>AGENTS.md rules index, CLAUDE.md stub"]
+    MCPs --> |"claude mcp add / codex mcp add / ~/.cursor/mcp.json"| PClaude & PCodex & PCursor
+```
+
+- **Installer.** `setup.sh [--providers claude,codex,cursor]` installs for the listed providers, or detects installed CLIs when no flag is given. It runs the shared steps (bridge build, Serena images, external pack fetch, rtk and headroom) once, then calls `providers/<name>/install.sh` and `providers/<name>/install-hooks.sh` for each selected provider.
+- **Stable paths.** `~/.agentic-workflow/toolkit` is a symlink to the repo root. Skills resolve shared fragments through `SHARED_DIR=~/.agentic-workflow/toolkit/skills/_shared`, never through a provider's skills directory. `~/.agentic-workflow/providers` records each installed provider and its skills directory (`<name> <skills-dir>` per line).
+- **Capabilities, not tools.** Skill text names capabilities (**Ask the user**, **Spawn a subagent**, **Dispatch in parallel**, **Invoke skill**, `mcp: <server>/<tool>`). `skills/_shared/capabilities.md` maps each one to the right tool on each provider. `allowed-tools` frontmatter uses Claude Code names, and the other providers ignore it.
+- **Hooks.** `config/hooks/*.sh` speak one protocol (JSON on stdin, exit 2 = deny). Claude Code runs them directly. `config/hooks/adapters/{codex,cursor}.sh` translate each provider's hook payloads, event names, and exit semantics to that protocol, so the safety logic exists once.
+- **Repo instructions.** `AGENTS.md` and `.agents/rules/*.md` (frontmatter `description`, `globs`, `paths`, `alwaysApply`) are the only copies. `scripts/sync-rules.sh` symlinks `.claude/rules` → `.agents/rules`, `.cursor/rules/<name>.mdc` → `.agents/rules/<name>.md`, and `CLAUDE.md` → `AGENTS.md`, and it regenerates the Rules Index in `AGENTS.md` for Codex.
+- **Judge and scorer.** `judge/src/providers/` has `claude-cli`, `codex-cli`, and `cursor-cli` model providers. `scorer/src/transcript/` has one transcript source per provider, selected with `--provider`.
 
 ### Skill Pipeline
 
@@ -99,7 +140,11 @@ Each skill writes outputs to `~/.agentic-workflow/<repo-slug>/` that downstream 
 
 ```
 agentic-workflow/
-├── skills/                              # Claude Code custom slash-command skills (34)
+├── AGENTS.md                            # Canonical repo instructions (CLAUDE.md is a symlink to it)
+├── .agents/rules/                       # Glob-scoped rules, the only copy (linked by scripts/sync-rules.sh)
+├── providers/                           # Per-provider adapters
+│   └── <claude|codex|cursor>/           #   install.sh (skills, MCP, config) + install-hooks.sh
+├── skills/                              # Native skills (44), shared by all providers
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -121,7 +166,7 @@ agentic-workflow/
 │   ├── shipRelease/                     # /shipRelease — sync, test, push, PR
 │   │   └── SKILL.md                     #   pre-flight → sync → test → push → PR → syncDocs
 │   ├── syncDocs/                        # /syncDocs — post-ship doc updater
-│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/
+│   │   └── SKILL.md                     #   README, ARCHITECTURE, CHANGELOG, AGENTS.md, .agents/rules/
 │   ├── weeklyRetro/                     # /weeklyRetro — weekly retrospective
 │   │   └── SKILL.md                     #   per-person breakdown, shipping streaks, insights
 │   ├── officeHours/                     # /officeHours — YC-style brainstorming
@@ -150,17 +195,19 @@ agentic-workflow/
 │   ├── verify-app/                      # /verify-app — platform dispatcher (routes to verify-web or verify-ios)
 │   ├── verify-web/                      # /verify-web — standalone web app verification using Playwright
 │   ├── verify-ios/                      # /verify-ios — standalone iOS app verification using XcodeBuildMCP
-│   ├── _preamble.md                     # Shared preamble reference (not a skill)
-│   ├── _design-preamble.md              # Shared design context preamble (not a skill)
-│   └── _shared/
+│   ├── _preamble.md                     # Shared preamble — every SKILL.md references it
+│   ├── _design-preamble.md              # Shared design preamble — design skills reference it
+│   └── _shared/                         # Shared fragments, resolved via ~/.agentic-workflow/toolkit/skills/_shared
+│       ├── capabilities.md             # Capability → per-provider tool map
 │       └── skill-lock.sh               # Shared lock script sourced by platform sub-skills to prevent concurrent runs
 ├── bootstrap/                           # /bootstrap — repo documentation generator
 │   └── SKILL.md                         #   audits 17 Pivot-pattern docs, generates missing
-├── config/                              # Claude Code configuration archive
+├── config/                              # Configuration archive (Claude Code settings, MCP config, hooks)
 │   ├── settings.json                    #   model, plugins, permissions, statusLine command, PreToolUse + SessionStart hook registrations
 │   ├── statusline.sh                    #   adaptive two-line statusline (5 tiers: FULL/MEDIUM/NARROW/COMPACT/COMPACT-S)
 │   ├── mcp.json                         #   MCP server registrations (xcodebuildmcp)
-│   └── hooks/                           #   Safety hook scripts installed to ~/.claude/hooks/
+│   └── hooks/                           #   Canonical hook scripts (Claude protocol), installed per provider
+│       ├── adapters/                    #     codex.sh, cursor.sh — normalize provider hook stdin/exit codes
 │       ├── block-destructive.sh         #     PreToolUse — blocks rm -rf, git reset --hard, git push --force, etc.
 │       ├── block-push-main.sh           #     PreToolUse — blocks git push to main/master
 │       ├── detect-secrets.sh            #     PreToolUse — blocks AWS keys, GitHub tokens, Bearer tokens
@@ -214,14 +261,17 @@ agentic-workflow/
 │           ├── messages.ts            #   POST /messages/send, GET /messages/conversation/:id, GET /messages/unread
 │           ├── tasks.ts               #   POST /tasks/assign, GET /tasks/:id, GET /tasks/conversation/:id, POST /tasks/report
 │           └── conversations.ts       #   GET /conversations (paginated summaries)
+├── judge/                               # Cheap typed decisions (providers: claude-cli, codex-cli, cursor-cli)
+├── scorer/                              # Cost/involvement report (transcript sources: claude, codex, cursor)
 ├── scripts/                             # Utility scripts
+│   ├── sync-rules.sh                    #   Emit .claude/rules/, .cursor/rules/*.mdc, AGENTS.md rules index
 │   └── serena-docker                    #   Serena MCP wrapper — mounts repo into Docker at invocation time
 ├── Dockerfile.serena                    # Serena base image (TS, Python, Go, Rust)
 ├── Dockerfile.serena-csharp             # Serena C# extension image (adds OmniSharp + .NET SDK)
 ├── .serena/                             # Serena LSP per-repo configuration
 │   └── project.yml                      #   Language servers, ignored_paths, read_only flag
 ├── .claude/
-│   ├── rules/                           # Glob-scoped domain rules (auto-loaded by Claude Code)
+│   ├── rules/                           # Generated from .agents/rules/ (auto-loaded by Claude Code)
 │   │   ├── bridge-services.md           #   AppResult pattern, MCP tools, service contracts
 │   │   ├── bridge-transport.md          #   Typed router, controller factories, Zod schema conventions
 │   │   ├── database.md                  #   DbClient, schema reference, idempotency
@@ -232,7 +282,7 @@ agentic-workflow/
 │   │   └── testing.md                   #   Test infrastructure, shared helpers, coverage policy
 │   └── settings.json                    #   disableBypassPermissionsMode, enabledMcpjsonServers
 ├── .dockerignore                        # Excludes node_modules, dist, *.db from Docker build context
-├── setup.sh                             # One-command installer: skills, config, statusline, hooks, Serena Docker images, MCP registration
+├── setup.sh                             # One-command installer: setup.sh [--providers claude,codex,cursor]
 ├── .gitignore                           # Ignores node_modules, dist, *.db, .env, .review-cache
 └── README.md                            # Project overview, setup instructions, env vars
 ```
@@ -256,13 +306,13 @@ The repo slug is derived from `git remote get-url origin` (e.g., `org-name-repo-
 
 ### Overview
 
-Thirty-four Claude Code custom skills defined as Markdown SKILL.md files with YAML frontmatter. Skills are slash commands that Claude Code executes as structured workflows. They use the `Agent` tool to spawn parallel subagents and `gh` CLI for GitHub API access. Every skill includes a shared preamble that lists all 34 skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
+Forty-four native skills defined as Markdown SKILL.md files with YAML frontmatter. The same files serve every provider. Skills are invoked as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex) and executed as structured workflows. They use the **Spawn a subagent** / **Dispatch in parallel** capabilities for parallel subagents (mapped per provider in `skills/_shared/capabilities.md`) and the `gh` CLI for GitHub API access. Every skill references one shared preamble file (`skills/_preamble.md`) that lists all native skills, points to the centralized output directory, and checks bootstrap status. Seven design pipeline skills (design-analyze, design-language, design-evolve, design-mockup, design-implement, design-refine, design-verify) share a separate design preamble for brand context and design token management. Six of the skills (design-analyze, design-evolve, design-mockup, design-implement, design-verify, and verify-app) are thin platform dispatchers: they **auto-detect** the platform by checking for iOS indicators (Package.swift, *.xcodeproj) or web indicators (package.json with a web framework dependency) and route to the appropriate sub-skill automatically. When detection is ambiguous, the dispatcher asks the user to clarify. Manual sub-skill invocation (e.g., `/design-mockup-web`, `/design-mockup-ios`) is available as an escape hatch. The shared utility `skills/_shared/skill-lock.sh` is sourced by all dispatcher sub-skills to prevent concurrent platform invocations from the same repo.
 
 ### Review Pipeline (skills/review/, postReview/, addressReview/)
 
 A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/<repo-slug>/reviews/{number}.json`) as the coordination mechanism:
 
-**Phase 1 — `/review`:** Fetches PR diff and metadata via `gh`, spawns a triage subagent to classify changed files into domain-specific reviewer assignments (from a catalog of 12+ specialist agents like `security-sentinel`, `kieran-typescript-reviewer`, `performance-oracle`). Triage includes SQL safety checks and LLM trust boundary analysis. All reviewers run in parallel via the `Agent` tool. Each returns structured JSON with severity-tagged issues (`blocking`, `issue`, `suggestion`, `nit`) including `diff_position` for inline placement. Results are written to the reviews directory.
+**Phase 1 — `/review`:** Fetches PR diff and metadata via `gh`, spawns a triage subagent to classify changed files into domain-specific reviewer assignments (from a catalog of 12+ specialist agents like `security-sentinel`, `kieran-typescript-reviewer`, `performance-oracle`). Triage includes SQL safety checks and LLM trust boundary analysis. All reviewers run in parallel (**Dispatch in parallel**). Each returns structured JSON with severity-tagged issues (`blocking`, `issue`, `suggestion`, `nit`) including `diff_position` for inline placement. Results are written to the reviews directory.
 
 **Phase 2 — `/postReview`:** Reads the state file and publishes findings to GitHub as batched PR reviews (one `gh api` call per reviewer agent). Captures posted comment IDs back into the state file. Marks `posted: true`.
 
@@ -280,7 +330,7 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 **`/shipRelease`** — Pre-flight checks (clean tree, branch exists), fetch and rebase on base, run tests, audit coverage, push, open PR via `gh`, then auto-invoke `/syncDocs`. Writes release report to `releases/`.
 
-**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, CLAUDE.md, and the `.claude/rules/` rule files with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
+**`/syncDocs`** — Post-ship documentation updater. Spawns parallel agents to update README, ARCHITECTURE.md, CHANGELOG, AGENTS.md, and the `.agents/rules/` rule files with targeted edits based on recent git changes. Commits updates. Writes sync report to `releases/`.
 
 **`/weeklyRetro`** — Analyzes git history for per-person breakdowns (commits, lines, areas of activity), shipping streaks, test health trends, and generates actionable insights. Compares to previous retros if available. Writes retrospective to `retros/`.
 
@@ -324,26 +374,26 @@ Design artifacts: `.impeccable.md` (brand context for AI tools), `design-tokens.
 
 ### Prompt Enhancer (skills/enhancePrompt/)
 
-A utility skill that discovers project documentation files (CLAUDE.md, planning/, docs/), reads those relevant to the user's current request, and rewrites the prompt with injected context before execution. Used by `/bootstrap` as its first step.
+A utility skill that discovers project documentation files (AGENTS.md / CLAUDE.md, planning/, docs/), reads those relevant to the user's current request, and rewrites the prompt with injected context before execution. Used by `/bootstrap` as its first step.
 
 ### Bootstrap (bootstrap/)
 
-Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a trimmed CLAUDE.md (navigation doc only, under 80 lines), a `.claude/rules/` directory of glob-scoped rule files inferred from the repo's actual structure, and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched `Agent` subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full 34-skill pipeline as next steps.
+Orchestrates generation of up to 17 Pivot-pattern planning documents (ARCHITECTURE, ERD, API_CONTRACT, TESTING, etc.) plus a canonical `AGENTS.md` (navigation doc only) with `CLAUDE.md` as a symlink to it, a `.agents/rules/` directory of glob-scoped rule files inferred from the repo's actual structure (symlinked into `.claude/rules` and `.cursor/rules/` by `sync-rules.sh`), and a `.serena/project.yml` config for Serena LSP integration. Audits existing coverage by searching for docs under flexible name patterns, then spawns batched subagents (4-5 at a time) to research and write missing docs. Adapts content to the target repo's actual tech stack. Suggests relevant skills from the full skill pipeline as next steps.
 
 ### Serena LSP Integration
 
-Serena is a Dockerized LSP MCP server that provides symbol navigation (find definitions, usages, call hierarchy) for any repo. It is registered globally via `claude mcp add --scope user` and is available in every Claude Code session. Prerequisite: Docker Desktop must be installed and running.
+Serena is a Dockerized LSP MCP server that provides symbol navigation (find definitions, usages, call hierarchy) for any repo. It is registered globally with every installed provider (`claude mcp add --scope user`, `codex mcp add`, `~/.cursor/mcp.json`) and is available in every session. Prerequisite: Docker Desktop must be installed and running.
 
 - **`scripts/serena-docker`** — Wrapper script that launches the Serena Docker container, mounting the repo root read-only with writable bind mounts for `.serena/cache`, `.serena/logs`, and `.serena/memory`. Auto-selects the C# image when `.serena/project.yml` declares `csharp` in its languages list. Installed to `~/.local/bin/serena-docker` by `setup.sh`.
 - **`.serena/project.yml`** — Per-repo config (language servers, `ignored_paths`, `read_only: true`). Generated by `/bootstrap` and committed to the repo. `ignored_paths` controls LSP indexing only — Serena's `read_file` tool is not constrained by it.
-- **`.claude/rules/mcp-servers.md`** — Project-scoped rule loaded into every Claude Code session. Documents all registered MCP servers and provides a decision table for when to use Serena vs Grep/Read.
+- **`mcp-servers.md` rule** — Project-scoped rule (canonical in `.agents/rules/`, emitted per provider) loaded into every session. Documents all registered MCP servers and provides a decision table for when to use Serena vs Grep/Read.
 - **Two-image strategy** — The base image (`serena-local:latest`) supports TypeScript, Python, Go, Rust, and most other languages. The C# extension image (`serena-local:latest-csharp`) adds OmniSharp and .NET SDK; it is auto-built by `setup.sh` when `.csproj`/`.cs` files are detected, or manually via `BUILD_CSHARP=1 ./setup.sh`.
 
 ## Component 2: MCP Bridge (mcp-bridge/)
 
 ### Overview
 
-A TypeScript application providing two transport layers over the same business logic: a Fastify REST API (for HTTP clients) and an MCP stdio server (for Claude Code tool calls). Both transports share the same `DbClient` and application services. The bridge enables asynchronous message-passing between AI agents using a SQLite store-and-forward pattern.
+A TypeScript application providing two transport layers over the same business logic: a Fastify REST API (for HTTP clients) and an MCP stdio server (for agent tool calls from any provider). Both transports share the same `DbClient` and application services. The bridge enables asynchronous message-passing between AI agents using a SQLite store-and-forward pattern.
 
 ### Layered Architecture
 
@@ -396,24 +446,24 @@ The server refuses to bind to non-loopback addresses unless `ALLOW_REMOTE=1` is 
 
 ## Component 3: Config Archive (config/, .claude/)
 
-Archived Claude Code configuration for replication across machines:
+Archived configuration for replication across machines. `settings.json`, the statusline, and plugin marketplaces are Claude Code only; hooks and MCP servers are installed for every provider via `providers/<name>/`:
 
 - **config/settings.json** — Sets model to `opus`, enables plugins (github, superpowers, compound-engineering, swift-lsp, playwright), enables experimental agent teams flag, sets effort level to `high`.
 - **config/mcp.json** — Registers the `xcodebuildmcp` MCP server (`npx -y xcodebuildmcp@2.3.0 mcp`) for iOS Simulator control.
 - **`.claude/settings.json`** — Project-level settings: disables bypass-permissions mode (`"disable"` string, not boolean per Claude Code 1.x schema).
-- **`.claude/rules/`** — Glob-scoped rule files auto-loaded by Claude Code when working on matching files. Detailed domain rules were moved out of the monolithic `CLAUDE.md` (now a slim navigation doc under 80 lines) into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `hooks.md`, `mcp-servers.md`, `skills.md`, `testing.md`.
+- **`.agents/rules/`** — Canonical glob-scoped rule files. `scripts/sync-rules.sh` emits them as `.claude/rules/` (Claude Code), `.cursor/rules/*.mdc` (Cursor), and a rules index in `AGENTS.md` (Codex). Detailed domain rules were moved out of the monolithic instructions file into these files: `bridge-services.md`, `bridge-transport.md`, `database.md`, `design.md`, `hooks.md`, `mcp-servers.md`, `skills.md`, `testing.md`.
 
 ## Scorer
 
-`scorer/` reads Claude Code transcripts (`~/.claude/projects/<project>/<session>.jsonl`, plus `<session>/subagents/agent-<id>.jsonl` with its `.meta.json`) incrementally, tracking a byte offset per file in `~/.agentic-workflow/scorer/scorer.sqlite`. API calls are deduplicated by `message.id`. User lines are classified into the user's prompts, continues, corrections, interrupts and teammate wakes. PR links are checked against `gh` for merge state. A daily launchd job writes `reports/<date>.md` and `.json`. When the transcript format changes, the report shows only an "unknown format" warning and the CLI exits 3. `scorer probe` summarizes the hook-input probe logs in `~/.agentic-workflow/probe/`.
+`scorer/` reads agent transcripts through pluggable per-provider transcript sources, selected with `--provider`. The sources cover Claude Code (`~/.claude/projects/<project>/<session>.jsonl`, plus `<session>/subagents/agent-<id>.jsonl` with its `.meta.json`), Codex (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`), and Cursor (`~/.cursor/projects/<proj>/agent-transcripts/`). Transcripts are read incrementally, tracking a byte offset per file in `~/.agentic-workflow/scorer/scorer.sqlite`. API calls are deduplicated by `message.id`. User lines are classified into the user's prompts, continues, corrections, interrupts and teammate wakes. PR links are checked against `gh` for merge state. A daily launchd job writes `reports/<date>.md` and `.json`. When the transcript format changes, the report shows only an "unknown format" warning and the CLI exits 3. `scorer probe` summarizes the hook-input probe logs in `~/.agentic-workflow/probe/`.
 
 ## Key Rules
 
-1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt — Claude Code executes it step-by-step. No runtime code, no build step.
+1. **Skills are stateless Markdown.** Each skill is a SKILL.md with YAML frontmatter (`name`, `description`, `allowed-tools`, `disable-model-invocation`). The Markdown body is the prompt, and the host agent (Claude Code, Codex, or Cursor) executes it step by step. Skill text names capabilities, not provider tools. No runtime code, no build step.
 
 2. **All skill outputs go to the centralized directory.** `~/.agentic-workflow/<repo-slug>/` is the persistent output directory shared across all skills. Subdirectories: `design/`, `reviews/`, `investigations/`, `qa/`, `plans/`, `releases/`, `retros/`. The repo slug is derived from `git remote get-url origin` or falls back to the directory name.
 
-3. **Every skill includes the shared preamble.** The preamble lists all 34 skills, points to the output directory, and checks bootstrap status (skills symlinked, MCP bridge built, `.claude/rules/` directory present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
+3. **Every skill references the shared preamble.** The preamble lists all native skills, points to the output directory, and checks bootstrap status (skills installed for the running provider, MCP bridge built, repo rules present). If not bootstrapped, it prompts the user to run `setup.sh`. Design pipeline skills additionally include a design-specific preamble for brand context.
 
 4. **Application services never throw.** Every service function returns `AppResult<T>` — a discriminated union of `ok(data)` or `err(AppError)`. Error propagation uses value returns, not exceptions. The transport layer maps `AppError.statusHint` to HTTP status codes.
 
@@ -423,9 +473,9 @@ Archived Claude Code configuration for replication across machines:
 
 7. **The bridge has no authentication.** The REST API binds to loopback only (`127.0.0.1`) by default and exits with an error if a non-loopback host is configured without `ALLOW_REMOTE=1`. This is a deliberate design choice for local-only multi-agent coordination.
 
-8. **Subagents run in parallel via the Agent tool.** Both `/review` (reviewer subagents) and `/addressReview` (implementer subagents) spawn all agents simultaneously in a single message. Triage always runs sequentially first to determine the agent assignments.
+8. **Subagents run in parallel (Dispatch in parallel).** Both `/review` (reviewer subagents) and `/addressReview` (implementer subagents) spawn all agents at once using the provider's parallel-dispatch mechanism (see `skills/_shared/capabilities.md`). Triage always runs sequentially first to determine the agent assignments.
 
-9. **Setup is symlink-based.** `setup.sh` creates symlinks from `~/.claude/skills/` into this repo rather than copying files. Changes to skill definitions take effect immediately without re-running setup. Setup also creates the `~/.agentic-workflow/` base directory, builds the Serena Docker image(s), installs the `serena-docker` wrapper to `~/.local/bin/`, and registers Serena as a global MCP server via `claude mcp add --scope user`.
+9. **Setup is symlink-based.** `setup.sh` creates symlinks from each installed provider's skills directory into this repo, plus the stable `~/.agentic-workflow/toolkit` symlink, rather than copying files. Changes to skill definitions take effect immediately without re-running setup. Setup also creates the `~/.agentic-workflow/` base directory, builds the Serena Docker image(s), installs the `serena-docker` wrapper to `~/.local/bin/`, and registers Serena and the other MCP servers with every selected provider.
 
 10. **The MCP server and REST API share identical business logic.** `mcp.ts` calls the same service functions as the Fastify controllers. The only difference is transport: stdio with `resultToContent()` formatting vs. HTTP with `ApiResponse<T>` envelopes.
 

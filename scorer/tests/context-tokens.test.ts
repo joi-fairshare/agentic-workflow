@@ -61,6 +61,22 @@ describe("estimateCurrentContextTokens", () => {
     expect(estimateCurrentContextTokens(file)).toBe(100);
   });
 
+  it("reads a Codex rollout's last token_count, and returns null for a Cursor transcript", () => {
+    const codexDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "context-tokens-")), ".codex", "sessions", "2026", "09", "27");
+    fs.mkdirSync(codexDir, { recursive: true });
+    const codexFile = path.join(codexDir, "rollout-x.jsonl");
+    const usage = (input: number, cached: number, total: number) => ({ input_tokens: input, cached_input_tokens: cached, output_tokens: 1, total_tokens: total });
+    const tc = (input: number, cached: number, total: number) => JSON.stringify({ timestamp: "2026-09-27T00:00:00.000Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: usage(input, cached, total), last_token_usage: usage(input, cached, total) } } });
+    fs.writeFileSync(codexFile, [tc(1_000, 900, 1_001), "", tc(4_000, 3_500, 5_002)].join("\n"));
+    expect(estimateCurrentContextTokens(codexFile)).toBe(4_000);
+
+    const cursorDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "context-tokens-")), "agent-transcripts", "c1");
+    fs.mkdirSync(cursorDir, { recursive: true });
+    const cursorFile = path.join(cursorDir, "c1.jsonl");
+    fs.writeFileSync(cursorFile, JSON.stringify({ role: "assistant", message: { content: [{ type: "text", text: "hi" }] } }));
+    expect(estimateCurrentContextTokens(cursorFile)).toBeNull();
+  });
+
   it("skips a blank line between records", () => {
     const file = writeTranscript([
       assistantLine("m1", "2026-09-27T00:00:00.000Z", 1000, 5_000, 0),

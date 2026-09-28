@@ -1,0 +1,1 @@
+{"session_id":"cx-1","turn_id":"t-1","transcript_path":null,"cwd":"/tmp","hook_event_name":"PreToolUse","model":"gpt-5","permission_mode":"default","tool_name":"Bash","tool_use_id":"call_1","tool_input":{"command":"rm -rf build"}}

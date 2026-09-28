@@ -1,187 +1,18 @@
 ---
 name: bootstrap
-description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + CLAUDE.md + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
+description: Analyze a repo's documentation coverage against the Pivot doc standard (17 planning docs + AGENTS.md + per-provider rules + design language), then generate any missing docs adapted to the codebase. Optionally reference external product documentation (SharePoint, Confluence, Dropbox, shared drives) when generating product-facing documents.
 argument-hint: "[--force] [--product-docs <url-or-path>]..."
-allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Bash(curl *), Bash(docker *), Bash(cat *), Bash(mkdir *), Bash(kill *), Bash(sleep *), Bash(REPO_PATH=*), Bash(REPO_NAME=*), Bash(RULES_OK=*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__serena__check_onboarding_performed, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
+allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Bash(curl *), Bash(docker *), Bash(cat *), Bash(mkdir *), Bash(kill *), Bash(sleep *), Bash(REPO_PATH=*), Bash(REPO_NAME=*), Bash(RULES_OK=*), Bash(bash *), Bash(*/sync-rules.sh*), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__serena__check_onboarding_performed, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
-<!-- === PREAMBLE START === -->
-
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
->
-> | Skill | Purpose |
-> |-------|---------|
-> | `/review` | Multi-agent PR code review |
-> | `/postReview` | Publish review findings to GitHub |
-> | `/addressReview` | Implement review fixes in parallel |
-> | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
-> | `/rootCause` | 4-phase systematic debugging |
-> | `/bugHunt` | Fix-and-verify loop with regression tests |
-> | `/bugReport` | Structured bug report with health scores |
-> | `/shipRelease` | Sync, test, push, open PR |
-> | `/syncDocs` | Post-ship doc updater |
-> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
-> | `/productReview` | Founder/product lens plan review |
-> | `/archReview` | Engineering architecture plan review |
-> | `/withInterview` | Interview user to clarify requirements before executing |
-> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
-> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
-> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
-> | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
-> | `/design-evolve-web` | Merge new URL into design language (web) |
-> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
-> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
-> | `/design-mockup-web` | Generate HTML mockup from design language |
-> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
-> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
-> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
-> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
-> | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
-> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
-> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
-> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
-> | `/verify-web` | Playwright browser verification of running web app |
-> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
-> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
-> | `/planDesignReview` | Design-lens review of plan docs |
-> | `/planDevexReview` | DX-lens review of plan docs |
-> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
-> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
-> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
-> | `/canary` | Post-deploy monitoring with custom probes |
-> | `/prismStatus` | Health check for prism-mcp |
-> | `/specToProvenPR` | Approved spec → proven, review-clean PRs, one shippable stage at a time |
->
-> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> ### Meta-Orchestration Convention
->
-> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
-
-## Codebase Navigation
-
-Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster and more precise than file scanning.
-
-| Task | Tool |
-|------|------|
-| Find a function, class, or symbol | `serena: find_symbol` |
-| What references symbol X? | `serena: find_referencing_symbols` |
-| Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
-
-## Preamble — Bootstrap Check
-
-Before running this skill, verify the environment is set up:
-
-```bash
-# Derive repo slug
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$REMOTE_URL" ]; then
-  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
-else
-  REPO_SLUG=$(basename "$(pwd)")
-fi
-echo "repo-slug: $REPO_SLUG"
-
-# Check bootstrap status
-SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
-done
-
-BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
-
-RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
-
-echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-running: $BRIDGE_OK"
-echo "rules-directory: $RULES_OK"
-```
-
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
-
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
-> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
-
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
-If **no**: warn that some features may not work, then continue.
-
-If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
-
-Create the output directory for this repo:
-```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
-```
-
-## Session Context
-
-Load prior work state for this repo from prism-mcp before starting.
-
-**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
-- `/officeHours add dark mode` → `"dark mode UI feature"`
-- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
-- `/review 42` → use the PR title once fetched: `"PR {title} review"`
-- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
-
-**2. Load context from prism-mcp:**
-```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
-  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
-```
-
-Store the returned `expected_version` — you will need it at Session Close.
-
-**3. Surface results:**
-- If the response contains a non-empty summary or prior decisions:
-  > **Prior context:** {summary}
-  Use this to inform your approach before continuing.
-- If prism-mcp returns an error, surface it and stop:
-  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
-
-## Session Close
-
-> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
-
-Save a structured ledger entry and update the live handoff state for this repo.
-
-**1. Save ledger entry (immutable audit trail):**
-```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
-  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
-  summary: "<one paragraph describing what was accomplished this session>",
-  todos: ["<any open items left incomplete>", ...],
-  files_changed: ["<paths of files created or modified>", ...],
-  decisions: ["<key decisions made during this skill run>", ...]
-```
-
-**2. Update handoff state (mutable live state for next session):**
-```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
-  expected_version: <value returned by session_load_context>,
-  open_todos: ["<open items not yet completed>", ...],
-  active_branch: "<current git branch from: git branch --show-current>",
-  last_summary: "<one sentence: what this skill just did>",
-  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
-```
-
-If either call fails, surface the error:
-> "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->
+<!-- preamble -->
+**Before anything else:** read `$HOME/.agentic-workflow/toolkit/skills/_preamble.md` and follow it (skill index, provider capability map, bootstrap check, session context). Run its **Session Close** section when this skill finishes.
 
 > **MCP Servers** — available in every session. Prefer these over built-in tools.
 >
 > | Server | When to reach for it |
 > |--------|---------------------|
-> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of Grep+Read |
+> | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of file search + read |
 > | `agentic-bridge` | Multi-agent messaging and memory graph |
 > | `context7` | Current library/framework docs |
 > | `playwright` | Browser automation, screenshots, DOM inspection |
@@ -276,11 +107,19 @@ Use `⚠️ Not accessible at bootstrap time` for sources that failed the curl/f
 
 # Bootstrap — Repo Documentation Generator
 
-Orchestrates documentation generation for any repository. Detects existing coverage, generates missing docs using Pivot-pattern templates, and creates a CLAUDE.md if none exists.
+Orchestrates documentation generation for any repository. Detects existing coverage, generates missing docs using Pivot-pattern templates, and creates provider-neutral repo instructions: a canonical `AGENTS.md` + `.agents/rules/`, linked for Claude Code (`CLAUDE.md` → `AGENTS.md`, `.claude/rules` → `.agents/rules`) and Cursor (`.cursor/rules/*.mdc` → `.agents/rules/*.md`), plus a Rules Index inside `AGENTS.md` for Codex, by `sync-rules.sh`.
+
+Paths used throughout:
+
+```bash
+TOOLKIT="$HOME/.agentic-workflow/toolkit"
+SHARED_DIR="$HOME/.agentic-workflow/toolkit/skills/_shared"
+SYNC_RULES="$TOOLKIT/scripts/sync-rules.sh"
+```
 
 ## Step 1: Enhance Context
 
-Construct the `/enhancePrompt` call. If external docs were provided and confirmed in the step above, append external doc context to the base prompt.
+Construct the `enhancePrompt` input. If external docs were provided and confirmed in the step above, append external doc context to the base prompt.
 
 **Base prompt:**
 > "Analyze this repository to understand its tech stack, architecture, domain, and existing documentation. I need to generate comprehensive planning documents."
@@ -288,7 +127,7 @@ Construct the `/enhancePrompt` call. If external docs were provided and confirme
 **If external docs provided, append to prompt:**
 > "External product documentation has been provided: [list classified sources with types and URLs]. When generating product-facing documents (PRODUCT_ROADMAP, BUSINESS_PLAN, GO_TO_MARKET, COMPETITIVE_ANALYSIS), reference these sources and indicate where details should be cross-checked with the external docs."
 
-Invoke `/enhancePrompt` with the constructed prompt. Wait for the enhanced prompt. Proceed with the enriched context.
+**Invoke skill `enhancePrompt`** with the constructed prompt. Wait for the enhanced prompt. Proceed with the enriched context.
 
 ## Step 2: Gather Repo Intelligence
 
@@ -310,14 +149,14 @@ git remote -v 2>/dev/null
 git log --oneline -10 2>/dev/null
 ```
 
-Read any existing `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`, or files in `docs/`, `planning/`, `.docs/`.
+Read any existing `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `README.md`, `CONTRIBUTING.md`, or files in `docs/`, `planning/`, `.docs/`, `.agents/rules/`, `.claude/rules/`, `.cursor/rules/`.
 
 ## Step 3: Audit Documentation Coverage
 
 Check for each of the 17 Pivot-pattern documents in two concrete passes:
 
-1. **Filename pass (Glob).** For each Doc ID, run its filename patterns (table below) with Glob over each of these directory sets: `planning/`, `docs/`, `doc/`, `.docs/`, `wiki/`, and the repo root — e.g. `Glob("planning/*architecture*")`, `Glob("docs/**/*roadmap*")`. Match case-insensitively (try capitalized variants like `*ARCHITECTURE*` where the filesystem is case-sensitive).
-2. **Content pass (Grep).** Docs may be embedded in other files: Grep the same directories plus `README.md` and `CONTRIBUTING.md` for each Doc ID's keywords (derived from its patterns, e.g. `monetization|revenue model` for BUSINESS_PLAN) with case-insensitive matching. A hit on a heading line (`^#{1,3} .*keyword`) counts as **found (embedded in `<file>`)**; a body-only mention does not.
+1. **Filename pass (file search).** For each Doc ID, run its filename patterns (table below) as a filename glob over each of these directory sets: `planning/`, `docs/`, `doc/`, `.docs/`, `wiki/`, and the repo root — e.g. `planning/*architecture*`, `docs/**/*roadmap*`. Match case-insensitively (try capitalized variants like `*ARCHITECTURE*` where the filesystem is case-sensitive).
+2. **Content pass (content search).** Docs may be embedded in other files: search the contents of the same directories plus `README.md` and `CONTRIBUTING.md` for each Doc ID's keywords (derived from its patterns, e.g. `monetization|revenue model` for BUSINESS_PLAN) with case-insensitive matching. A hit on a heading line (`^#{1,3} .*keyword`) counts as **found (embedded in `<file>`)**; a body-only mention does not.
 
 | Doc ID | Search patterns |
 |--------|----------------|
@@ -339,7 +178,17 @@ Check for each of the 17 Pivot-pattern documents in two concrete passes:
 | `COMPETITIVE_ANALYSIS` | `*competitive*`, `*competitor*`, `*market*analysis*` |
 | `GO_TO_MARKET` | `*go*to*market*`, `*gtm*`, `*launch*`, `*marketing*` |
 
-Also check if a `CLAUDE.md` exists and whether a `.claude/rules/` directory already exists (and if so, how many files it contains).
+Also audit the repo-instruction layout:
+
+```bash
+for f in AGENTS.md CLAUDE.md .cursorrules; do [ -f "$f" ] && echo "$f: exists ($(wc -l < "$f") lines)" || echo "$f: missing"; done
+for d in .agents/rules .claude/rules .cursor/rules; do
+  n=$(ls "$d" 2>/dev/null | wc -l | tr -d ' '); [ "$n" -gt 0 ] && echo "$d: $n files" || echo "$d: missing"
+done
+[ -L CLAUDE.md ] && echo "CLAUDE.md -> $(readlink CLAUDE.md)"
+[ -L .claude/rules ] && echo ".claude/rules -> $(readlink .claude/rules)"
+find .cursor/rules -type l 2>/dev/null | wc -l | xargs echo "linked .cursor/rules files:"
+```
 
 Report findings:
 ```
@@ -353,11 +202,14 @@ Found (N/17):
 Missing (M/17):
   {one Doc ID per line}
 
-CLAUDE.md:       [exists / missing]
-.claude/rules/:  [exists (N files) / missing]
+AGENTS.md:       [exists / missing]
+.agents/rules/:  [exists (N files) / missing]
+CLAUDE.md:       [link to AGENTS.md / hand-written (legacy) / missing]
+.claude/rules/:  [link to .agents/rules / hand-written (legacy, N) / missing]
+.cursor/rules/:  [linked (N) / hand-written (legacy, N) / missing]
 ```
 
-If `--force` was passed: list every existing doc file that would be overwritten, then confirm via AskUserQuestion —
+If `--force` was passed: list every existing doc file that would be overwritten, then **Ask the user** —
 > "`--force` will regenerate and overwrite these {N} existing docs (they may contain hand edits): {list}. Overwrite? (yes/no)"
 
 Only on **yes**, treat all docs as missing and regenerate. On **no**, fall back to missing-only generation.
@@ -365,7 +217,7 @@ Only on **yes**, treat all docs as missing and regenerate. On **no**, fall back 
 ## Step 4: Handle Each Scenario
 
 ### Bare repo (0–2 docs found)
-Generate all 17 docs + CLAUDE.md. Spawn agents in batches of 4–5 to avoid overwhelming context.
+Generate all 17 docs + AGENTS.md + `.agents/rules/`. **Dispatch in parallel** in batches of 4–5 to avoid overwhelming context.
 
 ### Partially documented (3–14 docs found)
 Generate only missing docs. Read existing docs first to maintain consistency in terminology, formatting, and cross-references.
@@ -377,26 +229,26 @@ Report completeness. For each existing doc, note if it could be improved (missin
 
 For each missing doc, run a two-stage dispatch — research, then write.
 
-### Dispatch Contract (per `skills/_shared/parallel-dispatch.md`)
+### Dispatch Contract (per `$SHARED_DIR/parallel-dispatch.md`)
 
-1. **Research:**
+1. **Research** — **Spawn a subagent** (read-only explorer type where the host has one):
    ```
-   Agent(subagent_type="Explore",
-         prompt="Research the repo at <ABS REPO ROOT> to gather everything needed to write planning/<DOC_ID>.md:
-                 <doc-specific facts to collect — e.g. for ARCHITECTURE: directory tree, entry points, layers,
-                 data flow; for TESTING: test framework, commands, existing coverage config>.
-                 Return a concise findings summary — file paths and facts only, no prose padding.")
+   subagent: explore (read-only)
+   prompt:   "Research the repo at <ABS REPO ROOT> to gather everything needed to write planning/<DOC_ID>.md:
+             <doc-specific facts to collect — e.g. for ARCHITECTURE: directory tree, entry points, layers,
+             data flow; for TESTING: test framework, commands, existing coverage config>.
+             Return a concise findings summary — file paths and facts only, no prose padding."
    ```
-2. **Write:**
+2. **Write** — **Spawn a subagent** (general-purpose, can write files):
    ```
-   Agent(subagent_type="general-purpose",
-         prompt="Write <ABS REPO ROOT>/planning/<DOC_ID>.md following the Pivot template structure for <DOC_ID>
-                 (structure given below in Generation Rules). Use these research findings as your only source
-                 material: <findings from stage 1>. Real repo data only — no placeholder content.
-                 Write the file to exactly that path.")
+   subagent: general-purpose
+   prompt:   "Write <ABS REPO ROOT>/planning/<DOC_ID>.md following the Pivot template structure for <DOC_ID>
+             (structure given below in Generation Rules). Use these research findings as your only source
+             material: <findings from stage 1>. Real repo data only — no placeholder content.
+             Write the file to exactly that path."
    ```
 
-**Batching policy:** dispatch in batches of **4–5 docs** — one message, N `Agent` calls per batch, never sequential when independent. After each batch, existence-check every expected output before starting the next batch:
+**Batching policy:** **Dispatch in parallel** in batches of **4–5 docs** — all subagents of a batch launched together, never sequential when independent. After each batch, existence-check every expected output before starting the next batch:
 
 ```bash
 ls -la planning/ && for f in planning/<DOC_ID_1>.md planning/<DOC_ID_2>.md; do [ -s "$f" ] || echo "MISSING OUTPUT: $f"; done
@@ -433,18 +285,20 @@ A missing or empty file is a **named failure** — re-dispatch that doc's writer
 
 5. **Place docs in `planning/`.** Create the directory if it doesn't exist. Use UPPER_SNAKE_CASE filenames with `.md` extension.
 
-## Step 6: Generate CLAUDE.md + .claude/rules/ (if missing)
+## Step 6: Generate AGENTS.md + .agents/rules/ (if missing), then sync per provider
 
-### Step 6a: Generate CLAUDE.md
+`AGENTS.md` and `.agents/rules/` are the **only** instruction files bootstrap writes by hand. Everything provider-specific is a symlink or generated by `sync-rules.sh` in Step 6d — `CLAUDE.md` → `AGENTS.md`, `.claude/rules` → `.agents/rules`, `.cursor/rules/<name>.mdc` → `.agents/rules/<name>.md`, and the Rules Index inside `AGENTS.md`. Never write those files directly.
 
-Create a trimmed CLAUDE.md (under 80 lines) that serves as a navigation document — not a reference manual. Include only:
+### Step 6a: Generate AGENTS.md
+
+If `AGENTS.md` is missing, create a trimmed `AGENTS.md` (under 80 lines, excluding the generated Rules Index) that serves as a navigation document — not a reference manual. If a hand-written `CLAUDE.md` or `.cursorrules` exists, use it as source material: carry over all of its content (context docs, stack, commands, merge gate, conventions). Keep anything genuinely Claude-only under a short `## Claude Code` heading — `CLAUDE.md` becomes a link to this file. Include only:
 
 ```markdown
-# CLAUDE.md — {Project Name}
+# AGENTS.md — {Project Name}
 
 > {one-line tagline describing the project}
 
-Domain-specific rules are in `.claude/rules/` — they load automatically when working on matching files.
+Domain-specific rules are in `.agents/rules/`. Claude Code and Cursor load them automatically (via the `.claude/rules` and `.cursor/rules/` links); in Codex, read the matching rules listed in the Rules Index at the bottom of this file before editing.
 
 ## Required Context
 
@@ -491,11 +345,15 @@ Format: `type: short description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 ```
 
-Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, or Implementation Guidelines. Those belong in `.claude/rules/` files.
+Do **not** include: Skills tables, Key Patterns code blocks, Design Language sections, Architecture trees longer than 8 lines, Implementation Guidelines, or a hand-written rules list (`sync-rules.sh` appends the Rules Index). Those belong in `.agents/rules/` files. Do not name provider-specific tools in `AGENTS.md` — Claude Code, Codex, and Cursor all read it.
 
-### Step 6b: Generate .claude/rules/
+If `AGENTS.md` already exists, leave it alone. Step 6d only rewrites the block between its `RULES INDEX` markers.
 
-After generating CLAUDE.md, inspect the target repo's directory structure and tech stack to generate a `.claude/rules/` directory with glob-scoped rule files. Each rule file loads automatically when Claude Code works on matching files.
+### Step 6b: Generate .agents/rules/
+
+Inspect the target repo's directory structure and tech stack to generate glob-scoped rule files in `.agents/rules/`. Step 6d links each rule for every provider, and it loads when an agent works on matching files.
+
+**Migrate legacy rules first.** For each existing real (non-symlink) `.claude/rules/*.md` (frontmatter `paths:`) or `.cursor/rules/*.mdc` (frontmatter `description`, `globs`, `alwaysApply`) with no `.agents/rules/` counterpart: write `.agents/rules/<name>.md` with the same body and the combined frontmatter below. When a Claude and a Cursor rule share a name, merge their bodies. Only then infer new rules for domains not yet covered.
 
 **Infer rule file groupings from what directories actually exist.** Examples by tech stack:
 
@@ -509,15 +367,23 @@ After generating CLAUDE.md, inspect the target repo's directory structure and te
 | Go | `handlers.md` (internal/handlers/**), `domain.md` (internal/domain/**) |
 
 **Each generated rule file must:**
-1. Start with YAML frontmatter: `globs: [list of glob patterns]`
+1. Start with YAML frontmatter that every provider can read from the same file: `description:` (one line — Cursor uses it for relevance), `globs:` (Cursor) and `paths:` (Claude Code) with the **same** YAML list of patterns, and `alwaysApply: false`. For an always-on rule (use sparingly) write `globs: []` and `alwaysApply: true`, and omit `paths:`. `sync-rules.sh --check` fails if `globs` and `paths` differ.
 2. Contain domain-specific guidance drawn from the repo's actual code patterns (read the code — don't template-fill)
 3. Focus on patterns, conventions, and pitfalls specific to that domain
+4. Stay provider-neutral — no Claude Code, Codex, or Cursor tool names in the body
 
 **Rule file template:**
 
 ```markdown
 ---
-globs: ["{pattern1}", "{pattern2}"]
+description: {When this rule applies, in one line}
+globs:
+  - "{pattern1}"
+  - "{pattern2}"
+paths:
+  - "{pattern1}"
+  - "{pattern2}"
+alwaysApply: false
 ---
 
 # {Domain} Rules
@@ -532,21 +398,52 @@ required patterns, things to avoid, code examples from the real code.}
 ...
 ```
 
-Spawn an Explore agent to read representative files in each domain before writing the rules. Rules should reflect what the code actually does, not generic best practices.
+**Dispatch in parallel** one read-only explorer subagent per domain to read representative files before writing the rules (batches of 4–5, per `$SHARED_DIR/parallel-dispatch.md`). Rules should reflect what the code actually does, not generic best practices.
 
-### Step 6c: Generate Design Language (optional)
+### Step 6c: Legacy CLAUDE.md
 
-If the repo has a user-facing surface (web frontend or iOS app detected in Step 2) and no `.impeccable.md` / `design-tokens.json` exist yet, ask via AskUserQuestion:
+Claude Code reads `CLAUDE.md`, not `AGENTS.md`, so `CLAUDE.md` becomes a symlink to `AGENTS.md`:
+
+- **Missing** or **already a link to `AGENTS.md`** → nothing to do; Step 6d creates the link.
+- **Hand-written (legacy)** → after its content has been carried into `AGENTS.md` (Step 6a), **Ask the user:**
+  > "Replace CLAUDE.md with a link to AGENTS.md? Its content now lives in AGENTS.md. (yes/no)"
+  - **yes** → Step 6d runs with `--force`.
+  - **no** → leave it, and report that Claude Code will not see `AGENTS.md`.
+
+### Step 6d: Link per-provider rules
+
+```bash
+SYNC_RULES="$HOME/.agentic-workflow/toolkit/scripts/sync-rules.sh"
+if [ -f "$SYNC_RULES" ]; then
+  bash "$SYNC_RULES" "$(pwd)"            # add --force only if the user approved replacing legacy files
+  bash "$SYNC_RULES" --check "$(pwd)" && echo "rules: in sync"
+else
+  echo "WARN: $SYNC_RULES not found — run setup.sh, then re-run: bash $SYNC_RULES"
+fi
+```
+
+`sync-rules.sh` creates symlinks only — `.claude/rules` → `../.agents/rules`, `.cursor/rules/<name>.mdc` → `../../.agents/rules/<name>.md`, `CLAUDE.md` → `AGENTS.md` — and regenerates the Rules Index table between markers in `AGENTS.md`. It is idempotent, removes dangling `.cursor/rules` links whose rule was deleted, and skips real (non-link) files with a warning.
+
+If it warns that legacy `.claude/rules`, `.cursor/rules/*.mdc`, or `CLAUDE.md` files were skipped, confirm their content was migrated in Steps 6a–6b, then **Ask the user:**
+> "Replace {N} legacy instruction files with links to AGENTS.md / .agents/rules/? (yes/no)"
+
+On **yes**, re-run with `--force`. On **no**, list the skipped files in the report.
+
+**Verify, don't assert:** only report rules as linked if `--check` passed.
+
+### Step 6e: Generate Design Language (optional)
+
+If the repo has a user-facing surface (web frontend or iOS app detected in Step 2) and no `.impeccable.md` / `design-tokens.json` exist yet, **Ask the user:**
 > "Generate the design language now (.impeccable.md + design-tokens.json via /design-language)? (yes/no)"
 
-- **yes** → invoke `Skill(skill="design-language")` and wait for its artifacts.
+- **yes** → **Invoke skill `design-language`** and wait for its artifacts.
 - **no** (or no user-facing surface) → skip; the DESIGN_SYSTEM doc's pointer to `/design-analyze` + `/design-language` stands.
 
 The completion report's "+ design language" line (Step 8) appears **only if this step actually ran and produced its artifacts** — never claim design language was generated otherwise.
 
 ## Step 7: Generate .serena/project.yml
 
-After generating docs and CLAUDE.md, configure Serena LSP for the repo.
+After generating docs and repo instructions, configure Serena LSP for the repo.
 
 **Language detection** (check repo root and one level deep):
 - TS/JS: `tsconfig.json` or `package.json` → `typescript`
@@ -560,16 +457,16 @@ After generating docs and CLAUDE.md, configure Serena LSP for the repo.
 - `swift` — sourcekit-lsp is a macOS binary; Serena runs in a Linux Docker container. Swift LSP requires the separate `serena-local:latest-swift` image and host-side socket bridge. Add manually after running `BUILD_SWIFT=1 ./setup.sh`.
 - `csharp` — requires the `-csharp` image variant. Add manually after running `BUILD_CSHARP=1 ./setup.sh`.
 
-**Sensitive path audit:** flag `.claude/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
+**Sensitive path audit:** flag `.claude/`, `.cursor/`, `.codex/`, `config/`, `secrets*`, `*.env`, `docs/` subdirectories → add to `ignored_paths`.
 
 **RULES_OK check:**
 ```bash
 RULES_OK=false
-[ -d ".claude/rules" ] && RULES_OK=true
+[ -f "AGENTS.md" ] && [ -n "$(ls -A .agents/rules/ 2>/dev/null)" ] && RULES_OK=true
 echo "rules-directory: $RULES_OK"
 ```
 If `RULES_OK=false`, print:
-> "WARN: .claude/rules/ not found — domain rules won't load. Consider running /bootstrap from the agentic-workflow repo to set up rules."
+> "WARN: AGENTS.md or .agents/rules/ not found — domain rules won't load. Re-run Step 6 to generate them."
 
 **Derive repo name for project_name field:**
 ```bash
@@ -667,16 +564,16 @@ If `csharp` was detected, append:
 If `swift` was detected, append:
 > NOTE: Swift LSP requires a host-side socket bridge. Run `BUILD_SWIFT=1 ./setup.sh` to build it, then add `- swift` to `.serena/project.yml`.
 
-**Run Serena onboarding check (non-fatal):** After the Docker bootstrap step, call the `mcp__serena__check_onboarding_performed` MCP tool to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
+**Run Serena onboarding check (non-fatal):** After the Docker bootstrap step, call `mcp: serena/check_onboarding_performed` to initialize Serena with the repo context. This indexes the project and ensures symbol navigation is ready for use in this session.
 
-> **Important — tool name:** Call `mcp__serena__check_onboarding_performed`, not `onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
+> **Important — tool name:** Call `serena/check_onboarding_performed`, not `serena/onboarding`. The `onboarding` tool is explicitly excluded in the generated `project.yml`. Using `onboarding` will be rejected by Serena.
 
-> **Non-fatal:** If `mcp__serena__check_onboarding_performed` fails (e.g., Docker is not running, the Serena MCP server is not connected, or the image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
+> **Non-fatal:** If `serena/check_onboarding_performed` fails (e.g., Docker is not running, the Serena MCP server is not connected, or the image has not been built yet), do **not** abort bootstrap. Print the following warning and continue:
 > `WARN: Serena not available — the project.yml must be bootstrapped before Serena will connect. Build the serena-local Docker image with setup.sh, then re-run /bootstrap.`
 
 ## Step 8: Report
 
-**Compute the total — never assert it.** `found` = docs present before this run (Step 3 audit), `generated` = docs actually written and existence-checked this run (Step 5). `total = found + generated` out of 17; list any Doc IDs still missing. Append " + design language" **only if Step 6c ran and produced `.impeccable.md` + `design-tokens.json`**.
+**Compute the total — never assert it.** `found` = docs present before this run (Step 3 audit), `generated` = docs actually written and existence-checked this run (Step 5). `total = found + generated` out of 17; list any Doc IDs still missing. Append " + design language" **only if Step 6e ran and produced `.impeccable.md` + `design-tokens.json`**.
 
 ```
 Bootstrap Complete
@@ -687,7 +584,10 @@ Generated ({generated}):
   planning/PRODUCT_ROADMAP.md        (new)
   planning/CODE_STYLE.md             (new)
   ...
-  CLAUDE.md                          (new)
+  AGENTS.md                          (new)
+  .agents/rules/<name>.md            (new — one line per rule)
+  .claude/rules, .cursor/rules/      (links to .agents/rules — N rules, --check passed)
+  CLAUDE.md                          (link to AGENTS.md — new / replaced / unchanged)
 
 Existing (unchanged, {found}):
   planning/ARCHITECTURE.md
@@ -696,12 +596,12 @@ Existing (unchanged, {found}):
 
 Still missing ({missing}): {Doc IDs, or "none"}
 
-Total: {found}+{generated}={total}/17 docs + CLAUDE.md + .claude/rules/{ + design language — only if Step 6c ran}
+Total: {found}+{generated}={total}/17 docs + AGENTS.md + .agents/rules/ (synced to Claude Code, Codex, Cursor){ + design language — only if Step 6e ran}
 
 Next steps:
   1. Review generated docs for accuracy
-  2. Commit: git add planning/ CLAUDE.md .claude/ && git commit -m "docs: bootstrap planning documents"
-  3. Refine any docs that need domain-specific detail
+  2. Commit: git add planning/ AGENTS.md CLAUDE.md .agents/ .claude/rules/ .cursor/rules/ .serena/project.yml .gitignore && git commit -m "docs: bootstrap planning documents"
+  3. Refine any docs that need domain-specific detail (edit .agents/rules/, then re-run sync-rules.sh)
 
 Suggested workflow:
   • /officeHours — brainstorm a feature or problem before planning

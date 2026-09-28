@@ -29,7 +29,7 @@ Each issue has:
 Before reading the PR, search for prior discussions about the files or issues you're about to address:
 
 ```
-mcp__prism-mcp__session_search_memory — query: "<issue summary>", project: {repo_slug}, limit: 5
+mcp: prism-mcp/session_search_memory — query: "<issue summary>", project: {repo_slug}, limit: 5
 ```
 
 Use any relevant prior context to inform your implementation approach. Continue silently if nothing relevant is found or if the tool returns an error.

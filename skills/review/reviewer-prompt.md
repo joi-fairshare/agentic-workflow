@@ -24,7 +24,7 @@ Above: the newest verification `pack.json` + design `comparison-report.json` (se
 
 ### 3. Read related files
 
-For any changed file relevant to your focus area, read it in full for context using the Read tool. Also read related files that provide important context (test files, interfaces, config) even if they weren't changed.
+For any changed file relevant to your focus area, read it in full for context. Also read related files that provide important context (test files, interfaces, config) even if they weren't changed.
 
 ### 4. Analyze
 

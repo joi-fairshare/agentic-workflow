@@ -1,0 +1,1 @@
+{"conversation_id":"cu-1","generation_id":"g-1","hook_event_name":"beforeShellExecution","workspace_roots":["/tmp"],"command":"ls","cwd":"/tmp","sandbox":false}
