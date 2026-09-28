@@ -112,14 +112,12 @@ Domain rules live in `.agents/rules/`. Before editing a file, read every rule be
 
 | Rule | Description | Applies to | Path |
 |------|-------------|------------|------|
-| `bridge-services` | MCP bridge service layer — AppResult, EventBus, MCP tools, route registration, memory services | `mcp-bridge/src/application/**`, `mcp-bridge/src/routes/**`, `mcp-bridge/src/server.ts`, `mcp-bridge/src/mcp.ts`, `mcp-bridge/src/index.ts` | `.agents/rules/bridge-services.md` |
+| `bridge-services` | MCP bridge service layer — AppResult, service contracts, MCP tools, route registration | `mcp-bridge/src/application/**`, `mcp-bridge/src/routes/**`, `mcp-bridge/src/server.ts`, `mcp-bridge/src/mcp.ts`, `mcp-bridge/src/index.ts` | `.agents/rules/bridge-services.md` |
 | `bridge-transport` | MCP bridge transport layer — typed routes, controller factories, Zod schemas | `mcp-bridge/src/transport/**` | `.agents/rules/bridge-transport.md` |
-| `database` | Bridge and memory SQLite databases — clients, prepared statements, schemas, transactions | `mcp-bridge/src/db/**` | `.agents/rules/database.md` |
+| `database` | Bridge SQLite database — client, prepared statements, schema, transactions | `mcp-bridge/src/db/**` | `.agents/rules/database.md` |
 | `design` | Design pipeline artifacts — tokens, .impeccable.md, DESIGN_SYSTEM.md, design-* skills | `design-tokens.json`, `.impeccable.md`, `planning/DESIGN_SYSTEM.md`, `skills/design-*/**` | `.agents/rules/design.md` |
 | `hooks` | Safety and context hooks — per-provider adapters, protocols, installation | `config/hooks/**`, `config/settings.json` | `.agents/rules/hooks.md` |
-| `ingestion` | Memory ingestion — queues, embeddings, secret filtering, session parsing | `mcp-bridge/src/ingestion/**`, `mcp-bridge/src/application/services/ingest-*.ts`, `mcp-bridge/src/application/services/extract-*.ts`, `mcp-bridge/src/application/services/infer-*.ts` | `.agents/rules/ingestion.md` |
 | `mcp-servers` | MCP servers registered globally with every provider — available in every session | always | `.agents/rules/mcp-servers.md` |
 | `skills` | Skill structure, preamble, output directories, pipeline, and installation | `skills/**`, `bootstrap/**` | `.agents/rules/skills.md` |
 | `testing` | Test infrastructure, shared helpers, and coverage policy | `**/*.test.ts`, `**/*.spec.ts`, `**/vitest.config.ts`, `mcp-bridge/tests/helpers.ts` | `.agents/rules/testing.md` |
-| `ui` | Next.js UI — App Router, hooks, SSE, API client, React Flow graph | `ui/src/**`, `ui/__tests__/**` | `.agents/rules/ui.md` |
 <!-- === RULES INDEX END === -->

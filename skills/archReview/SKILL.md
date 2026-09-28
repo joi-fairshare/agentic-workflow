@@ -54,7 +54,7 @@ Search files to discover these -- do not assume paths.
 
 Create three mermaid diagrams. These are **mandatory** -- the review is incomplete without them. Every diagram must satisfy two assertions:
 
-- **≥3 nodes named after real components** from Step 3 (actual module, file, service, or table names — e.g. `mcp.ts`, `EventBus`, `bridge.db`)
+- **≥3 nodes named after real components** from Step 3 (actual module, file, service, or table names — e.g. `mcp.ts`, `server.ts`, `bridge.db`)
 - **No placeholder labels** — generic labels such as "Component A", "Service", "Input", "Transform", "Store" do not count; a diagram containing them is invalid and the review is incomplete.
 
 ### 4a: Component Diagram

@@ -17,41 +17,46 @@ alwaysApply: false
 
 ## Test Infrastructure
 
-**Bridge tests** — Vitest with v8 coverage, in-memory SQLite (WAL mode, foreign_keys ON), 10s timeout per test. Shared helpers in `mcp-bridge/tests/helpers.ts` — use them instead of duplicating setup.
+Three Vitest packages, each with v8 coverage, `testTimeout: 10_000`, and 100% line/function/branch/statement thresholds in `vitest.config.ts` (enforced by `npm run test:coverage`):
 
-**UI tests** — Vitest with `happy-dom` environment, `@` path alias pointing to `src/`, global `MockEventSource` defined in `ui/__tests__/setup.ts`. Tests cover `hooks/**/*.ts` and `lib/**/*.ts` only; `types.ts` is excluded.
+| Package | Tests | Coverage excludes |
+|---------|-------|-------------------|
+| `mcp-bridge` | in-memory SQLite via `tests/helpers.ts`; route tests in `tests/routes/` | `src/index.ts` (entry point wiring), `src/mcp.ts` (stdio transport; tool handlers covered by `tests/mcp-tools.test.ts`) |
+| `scorer` | transcript parsing, reports, probe summaries | `src/cli.ts` |
+| `judge` | judge CLI logic | `src/cli.ts` |
 
-**Coverage policy:** Coverage thresholds are not enforced at the `vitest.config.ts` level — neither `mcp-bridge` nor `ui` have a `thresholds` key configured. `/* v8 ignore */` annotations are prohibited — write the test instead.
+`/* v8 ignore */` annotations are prohibited — write the test instead. (One legacy `/* v8 ignore next */` remains in `mcp-bridge/src/db/schema.ts`.)
 
-## Shared Test Helpers
+## Shared Test Helpers (mcp-bridge)
 
-Always use the shared factory functions from `tests/helpers.ts`:
+`mcp-bridge/tests/helpers.ts` exports one factory — use it for every bridge test that needs a database:
 
 ```typescript
-// Bridge tests
-import { createTestBridgeDb, createTestMemoryDb, createMockEmbeddingService } from "./helpers.js";
+import { createTestBridgeDb } from "./helpers.js";
 
-const { db, raw } = createTestBridgeDb();          // in-memory with pragmas applied
-const { mdb, raw } = createTestMemoryDb();         // loads sqlite-vec extension, applies memory schema
-const embedService = createMockEmbeddingService(); // returns zero-filled Float32Arrays
+const { db, raw } = createTestBridgeDb(); // in-memory, WAL + foreign_keys + busy_timeout, MIGRATIONS applied
 ```
 
-Never inline `new Database(":memory:")` — always go through helpers so pragma setup is consistent.
+Never inline `new Database(":memory:")` — always go through the helper so pragma setup is consistent.
 
 ## Route Testing Pattern
 
-Use Fastify's `app.inject()` for HTTP simulation — no real network:
+Use Fastify's `app.inject()` for HTTP simulation — no real network. Build the app with `createServer([...routes])` and `await app.ready()`:
 
 ```typescript
-const response = await app.inject({
+const conv = randomUUID();
+const res = await app.inject({
   method: "POST",
   url: "/messages/send",
-  payload: { conversation: "conv-1", sender: "agent-a", recipient: "agent-b", payload: "hello" },
+  payload: { conversation: conv, sender: "claude", recipient: "codex", payload: "hello" },
 });
-expect(response.statusCode).toBe(201);
-const body = JSON.parse(response.body);
-expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
+expect(res.statusCode).toBe(201);
+const body = res.json();
+expect(body.ok).toBe(true);
+expect(body.data.conversation).toBe(conv);
 ```
+
+Conversation ids are validated as UUIDs — use `randomUUID()` in fixtures.
 
 ## AppResult Test Coverage
 
@@ -67,8 +72,8 @@ if (result.ok) expect(result.data.id).toBeDefined();
 const bad = myService(db, invalidInput);
 expect(bad.ok).toBe(false);
 if (!bad.ok) {
-  expect(bad.error.code).toBe("VALIDATION_ERROR");
-  expect(bad.error.statusHint).toBe(400);
+  expect(bad.error.code).toBe("NOT_FOUND");
+  expect(bad.error.statusHint).toBe(404);
 }
 ```
 
@@ -86,33 +91,14 @@ const res2 = await app.inject({ method: "POST", url: "/messages/send", payload: 
 expect(res2.statusCode).toBe(400);
 ```
 
-## EventBus Tests
+## Shell Tests
 
-Test event emission by subscribing before the action that emits:
-
-```typescript
-const events: BridgeEvent[] = [];
-const unsub = bus.subscribe((event) => events.push(event));
-
-await controller.send(req);
-expect(events).toHaveLength(1);
-expect(events[0].type).toBe("message:created");
-unsub();
-```
-
-## Memory / Graph Tests
-
-FTS5 and KNN tests require a real `createTestMemoryDb()` with sqlite-vec loaded. For embedding tests that don't need real models, use `createMockEmbeddingService()` — it returns `Float32Array` filled with zeros, which is valid for schema/storage tests but not semantic similarity tests.
-
-## Excluded from Coverage
-
-- `mcp-bridge/src/index.ts` — entry point wiring; covered by integration
-- `mcp-bridge/src/mcp.ts` — MCP stdio transport; covered by MCP tool tests
-- `ui/src/lib/types.ts` — type-only exports; no runtime code
+Bash suites live in `config/**/tests/`, `scripts/tests/`, and `providers/tests/` (`*.test.sh`, run with `bash <file>`). They must never touch the real `~/.claude`, `~/.codex`, `~/.cursor`, or `~/.agentic-workflow` — point `HOME` (or the relevant `AW_*`/`CLAUDE_*` path override) at a `mktemp -d` directory.
 
 ## Test Count Baseline
 
-- Bridge: 341 tests across 39 test files
-- UI: 67 tests
+- mcp-bridge: 99 tests across 14 test files
+- scorer: 235 tests across 20 test files
+- judge: 261 tests across 22 test files
 
 Any PR that reduces these counts needs explicit justification.

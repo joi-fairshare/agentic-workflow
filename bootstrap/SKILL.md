@@ -13,7 +13,7 @@ allowed-tools: Bash(git *), Bash(ls *), Bash(find *), Bash(curl *), Bash(docker 
 > | Server | When to reach for it |
 > |--------|---------------------|
 > | `serena` | Code structure: find symbol, find usages, call hierarchy — use instead of file search + read |
-> | `agentic-bridge` | Multi-agent messaging and memory graph |
+> | `agentic-bridge` | Multi-agent messaging and task handoff between agent sessions |
 > | `context7` | Current library/framework docs |
 > | `playwright` | Browser automation, screenshots, DOM inspection |
 > | `github` | PRs, issues, releases via GitHub API |

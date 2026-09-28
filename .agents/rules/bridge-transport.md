@@ -14,27 +14,33 @@ alwaysApply: false
 Use `defineRoute<TSchema>()` to link Zod schemas to handler signatures at compile time. The identity function captures the generic type parameter, enabling full type inference in the handler.
 
 ```typescript
-import { defineRoute, type RouteSchema } from "../transport/types.js";
+import { defineRoute, type ControllerDefinition, type RouteEntry } from "../transport/types.js";
 import { z } from "zod";
 
-const MySchema = {
+export const MySchema = {
   body: z.object({ name: z.string().min(1), value: z.number() }),
-  params: z.object({ id: z.string().uuid() }),
-  response: z.object({ id: z.string(), created: z.boolean() }),
-} satisfies RouteSchema;
+  response: z.object({ id: z.string().uuid(), created: z.boolean() }),
+} as const;
+export type MySchema = typeof MySchema;
 
-export const myRoute = defineRoute<typeof MySchema>({
-  method: "POST",
-  url: "/things/:id",
-  summary: "Create a thing",
-  schema: MySchema,
-  handler: async (req) => {
-    // req.body is typed as { name: string; value: number }
-    // req.params is typed as { id: string }
-    return controller.create(req);
-  },
-});
+export function createThingRoutes(db: DbClient): ControllerDefinition {
+  const handlers = createThingController(db);
+  return {
+    basePath: "/things",
+    routes: [
+      defineRoute({
+        method: "POST",
+        path: "/create",
+        summary: "Create a thing",
+        schema: MySchema,
+        handler: handlers.create, // (req: ApiRequest<MySchema>) — req.body is { name: string; value: number }
+      }),
+    ] as RouteEntry[],
+  };
+}
 ```
+
+Route definitions live in `mcp-bridge/src/routes/` (`messages.ts`, `tasks.ts`, `conversations.ts`); the full path is `basePath + path`.
 
 `RouteSchema` interface allows optional `body`, `params`, `querystring`, and required `response`. Missing fields are typed as `undefined` in the request object.
 
@@ -43,13 +49,12 @@ export const myRoute = defineRoute<typeof MySchema>({
 Controllers are factory functions, not classes. They take infrastructure deps and return route handler methods:
 
 ```typescript
-export function createMyController(db: DbClient, bus: EventBus) {
+export function createThingController(db: DbClient) {
   return {
-    create: async (req: ApiRequest<typeof MySchema>): Promise<ApiResponse<{ id: string }>> => {
-      const result = myService(db, req.body);
+    async create(req: ApiRequest<MySchema>): Promise<ApiResponse<{ id: string; created: boolean }>> {
+      const result = createThing(db, req.body);
       if (!result.ok) return appErr(result.error);
-      bus.emit({ type: "thing:created", data: result.data });
-      return { ok: true, data: { id: result.data.id } };
+      return { ok: true, data: { id: result.data.id, created: true } };
     },
   };
 }
@@ -69,7 +74,10 @@ Use `appErr(error)` helper to convert `AppError` → `ApiResponse` error shape.
 
 Group shared schemas in `transport/schemas/common.ts`:
 - `IdParamsSchema` — `{ id: z.string().uuid() }`
-- `ConversationParamsSchema` — `{ conversation: z.string().min(1) }`
+- `ConversationParamsSchema` — `{ conversation: z.string().uuid() }`
+- `RecipientQuerySchema` — `{ recipient: z.string().min(1) }`
+
+Route schemas are plain `{ body?, params?, querystring?, response }` objects declared `as const`, with a same-named type alias (`export type SendContextSchema = typeof SendContextSchema`).
 
 Export both the schema and its inferred type:
 ```typescript
@@ -81,11 +89,10 @@ export type FooInput = z.infer<typeof FooSchema>;
 
 | File | Contents |
 |------|----------|
-| `schemas/common.ts` | Shared param/query schemas (UUID params, conversation params, pagination) |
-| `schemas/message-schemas.ts` | `SendContextSchema`, `GetMessagesSchema`, `GetUnreadSchema` |
-| `schemas/task-schemas.ts` | `AssignTaskSchema`, `ReportStatusSchema` |
-| `schemas/conversation-schemas.ts` | Pagination params (limit, offset) |
-| `schemas/memory-schemas.ts` | `SearchInputSchema`, `TraverseInputSchema`, context assembly schemas |
+| `schemas/common.ts` | `IdParamsSchema`, `ConversationParamsSchema`, `RecipientQuerySchema` |
+| `schemas/message-schemas.ts` | `MessageResponseSchema`, `SendContextSchema`, `GetMessagesSchema`, `GetUnreadSchema` |
+| `schemas/task-schemas.ts` | `TaskResponseSchema`, `AssignTaskSchema`, `GetTaskSchema`, `GetTasksByConversationSchema`, `ReportStatusSchema` |
+| `schemas/conversation-schemas.ts` | `ConversationsResponseSchema`, `GetConversationsSchema` (pagination: `limit` 1–100 default 20, `offset` default 0) |
 
 ## Controller Files
 
@@ -94,7 +101,20 @@ export type FooInput = z.infer<typeof FooSchema>;
 | `controllers/message-controller.ts` | `send`, `getByConversation`, `getUnread` |
 | `controllers/task-controller.ts` | `assign`, `get`, `getByConversation`, `report` |
 | `controllers/conversation-controller.ts` | `list` (with pagination) |
-| `controllers/memory-controller.ts` | `search`, `getNode`, `getNodeBySource`, `getNodeEdges`, `traverse`, `getContext`, `getTopics`, `getStats`, `ingest`, `expand`, `createLink`, `createNode`, `getTraversalLogs`, `getTraversalLog`, `getSenders`, `listConversations` |
+
+## HTTP Routes
+
+| Method + path | Handler |
+|---------------|---------|
+| `POST /messages/send` | `message.send` |
+| `GET /messages/conversation/:conversation` | `message.getByConversation` |
+| `GET /messages/unread?recipient=` | `message.getUnread` |
+| `POST /tasks/assign` | `task.assign` |
+| `GET /tasks/:id` | `task.get` |
+| `GET /tasks/conversation/:conversation` | `task.getByConversation` |
+| `POST /tasks/report` | `task.report` |
+| `GET /conversations?limit=&offset=` | `conversation.list` |
+| `GET /health` | inline in `server.ts` |
 
 ## ApiRequest Structure
 
@@ -107,14 +127,14 @@ interface ApiRequest<TSchema extends RouteSchema> {
 }
 ```
 
-`requestId` is always a UUID string injected by the server middleware — use it for logging correlation.
+`requestId` is Fastify's request id (`request.id`) — use it for logging correlation.
 
 ## ApiResponse Union
 
 ```typescript
 type ApiResponse<T> =
   | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string; details?: unknown } };
+  | { ok: false; error: { code: string; message: string; details?: unknown; statusHint?: number } };
 ```
 
 Controllers return `ApiResponse`. The server serializes `ok: true` → 201/200 and `ok: false` → `statusHint` HTTP status.

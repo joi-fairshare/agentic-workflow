@@ -155,6 +155,7 @@ The setup script:
 - Installs and builds the MCP bridge
 - Builds the Serena Docker images (base TS/Python image; opt-in C# and Swift extensions) and installs the `serena-docker` wrapper to `~/.local/bin/`
 - Registers the MCP servers (`agentic-bridge`, `serena`, `headroom`, `prism-mcp`, and `xcodebuildmcp` on macOS) with each selected provider
+- Configures `prism-mcp` (persistent memory, downloaded on first use) with its Mind Palace dashboard at `http://localhost:7180` (`PRISM_DASHBOARD_PORT`). The `prism-context.sh` session-start hook warns if the dashboard is unreachable; `/prismStatus` runs a full health check
 - Installs rtk and headroom
 - **Claude Code only:** copies `settings.json`, installs the statusline and shell integration, and adds plugin marketplaces and plugins
 

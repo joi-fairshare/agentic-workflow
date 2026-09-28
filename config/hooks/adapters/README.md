@@ -48,7 +48,6 @@ the `aw:*` entries.
 | `git-context.sh` | SessionStart | SessionStart (plain text becomes developer context) | `sessionStart` → `additional_context` |
 | `prism-context.sh` | SessionStart | SessionStart | `sessionStart` → `additional_context` |
 | `judge-health.sh` | SessionStart (`scripts/install-judge.sh`) | SessionStart (`install-judge.sh --provider codex`) | `sessionStart` (`install-judge.sh --provider cursor`) |
-| `bridge-context.sh` | legacy, removed by setup | not installed | not installed |
 | `context-guard.sh` | PostToolUse `.*` | PostToolUse `.*`: reads the rollout's latest `token_count.last_token_usage.input_tokens` | **unmapped**: Cursor transcripts carry no token usage, and no hook reports context size per tool call (`preCompact` fires only at compaction) |
 | `done-gate.sh` | Stop | Stop: reads `last_assistant_message`, exit 2 → continuation reason on stderr | `stop`: last assistant text from the transcript; exit 2 → `followup_message`; `stop_hook_active = loop_count > 0` |
 | `done-gate-annotate.sh` | PostToolUse `Agent` | **unmapped**: `spawn_agent` returns at once with an agent id. The result comes later through `wait_agent`, with no link back to the brief | **unmapped**: `subagentStop` has no dispatch id to look up the brief, and it can't annotate the parent's tool result |

@@ -78,8 +78,22 @@ check "claude: scripts copied to CLAUDE_DIR/hooks" "$([ -x "$CD/hooks/done-gate.
 snap="$(jq -Sc . "$CD/settings.json")"
 q env CLAUDE_DIR="$CD" bash "$ROOT/providers/claude/install-hooks.sh"
 check "claude: reinstall is idempotent" "$(jq -Sc . "$CD/settings.json")" "$snap"
+check "claude: bridge-context.sh is not installed" "$([ -e "$CD/hooks/bridge-context.sh" ] && echo present || echo absent)" "absent"
 q env CLAUDE_DIR="$CD" bash "$ROOT/providers/claude/install-hooks.sh" --uninstall
 check "claude: uninstall removes the entries it wrote" "$(jq -c . "$CD/settings.json")" '{"hooks":{}}'
+
+# Legacy bridge-context entry from an older install is removed on reinstall,
+# including when it shares a group with a foreign command.
+CL="$WORK/claude-legacy"; mkdir -p "$CL/hooks"
+printf '#!/usr/bin/env bash\n' > "$CL/hooks/bridge-context.sh"
+echo '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]},{"hooks":[{"type":"command","command":"/opt/theirs.sh"},{"type":"command","command":"~/.claude/hooks/bridge-context.sh"}]}]}}' > "$CL/settings.json"
+q env CLAUDE_DIR="$CL" bash "$ROOT/providers/claude/install-hooks.sh"
+check "claude: legacy bridge-context entries removed, foreign kept" "$(jq -c '[.hooks.SessionStart[].hooks[].command]' "$CL/settings.json")" \
+  '["/opt/theirs.sh","~/.claude/hooks/git-context.sh","~/.claude/hooks/prism-context.sh"]'
+check "claude: legacy bridge-context.sh copy removed" "$([ -e "$CL/hooks/bridge-context.sh" ] && echo present || echo absent)" "absent"
+snap="$(jq -Sc . "$CL/settings.json")"
+q env CLAUDE_DIR="$CL" bash "$ROOT/providers/claude/install-hooks.sh"
+check "claude: legacy cleanup is idempotent" "$(jq -Sc . "$CL/settings.json")" "$snap"
 
 # ---------------- lever installers --provider ----------------
 rm -f "$CODEX_FILE" "$CURSOR_FILE"

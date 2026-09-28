@@ -193,7 +193,7 @@ agentic-workflow/
 1. Create the service function in `mcp-bridge/src/application/services/`.
 2. Return `AppResult<T>` -- never throw exceptions.
 3. Wire it into a route in `mcp-bridge/src/routes/` (for REST) and/or register a tool in `mcp-bridge/src/mcp.ts` (for MCP).
-4. Add tests in `mcp-bridge/tests/` using the `beforeEach` in-memory DB pattern.
+4. Add tests in `mcp-bridge/tests/` using `createTestBridgeDb()` from `tests/helpers.ts` in `beforeEach`.
 
 ### Adding a New Skill
 

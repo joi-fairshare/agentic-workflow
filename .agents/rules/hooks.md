@@ -48,8 +48,9 @@ Put provider-specific parsing in the adapter, not the canonical hook. The one ex
 | Hook | Outputs |
 |------|---------|
 | `git-context.sh` | Current branch, last 5 commits, working tree status |
-| `bridge-context.sh` | Recent decisions, topics, and tasks from the repo's memory graph (no-ops silently if bridge is down) |
 | `prism-context.sh` | One-line warning if prism-mcp dashboard at `PRISM_DASHBOARD_PORT` (default 7180) is unreachable; silent on success |
+
+`providers/claude/install-hooks.sh` also removes the SessionStart entry and `~/.claude/hooks/` copy of the retired `bridge-context.sh` hook left by older installs.
 
 ## Hook Protocols
 
@@ -74,7 +75,6 @@ All hook scripts live in `config/hooks/`:
 | `detect-secrets.sh` | PreToolUse | `Bash` |
 | `rtk-rewrite.sh` | PreToolUse | `Bash` |
 | `git-context.sh` | SessionStart | — |
-| `bridge-context.sh` | SessionStart | — |
 | `prism-context.sh` | SessionStart | — |
 
 Each provider's `install-hooks.sh` installs them by copying, not symlinking, so they survive repo moves. Claude Code's copies go to `~/.claude/hooks/`, and Codex and Cursor copies go to `~/.agentic-workflow/hooks/`. The script then registers the command in that provider's hook config, wrapped by the adapter for Codex and Cursor.

@@ -201,7 +201,7 @@ if ! aw_dry && { ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; 
   echo "║                  MISSING BUILD TOOLS                        ║"
   echo "║                                                              ║"
   echo "║  make and g++ are required to compile native Node addons    ║"
-  echo "║  (better-sqlite3, sqlite-vec). Prebuilt binaries may not    ║"
+  echo "║  (better-sqlite3). Prebuilt binaries may not                ║"
   echo "║  be available for your Node version.                        ║"
   echo "║                                                              ║"
   echo "║  Install build tools, then re-run setup:                    ║"

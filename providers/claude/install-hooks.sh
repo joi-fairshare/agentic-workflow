@@ -93,11 +93,19 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
     echo "  hooks.SessionStart: prism-context added"
   fi
 
-  # Remove legacy bridge-context SessionStart hook if present
-  if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \
+  # Remove the legacy bridge-context SessionStart hook left by older installs
+  # (it queried the removed /memory/context endpoint). Drops only that command
+  # from each group, then any group left empty. No-op when absent.
+  if jq -e '[.hooks.SessionStart[]?.hooks[]? | (.command // "") | select(test("bridge-context\\.sh"))] | length > 0' "$SETTINGS_FILE" &>/dev/null; then
+    jq '.hooks.SessionStart = [ .hooks.SessionStart[]?
+          | .hooks = [ .hooks[]? | select((.command // "") | test("bridge-context\\.sh") | not) ]
+          | select(.hooks | length > 0) ]' \
       "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
     echo "  hooks.SessionStart: removed legacy bridge-context hook"
+  fi
+  if [ -f "$HOOKS_DIR/bridge-context.sh" ]; then
+    rm -f "$HOOKS_DIR/bridge-context.sh"
+    echo "  bridge-context.sh: removed legacy copy from $HOOKS_DIR"
   fi
 
   # Print installed hooks by owner (aw:* = agentic-workflow, prism = prism connect)
