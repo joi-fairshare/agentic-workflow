@@ -8,9 +8,9 @@ const question: QuestionRef<"send" | "batch" | "drop"> = {
 };
 
 describe("jev provider", () => {
-  it("only covers message-meta (F2: no company-code classes until vendor review)", () => {
+  it("covers every text class, not image (F2: vendor review cleared company-code classes 2026-09-28; Jev is text-only)", () => {
     const provider = makeJevProvider({ fetch: vi.fn(), apiKey: async () => "k" });
-    expect(provider.classes).toEqual(new Set(["message-meta"]));
+    expect(provider.classes).toEqual(new Set(["message-meta", "code", "diff", "brief", "transcript"]));
   });
 
   it("is unavailable, not an error, with no API key (RF-2)", async () => {
@@ -20,8 +20,8 @@ describe("jev provider", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("posts to /v1/systemone with the jev-1.13.0 model and a bearer token", async () => {
-    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answer: "send", confidence: 0.95 }) });
+  it("posts to /v1/systemone with the jev-1.13.0 model, a bearer token, and a choice question", async () => {
+    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answers: { decision: { type: "choice", choice: "send", confidence: 0.95 } } }) });
     const provider = makeJevProvider({ fetch, apiKey: async () => "k-123" });
     await provider.decide(question, { text: "hi" }, 1000);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -32,8 +32,11 @@ describe("jev provider", () => {
     expect(init.headers["Content-Type"]).toBe("application/json");
     const body = JSON.parse(init.body) as Record<string, unknown>;
     expect(body.model).toBe("jev-1.13.0");
-    expect(body.question).toBe(question.prompt);
-    expect(body.options).toEqual(question.outputs);
+    expect(body.state).toEqual({ text: "hi" });
+    const questions = body.questions as Record<string, { type: string; instructions: string; criteria: Record<string, string> }>;
+    expect(questions.decision.type).toBe("choice");
+    expect(questions.decision.instructions).toBe(question.prompt);
+    expect(questions.decision.criteria).toEqual({ send: "send", batch: "batch", drop: "drop" });
   });
 
   it("rejects a Choice question with more than 255 options before calling fetch", async () => {
@@ -45,7 +48,7 @@ describe("jev provider", () => {
   });
 
   it("parses a decided answer within the enum", async () => {
-    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answer: "batch", confidence: 0.8 }) });
+    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answers: { decision: { type: "choice", choice: "batch", confidence: 0.8 } } }) });
     const provider = makeJevProvider({ fetch, apiKey: async () => "k" });
     expect(await provider.decide(question, {}, 1000)).toEqual({ status: "decided", decision: "batch", confidence: 0.8, reason_code: "jev" });
   });
@@ -68,8 +71,14 @@ describe("jev provider", () => {
     expect(await provider.decide(question, {}, 1000)).toEqual({ status: "error", reason_code: "unparseable-result" });
   });
 
-  it("defaults confidence to 1 when the response omits it (unverified field, see plan Task 5)", async () => {
-    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answer: "send" }) });
+  it("is an error when the answered choice isn't one of the question's outputs", async () => {
+    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answers: { decision: { type: "choice", choice: "not-an-option" } } }) });
+    const provider = makeJevProvider({ fetch, apiKey: async () => "k" });
+    expect(await provider.decide(question, {}, 1000)).toEqual({ status: "error", reason_code: "unparseable-result" });
+  });
+
+  it("defaults confidence to 1 when the response omits it", async () => {
+    const fetch = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ answers: { decision: { type: "choice", choice: "send" } } }) });
     const provider = makeJevProvider({ fetch, apiKey: async () => "k" });
     expect(await provider.decide(question, {}, 1000)).toEqual({ status: "decided", decision: "send", confidence: 1, reason_code: "jev" });
   });
