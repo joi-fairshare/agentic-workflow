@@ -1,7 +1,7 @@
 ---
 name: rootCause
 description: 4-phase systematic debugging — investigate, analyze, hypothesize, implement. Auto-freezes scope to the module boundary to prevent scope creep.
-argument-hint: "[--depth N] [error-message-or-issue-description | canary incident JSON]"
+argument-hint: "[--depth N] [--investigate-only] [error-message-or-issue-description | canary incident JSON]"
 allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo *), Bash(go *), Bash(bundle *), Bash(SHARED_DIR=*), Bash(source *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion, mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff
 ---
 
@@ -17,6 +17,7 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo
 Extract the starting point for the investigation from the argument:
 
 - **`--depth N`** — dispatch-chain depth guard (default 0). If N ≥ 2, this run must NOT dispatch any sub-skill (Sub-skill Dispatch is disabled) — report findings only. When dispatching, always pass `--depth N+1`.
+- **`--investigate-only`** — diagnose without fixing (used by `/bugFixOrchestrator`, whose implementers write the fix). Run Phases 0–3.5, skip Phase 4, write the Phase 5 report + handoff with status `diagnosed`, and never dispatch a sub-skill. The working tree must end exactly as it started.
 - **Error message or issue description** — the normal entry.
 - **Production-incident entry** — if the argument is a JSON object of the shape `{merge_sha, release_id, symptom, logs_excerpt}` (as passed by `/canary` on an UNHEALTHY verdict), treat this as a production incident:
   - `logs_excerpt` is the primary evidence; `symptom` is the failure description.
@@ -53,6 +54,8 @@ Generate 2-3 hypotheses ranked by likelihood. Document each as: **Hypothesis** (
 - **Ruled out** → record the result in the hypotheses table, promote hypothesis #2, and run its check.
 - Never implement a fix whose hypothesis has not been confirmed by its own check. "Confirms if / Rules out if" is an executable contract, not documentation.
 
+**With `--investigate-only`:** run the confirm check for each hypothesis in order until one is confirmed or all are ruled out, recording every result. Revert any temporary instrumentation (log lines, narrowed test edits) — `git status --porcelain` must show nothing you added. Then skip Phase 4 and go to Phase 5 with status `diagnosed`.
+
 ## Phase 4: Implement
 
 Fix the confirmed cause.
@@ -87,7 +90,7 @@ Report format:
 # Investigation: {short description}
 
 **Date:** {ISO timestamp}
-**Status:** {fixed | unfixed | scope-breach}
+**Status:** {fixed | unfixed | scope-breach | diagnosed}
 
 ## Error Description
 {Original error message and context}
@@ -122,13 +125,19 @@ Report format:
 ```markdown
 # Handoff: {slug}
 
-status: {fixed | unfixed | scope-breach}
+status: {fixed | unfixed | scope-breach | diagnosed}
 report: {absolute path to the investigation report}
 boundary: {declared module boundary path}
 repro: {failing command, or the verify-app journey steps}
 
 ## Root Cause
 {confirmed or best-supported root cause, one paragraph}
+
+## Hypotheses
+
+| # | Hypothesis | Cause-site files | Likelihood | Result |
+|---|-----------|------------------|------------|--------|
+| 1 | {description} | `{file}`, `{file}` | High | {confirmed/ruled-out/untested} |
 
 ## Ruled Out
 - {hypothesis} — {evidence that ruled it out}
@@ -142,7 +151,7 @@ repro: {failing command, or the verify-app journey steps}
 ```
 Root cause analysis complete.
 
-Status: {fixed | unfixed | scope-breach}
+Status: {fixed | unfixed | scope-breach | diagnosed}
 Module boundary: {path}
 Root cause: {one-line summary}
 Report: ~/.agentic-workflow/<repo-slug>/investigations/{filename}
@@ -152,12 +161,12 @@ Handoff: ~/.agentic-workflow/<repo-slug>/investigations/{slug}/handoff.md
 **End the response with exactly one fenced JSON block** (machine-readable tail — `/review` and other callers parse this):
 
 ```json
-{ "status": "fixed | unfixed | scope-breach", "report_path": "<absolute report path>", "boundary": "<boundary path>" }
+{ "status": "fixed | unfixed | scope-breach | diagnosed", "report_path": "<absolute report path>", "boundary": "<boundary path>" }
 ```
 
 ### Sub-skill Dispatch
 
-If Phase 4 ends with status `unfixed` or `scope-breach`, **and** the depth guard allows (`--depth` < 2):
+Never with `--investigate-only` (status `diagnosed` is the intended end — the caller fixes). Otherwise, if Phase 4 ends with status `unfixed` or `scope-breach`, **and** the depth guard allows (`--depth` < 2):
 > **Invoke skill `bugHunt`** with args `--from-investigation <handoff.md path> --depth <N+1>`
 
 Do not invoke bugHunt if the fix was verified — rootCause's own report is sufficient on success. At depth ≥ 2, stop the chain and report only.

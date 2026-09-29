@@ -55,6 +55,14 @@ describe("parseHandoff", () => {
     expect(parseHandoff(HANDOFF.replace("| Medium | untested |", "| Medium | maybe |"))).toMatchObject({ error: expect.stringContaining("malformed hypotheses row") });
   });
 
+  it("parses the handoff template /rootCause --investigate-only documents (contract with skills/rootCause/SKILL.md)", () => {
+    const skill = fs.readFileSync(path.join(__dirname, "..", "..", "rootCause", "SKILL.md"), "utf8");
+    expect(skill).toContain("--investigate-only");
+    const template = skill.slice(skill.indexOf("# Handoff: {slug}"), skill.indexOf("## Ruled Out"));
+    const filled = template.replace(/^status: .*$/m, "status: diagnosed").replace("{confirmed/ruled-out/untested}", "confirmed");
+    expect(parseHandoff(filled)).toMatchObject({ status: "diagnosed", hypotheses: [{ n: 1, files: ["{file}", "{file}"], result: "confirmed" }] });
+  });
+
   it("returns no hypotheses for an empty table", () => {
     expect(parseHandoff("status: diagnosed\n## Hypotheses\n\n| # | H | F | L | R |\n|---|---|---|---|---|\n\n## Root Cause\nx")).toEqual({ status: "diagnosed", hypotheses: [] });
   });
