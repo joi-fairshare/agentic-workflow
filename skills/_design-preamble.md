@@ -1,10 +1,6 @@
-# Shared Design Preamble — Reference Copy
-#
-# This file is NOT a skill. It documents the shared design context-loading
-# block that every design skill includes inline. Edit here, then propagate
-# to all design SKILL.md files. The block appears after the bootstrap check.
+# Shared Design Preamble
 
-<!-- === DESIGN PREAMBLE START === -->
+Every design skill reads this file after the shared preamble and follows it to load design context.
 
 ## Design Context — Load Design Language
 
@@ -47,12 +43,14 @@ For iOS: check Swift files for `import SwiftUI` (standard) or third-party compon
 
 **Part B: Repo primitive scan**
 
+Find files matching these glob patterns:
+
 ```
-Glob("src/components/**/*.{tsx,jsx,ts,js}")
-Glob("components/**/*.{tsx,jsx,ts,js}")
-Glob("app/components/**/*.{tsx,jsx,ts,js}")
-Glob("ui/src/components/**/*.{tsx,jsx,ts,js}")
-Glob("**/*.swift", limit to top 2 directory levels)
+src/components/**/*.{tsx,jsx,ts,js}
+components/**/*.{tsx,jsx,ts,js}
+app/components/**/*.{tsx,jsx,ts,js}
+ui/src/components/**/*.{tsx,jsx,ts,js}
+**/*.swift   (limit to top 2 directory levels)
 ```
 
 Collect file names (not contents), deduplicate, and derive component names from filenames
@@ -82,5 +80,3 @@ Design pipeline:
 
   /design-evolve  can run anytime to merge new reference materials.
 ```
-
-<!-- === DESIGN PREAMBLE END === -->

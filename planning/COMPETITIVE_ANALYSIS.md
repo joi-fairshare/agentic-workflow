@@ -107,7 +107,7 @@ The multi-agent bridge space is emerging rapidly alongside Claude Code and OpenA
 | **Conversation History** | Full (queryable by UUID) | None | Planning history | Session-scoped | None | Limited |
 | **Offline Tolerance** | Yes (store-and-forward) | No (real-time only) | Partial | Session-dependent | No | Orchestrator buffers |
 | **Skill System** | 34 skills + bootstrap | None | Workflow templates | None | None | Agent registry |
-| **Multi-Model** | Claude + Codex | Claude + Codex | Claude + Codex | Claude + Codex | Claude only | Claude + Codex + Gemini |
+| **Multi-Model** | Claude Code + Codex + Cursor | Claude + Codex | Claude + Codex | Claude + Codex | Claude only | Claude + Codex + Gemini |
 | **Type Safety** | Full (Zod + AppResult\<T\>) | Runtime only | Partial | TypeScript | TypeScript | TypeScript |
 | **Transaction Safety** | SQLite transactions | N/A | None | None | N/A | None |
 | **Setup Complexity** | Low (setup.sh) | Low (pip install) | Medium | Low | Low | Medium-High |
@@ -126,7 +126,7 @@ Agentic-workflow occupies a distinct position in this space through three differ
 **3. Dual transport with zero lock-in.** The same application services power both the MCP stdio server and the Fastify REST API. Non-MCP clients (scripts, CI pipelines, dashboards) can interact with the bridge over HTTP. The custom router avoids framework-specific coupling, making the HTTP layer replaceable.
 
 **Where agentic-workflow trails:**
-- Multi-model support is narrower than ai-cli-mcp (currently Claude + Codex only, though the protocol is model-agnostic)
+- Multi-model support covers Claude Code, Codex, and Cursor; ai-cli-mcp additionally covers Gemini CLI (the protocol itself is model-agnostic)
 - No planning-first workflow pattern like claude-codex-bridge (agents communicate freely without structured negotiation)
 - No centralized orchestration — coordination is emergent from agent behavior rather than centrally managed
 

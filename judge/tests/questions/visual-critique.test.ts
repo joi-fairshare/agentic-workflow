@@ -37,3 +37,11 @@ describe("visualCritique", () => {
     expect(result).toEqual({ escalate: true, reason_code: "no-provider-decided" });
   });
 });
+
+describe("visualCritique — provider-neutral contract", () => {
+  it("declares reasons as an extra response field and never names a host-specific tool", () => {
+    expect(visualCritique.extraProperties).toEqual({ reasons: { type: "array", items: { type: "string" } } });
+    const prompt = visualCritique.prompt({ afterScreenshot: "after.png", baselineScreenshot: null, evidenceDir: "/tmp/run1" });
+    expect(prompt).not.toContain("Read tool");
+  });
+});

@@ -6,7 +6,7 @@
 |-------------|----------------|---------|
 | Node.js | >= 20 | Runtime for MCP bridge and build tooling |
 | GitHub CLI (`gh`) | Latest | Required by review skills for PR interaction |
-| Claude Code | Latest | Host for skills and MCP server registration |
+| Claude Code, Codex, or Cursor CLI | Latest | At least one agent host for skills and MCP server registration |
 | npm | Bundled with Node | Dependency management |
 
 ## Initial Setup
@@ -14,23 +14,23 @@
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/joi-fairshare/agentic-workflow.git ~/repos/agentic-workflow
+git clone https://github.com/vitalizecare/agentic-workflow.git ~/repos/agentic-workflow
 cd ~/repos/agentic-workflow
 ```
 
 ### 2. Run the Setup Script
 
 ```bash
-./setup.sh
+./setup.sh                                  # detect installed provider CLIs
+./setup.sh --providers claude,codex,cursor  # or choose explicitly
 ```
 
-The setup script performs the following:
+The setup script performs the following (per-provider steps live in `providers/<name>/`; see `planning/PROVIDERS.md`):
 
-1. **Symlinks skills** into `~/.claude/skills/`:
-   - `review`, `postReview`, `addressReview`, `enhancePrompt`, `bootstrap`
+1. **Symlinks skills** into each selected provider's skills directory, creates the stable `~/.agentic-workflow/toolkit` symlink, and writes the `~/.agentic-workflow/providers` registry.
    - If a directory already exists (not a symlink), it prompts before replacing.
 
-2. **Copies config files** to `~/.claude/`:
+2. **Copies config files** to `~/.claude/` (Claude Code only):
    - `settings.json` -- only if no existing file (will not overwrite).
    - `mcp.json` -- only if no existing file (will not overwrite).
    - If files exist, it prints a `diff` command for manual comparison.
@@ -47,13 +47,20 @@ npm run build
 
 This runs `tsc` and outputs compiled JavaScript to `mcp-bridge/dist/`.
 
-### 4. Register the MCP Server with Claude Code
+### 4. Register the MCP Server
+
+`setup.sh` does this for every selected provider. To do it by hand:
 
 ```bash
 claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
-This registers the bridge as a stdio-based MCP server that Claude Code can invoke.
+```bash
+codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
+# Cursor: add an "agentic-bridge" entry under mcpServers in ~/.cursor/mcp.json
+```
+
+This registers the bridge as a stdio-based MCP server that the provider can invoke.
 
 ## Environment Configuration
 
@@ -94,7 +101,7 @@ The REST API starts at `http://127.0.0.1:3100` by default. It exposes message an
 
 ### MCP Server (stdio)
 
-The MCP server runs as a stdio process, intended to be launched by Claude Code or Codex CLI:
+The MCP server runs as a stdio process, intended to be launched by Claude Code, Codex, or Cursor:
 
 ```bash
 # Direct invocation (for testing)
@@ -102,7 +109,7 @@ cd ~/repos/agentic-workflow/mcp-bridge
 npm run build
 npm run mcp
 
-# Normal usage: Claude Code spawns it via the registered MCP config
+# Normal usage: the provider spawns it via the registered MCP config
 claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
@@ -151,7 +158,7 @@ The build compiles `src/**/*` to `dist/`, excluding `node_modules`, `dist`, and 
 
 ```
 agentic-workflow/
-├── skills/                    # Claude Code custom skills (symlinked to ~/.claude/skills/)
+├── skills/                    # Native skills (symlinked into each provider's skills dir)
 │   ├── review/                # Multi-agent PR review
 │   ├── postReview/            # GitHub comment publisher
 │   ├── addressReview/         # Review fix implementer
@@ -186,7 +193,7 @@ agentic-workflow/
 1. Create the service function in `mcp-bridge/src/application/services/`.
 2. Return `AppResult<T>` -- never throw exceptions.
 3. Wire it into a route in `mcp-bridge/src/routes/` (for REST) and/or register a tool in `mcp-bridge/src/mcp.ts` (for MCP).
-4. Add tests in `mcp-bridge/tests/` using the `beforeEach` in-memory DB pattern.
+4. Add tests in `mcp-bridge/tests/` using `createTestBridgeDb()` from `tests/helpers.ts` in `beforeEach`.
 
 ### Adding a New Skill
 

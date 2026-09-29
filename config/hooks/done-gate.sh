@@ -12,8 +12,16 @@ STOP_HOOK_ACTIVE="$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false')"
 [ "$STOP_HOOK_ACTIVE" = "true" ] && exit 0
 
 TRANSCRIPT="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty')"
-[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || exit 0
 
+if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+  # Provider adapters (config/hooks/adapters/) run this hook for hosts whose
+  # transcript isn't Claude-shaped (Codex rollouts, Cursor agent transcripts).
+  # They drop transcript_path and pass the final assistant text directly as
+  # last_assistant_message (Codex's Stop input carries it natively). Claude
+  # Code always sends a real transcript_path, so its path below is unchanged.
+  CLAIM_TEXT="$(printf '%s' "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)"
+  [ -n "$CLAIM_TEXT" ] || exit 0
+else
 # Last complete assistant text turn: grab every whole line whose top-level
 # "type" is "assistant" (tail a generous window, not the whole file — a
 # transcript can be large), then pick the last one and pull out its text.
@@ -41,6 +49,7 @@ CLAIM_TEXT="$(printf '%s' "$LAST_ASSISTANT_LINE" | jq -r '
   end
 ' 2>/dev/null)"
 [ -n "$CLAIM_TEXT" ] || exit 0
+fi
 
 SESSION_ID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty')"
 SESSIONS_DIR="${AW_JUDGE_SESSIONS_DIR:-${AW_STATE_DIR:-$HOME/.agentic-workflow}/judge/sessions}"

@@ -1,6 +1,13 @@
 export type ContentClass = "code" | "diff" | "brief" | "transcript" | "message-meta" | "image";
 
-export type ProviderName = "rules" | "claude-cli" | "jev";
+// Agent-CLI providers: one per supported host (planning/PROVIDERS.md). Each
+// runs its host's headless mode on a small fast model from an empty temp cwd.
+export type AgentCliName = "claude-cli" | "codex-cli" | "cursor-cli";
+
+export type ProviderName = "rules" | AgentCliName | "jev";
+
+// A JSON Schema fragment for one extra response field (e.g. { type: "integer" }).
+export type JsonSchemaFragment = Readonly<Record<string, unknown>>;
 
 export interface Decision<O extends string> {
   decision: O;
@@ -29,6 +36,10 @@ export interface QuestionRef<O extends string> {
   outputs: readonly O[];
   prompt: string;
   contentClass: ContentClass;
+  // Response fields beyond `decision` the question wants back (chosenIndex,
+  // reasons). Providers with schema-constrained output (codex-cli's strict
+  // mode) can only return fields declared here; they ride back as `extra`.
+  extraProperties?: Readonly<Record<string, JsonSchemaFragment>>;
 }
 
 export interface Provider {

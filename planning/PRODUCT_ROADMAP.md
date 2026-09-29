@@ -42,7 +42,7 @@ Expand from 5 to 14 skills covering the entire development lifecycle, add a cent
 | `/bugHunt` | QA | Fix-and-verify loop with 3 tiers, atomic commits, regression tests |
 | `/bugReport` | QA | Read-only health audit with weighted health scores |
 | `/shipRelease` | Release | Sync, test, coverage audit, push, open PR, auto-invoke /syncDocs |
-| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, CLAUDE.md, .claude/rules/ |
+| `/syncDocs` | Release | Post-ship doc updater for README, ARCHITECTURE, CHANGELOG, AGENTS.md, .agents/rules/ |
 | `/weeklyRetro` | Retrospective | Per-person breakdowns, shipping streaks, test health, insights |
 | `/officeHours` | Planning | YC-style brainstorming with 6 forcing questions → design doc |
 | `/productReview` | Planning | Founder/product lens review with 4 modes (mvp/growth/scale/pivot) |
@@ -155,9 +155,9 @@ Expand the MCP tool surface beyond messaging and task management:
 
 **2. Multi-Model Support (was item 3)**
 
-The current implementation is model-agnostic at the protocol level (MCP and REST are not Claude-specific), but the skills and documentation assume Claude Code and Codex. Extend support to:
+The protocol layer (MCP and REST) is model-agnostic, and the toolkit now supports Claude Code, Codex, and Cursor as equal hosts through a provider adapter layer (`providers/<name>/`, capability vocabulary in `skills/_shared/capabilities.md`, see `planning/PROVIDERS.md`). Remaining work:
 
-- **OpenAI Codex** — Already partially supported via the MCP bridge. Document the integration pattern.
+- [x] **Claude Code, Codex, Cursor** — Skills, hooks, MCP registration, repo instructions, judge, and scorer all have per-provider adapters.
 - **Gemini CLI** — If/when Google ships MCP support, add configuration templates.
 - **Local models (Ollama, LM Studio)** — Document how to connect local models as agents via the REST API.
 - **Agent identity registry** — Formalize agent identifiers beyond free-form strings. Add an `agents` table tracking registered agents with capabilities, model type, and availability status.

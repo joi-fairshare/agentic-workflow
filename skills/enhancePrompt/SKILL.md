@@ -5,177 +5,8 @@ argument-hint: [prompt-to-enhance]
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, Bash(git *), Bash(ls *), Bash(mkdir *), Bash(date *), Bash(SHARED_DIR=*), mcp__prism-mcp__session_load_context, mcp__prism-mcp__session_save_ledger, mcp__prism-mcp__session_save_handoff, mcp__agentic-bridge__send_context, mcp__agentic-bridge__assign_task
 ---
 
-<!-- === PREAMBLE START === -->
-
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
->
-> | Skill | Purpose |
-> |-------|---------|
-> | `/review` | Multi-agent PR code review |
-> | `/postReview` | Publish review findings to GitHub |
-> | `/addressReview` | Implement review fixes in parallel |
-> | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
-> | `/rootCause` | 4-phase systematic debugging |
-> | `/bugHunt` | Fix-and-verify loop with regression tests |
-> | `/bugReport` | Structured bug report with health scores |
-> | `/shipRelease` | Sync, test, push, open PR |
-> | `/syncDocs` | Post-ship doc updater |
-> | `/weeklyRetro` | Weekly retrospective with shipping streaks |
-> | `/officeHours` | Spec-driven brainstorming → EARS requirements + design doc |
-> | `/productReview` | Founder/product lens plan review |
-> | `/archReview` | Engineering architecture plan review |
-> | `/withInterview` | Interview user to clarify requirements before executing |
-> | `/design-analyze` | Detect web vs iOS, extract design tokens (dispatcher) |
-> | `/design-analyze-web` | Extract design tokens from reference URLs (web) |
-> | `/design-analyze-ios` | Extract design tokens from Swift/Xcode assets |
-> | `/design-language` | Define brand personality and aesthetic direction |
-> | `/design-evolve` | Detect web vs iOS, merge new reference into design language (dispatcher) |
-> | `/design-evolve-web` | Merge new URL into design language (web) |
-> | `/design-evolve-ios` | Merge Swift reference into design language (iOS) |
-> | `/design-mockup` | Detect web vs iOS, generate mockup (dispatcher) |
-> | `/design-mockup-web` | Generate HTML mockup from design language |
-> | `/design-mockup-ios` | Generate SwiftUI preview mockup |
-> | `/design-implement` | Detect web vs iOS, generate production code (dispatcher) |
-> | `/design-implement-web` | Generate web production code (CSS/Tailwind/Next.js) |
-> | `/design-implement-ios` | Generate SwiftUI components from design tokens |
-> | `/design-refine` | Dispatch Impeccable refinement commands |
-> | `/design-verify` | Detect web vs iOS, screenshot diff vs mockup (dispatcher) |
-> | `/design-verify-web` | Playwright screenshot diff vs mockup (web) |
-> | `/design-verify-ios` | Simulator screenshot diff vs mockup (iOS) |
-> | `/verify-app` | Detect web vs iOS, verify running app (dispatcher) |
-> | `/verify-web` | Playwright browser verification of running web app |
-> | `/verify-ios` | XcodeBuildMCP simulator verification of iOS app |
-> | `/autoplan` | Plan meta-orchestrator (productReview + archReview + planDesignReview + planDevexReview + cso in parallel) |
-> | `/planDesignReview` | Design-lens review of plan docs |
-> | `/planDevexReview` | DX-lens review of plan docs |
-> | `/cso` | OWASP Top 10 + STRIDE threat model (plan or PR diff) |
-> | `/design-shotgun` | Generate 4–6 mockup variants in parallel |
-> | `/landAndDeploy` | Merge → deploy → smoke → chain canary |
-> | `/canary` | Post-deploy monitoring with custom probes |
-> | `/prismStatus` | Health check for prism-mcp |
-> | `/specToProvenPR` | Approved spec → proven, review-clean PRs, one shippable stage at a time |
->
-> **Output directory:** `~/.agentic-workflow/<repo-slug>/`
->
-> ### Meta-Orchestration Convention
->
-> Every native pipeline skill ends its response with a `## Next steps` block listing 1–3 recommended successor skills with one-line reasons. This is the meta-orchestration layer — skills hand off through structured suggestions, not by importing each other's logic. Three stage orchestrators (`/autoplan`, `/design-refine`, `/shipRelease`) fan out subagents in parallel and consolidate findings.
-
-## Codebase Navigation
-
-Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster and more precise than file scanning.
-
-| Task | Tool |
-|------|------|
-| Find a function, class, or symbol | `serena: find_symbol` |
-| What references symbol X? | `serena: find_referencing_symbols` |
-| Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
-
-## Preamble — Bootstrap Check
-
-Before running this skill, verify the environment is set up:
-
-```bash
-# Derive repo slug
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$REMOTE_URL" ]; then
-  REPO_SLUG=$(echo "$REMOTE_URL" | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-')
-else
-  REPO_SLUG=$(basename "$(pwd)")
-fi
-echo "repo-slug: $REPO_SLUG"
-
-# Check bootstrap status
-SKILLS_OK=true
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
-done
-
-BRIDGE_OK=false
-lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
-
-RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
-
-echo "skills-symlinked: $SKILLS_OK"
-echo "bridge-running: $BRIDGE_OK"
-echo "rules-directory: $RULES_OK"
-```
-
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
-
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
-> "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
-
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
-If **no**: warn that some features may not work, then continue.
-
-If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
-
-Create the output directory for this repo:
-```bash
-mkdir -p "$HOME/.agentic-workflow/$REPO_SLUG"
-```
-
-## Session Context
-
-Load prior work state for this repo from prism-mcp before starting.
-
-**1. Derive a topic string** — synthesize 3–5 words from the skill argument and task intent:
-- `/officeHours add dark mode` → `"dark mode UI feature"`
-- `/rootCause TypeError cannot read properties` → `"TypeError cannot read properties"`
-- `/review 42` → use the PR title once fetched: `"PR {title} review"`
-- No argument → use the most specific descriptor available: `"{REPO_SLUG} {skill-name}"`
-
-**2. Load context from prism-mcp:**
-```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
-  toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
-```
-
-Store the returned `expected_version` — you will need it at Session Close.
-
-**3. Surface results:**
-- If the response contains a non-empty summary or prior decisions:
-  > **Prior context:** {summary}
-  Use this to inform your approach before continuing.
-- If prism-mcp returns an error, surface it and stop:
-  > "prism-mcp unavailable: {error}. Ensure prism-mcp is running and registered."
-
-## Session Close
-
-> **Run at the end of every skill**, after all work is complete and the report has been shown to the user.
-
-Save a structured ledger entry and update the live handoff state for this repo.
-
-**1. Save ledger entry (immutable audit trail):**
-```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
-  conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
-  summary: "<one paragraph describing what was accomplished this session>",
-  todos: ["<any open items left incomplete>", ...],
-  files_changed: ["<paths of files created or modified>", ...],
-  decisions: ["<key decisions made during this skill run>", ...]
-```
-
-**2. Update handoff state (mutable live state for next session):**
-```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
-  expected_version: <value returned by session_load_context>,
-  open_todos: ["<open items not yet completed>", ...],
-  active_branch: "<current git branch from: git branch --show-current>",
-  last_summary: "<one sentence: what this skill just did>",
-  key_context: "<critical facts the next session must know — constraints, decisions, blockers>"
-```
-
-If either call fails, surface the error:
-> "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->
+<!-- preamble -->
+**Before anything else:** read `$HOME/.agentic-workflow/toolkit/skills/_preamble.md` and follow it (skill index, provider capability map, bootstrap check, session context). Run its **Session Close** section when this skill finishes.
 
 # enhancePrompt
 
@@ -187,19 +18,19 @@ Dynamically discovers project documentation, reads what's relevant to the user's
 
 ### 1. Discover documentation
 
-Scan the working directory for what actually exists (don't assume): root-level guides (`CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`); domain rules `.claude/rules/*.md` (this skill's core input); `planning/*.md`; docs folders (`docs/`, `wiki/`, `.docs/`, `documentation/`); any `*.md` at root or one level deep.
+Scan the working directory for what actually exists (don't assume): root-level guides (`AGENTS.md`, `CLAUDE.md` — often a symlink to `AGENTS.md` or an `@AGENTS.md` import stub — `GEMINI.md`, `README.md`, `CONTRIBUTING.md`); domain rules `.agents/rules/*.md` (canonical; also `.claude/rules/*.md` or `.cursor/rules/*.mdc` in repos not yet migrated — this skill's core input); `planning/*.md`; docs folders (`docs/`, `wiki/`, `.docs/`, `documentation/`); any `*.md` at root or one level deep.
 
 List what you find. If nothing exists, say so and offer to enhance from conversation context alone.
 
 ### 2. Read selectively — and account for every doc
 
-Read files whose names or paths suggest relevance to the user's prompt topic. Always read any root-level instruction file (`CLAUDE.md`, `AGENTS.md`, `README.md`) first since they establish overall context, then the `.claude/rules/*.md` files whose globs cover the prompt's domain, then topic-specific `planning/*.md` files.
+Read files whose names or paths suggest relevance to the user's prompt topic. Always read any root-level instruction file (`AGENTS.md`, `CLAUDE.md`, `README.md`) first since they establish overall context, then the `.agents/rules/*.md` files whose globs cover the prompt's domain, then topic-specific `planning/*.md` files.
 
 Use judgment — a prompt about pricing doesn't need the testing strategy doc — but the judgment must be visible: every discovered doc appears in the Step 4 output as **read** or **skipped (why)**. Reading only the README does not satisfy this step when rules or planning docs exist.
 
-### 3. Evaluate Codex dialogue value
+### 3. Evaluate peer-agent dialogue value
 
-Before producing output, assess whether the task would benefit from a Codex consultation via the MCP bridge (`agentic-bridge`). Include a dialogue recommendation **only** when at least one applies: **cross-domain task** (parallel second agent reduces total time), **second opinion valuable** (architecture/security-sensitive/unfamiliar code), **parallel research** (multiple approaches explorable simultaneously), or **verification needed** ("implement X, then have Codex try to break it"). If none apply, skip the dialogue section entirely.
+Before producing output, assess whether the task would benefit from consulting a peer agent on another provider (e.g. Codex when you are Claude Code or Cursor, Claude Code when you are Codex) via the MCP bridge (`agentic-bridge`). Include a dialogue recommendation **only** when at least one applies: **cross-domain task** (parallel second agent reduces total time), **second opinion valuable** (architecture/security-sensitive/unfamiliar code), **parallel research** (multiple approaches explorable simultaneously), or **verification needed** ("implement X, then have the peer agent try to break it"). If none apply, skip the dialogue section entirely.
 
 ### 4. Output the enhanced prompt
 
@@ -227,12 +58,14 @@ Every doc from Step 1 must appear in the discovered/read/skipped list — none s
 If step 3 identified dialogue value, append:
 
 ```
-## Codex Dialogue Recommended
+## Peer-Agent Dialogue Recommended
 
 **Why:** <one sentence — which criterion triggered this>
 
-**What to ask Codex:**
-<specific prompt to dispatch via mcp__agentic-bridge__assign_task or mcp__agentic-bridge__send_context>
+**Peer agent:** <provider / agent name, e.g. codex>
+
+**What to ask the peer agent:**
+<specific prompt to dispatch via mcp: agentic-bridge/assign_task or mcp: agentic-bridge/send_context>
 
 **Expected value:** <what the response would add — a review, alternative approach, parallel implementation, etc.>
 ```
@@ -241,10 +74,10 @@ If step 3 found no dialogue value, do not include this section.
 
 ### 5. Persist the enhanced prompt
 
-Write the full `## Enhanced Prompt` block (plus the Codex section, if any) to the prompts directory:
+Write the full `## Enhanced Prompt` block (plus the peer-agent section, if any) to the prompts directory:
 
 ```bash
-SHARED_DIR="$(dirname "$(readlink -f "$HOME/.claude/skills/enhancePrompt/SKILL.md")")/../_shared"
+SHARED_DIR="$HOME/.agentic-workflow/toolkit/skills/_shared"
 source "$SHARED_DIR/repo-slug.sh"
 mkdir -p "$AW_DIR/prompts"
 echo "prompt-file: $AW_DIR/prompts/$(date +%Y%m%d-%H%M%S).md"
@@ -254,14 +87,14 @@ Write the content to that path and echo it back to the user so downstream skills
 
 ### 6. Confirm, then dispatch
 
-Ask: "Should I proceed with this, or adjust anything?"
+**Ask the user:** "Should I proceed with this, or adjust anything?"
 
-If step 3 recommended a Codex dialogue and the user confirms, **dispatch it now** over the bridge (BRIDGE_OK was checked in the preamble):
-- `mcp__agentic-bridge__assign_task` — conversation, domain, summary, details = the "What to ask Codex" prompt — when Codex should do independent work
-- `mcp__agentic-bridge__send_context` — conversation, sender, recipient, payload — when Codex only needs the context for a second opinion
+If step 3 recommended a peer-agent dialogue and the user confirms, **dispatch it now** over the bridge (BRIDGE_OK was checked in the preamble):
+- `mcp: agentic-bridge/assign_task` — conversation, domain, summary, details = the "What to ask the peer agent" prompt — when the peer should do independent work
+- `mcp: agentic-bridge/send_context` — conversation, sender, recipient, payload — when the peer only needs the context for a second opinion
 
 **Fallback (bridge down, `BRIDGE_OK=false`):** don't dispatch; instead print the manual instructions —
-> In a Codex session: "Check your unread messages on the agentic-bridge"
+> In the peer agent's session (e.g. Codex): "Check your unread messages on the agentic-bridge"
 > Or manually: assign_task with conversation UUID, domain, and the prompt above
 
 Do NOT begin executing the task during this skill.
@@ -278,7 +111,7 @@ Do NOT begin executing the task during this skill.
 
 Name the successor skill explicitly — pick the one that matches the enhanced task and pass the persisted prompt file:
 
-- `Skill(skill="withInterview", args="<successor-skill> <enhanced prompt path: ~/.agentic-workflow/<repo-slug>/prompts/<ts>.md>")` — if requirements still need clarification before executing
+- **Invoke skill `withInterview`** with args `<successor-skill> <enhanced prompt path: ~/.agentic-workflow/<repo-slug>/prompts/<ts>.md>` — if requirements still need clarification before executing
 - `/officeHours` — if the enhanced prompt describes a feature that needs a spec before implementation
 - `/specToProvenPR` — if the enhanced prompt is an approved spec ready to be built and proven
 - Otherwise, execute the enhanced prompt from `prompts/<ts>.md` directly in this session after the user confirms

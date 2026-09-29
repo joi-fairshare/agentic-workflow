@@ -40,6 +40,11 @@ is_matched_external_write() {
       ;;
     mcp__claude_ai_Linear__save_*|mcp__claude_ai_Linear__create_*|mcp__claude_ai_Linear__delete_*) return 0 ;;
     mcp__claude_ai_Slack__slack_send_*) return 0 ;;
+    # Codex/Cursor register the same servers under their own names (the
+    # Cursor adapter normalizes to mcp__<server>__<tool>): match any server
+    # literally named linear/Linear or slack/Slack.
+    mcp__[Ll]inear__save_*|mcp__[Ll]inear__create_*|mcp__[Ll]inear__delete_*) return 0 ;;
+    mcp__[Ss]lack__slack_send_*) return 0 ;;
     *) return 1 ;;
   esac
 }

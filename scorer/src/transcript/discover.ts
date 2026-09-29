@@ -3,18 +3,15 @@ import path from "node:path";
 
 import { z } from "zod";
 
-export interface TranscriptFile {
-  path: string;
-  project: string;
-  sessionId: string;
-  agentId: string;
-  agentType: string;
-  isMain: boolean;
-}
+import type { TranscriptFile } from "./source.js";
+
+export type { TranscriptFile } from "./source.js";
 
 const MetaSchema = z.object({ agentType: z.string(), taskKind: z.string().optional() });
 const SUBAGENT = /^agent-(.+)\.jsonl$/;
 
+// Claude Code: ~/.claude/projects/<project>/<session>.jsonl, subagents under
+// <session>/subagents/agent-<id>.jsonl with an optional agent-<id>.meta.json.
 export function discoverFiles(projectsDir: string): TranscriptFile[] {
   const out: TranscriptFile[] = [];
   for (const project of dirs(projectsDir)) {
@@ -22,7 +19,7 @@ export function discoverFiles(projectsDir: string): TranscriptFile[] {
     for (const entry of fs.readdirSync(projDir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".jsonl")) {
         const sessionId = entry.name.slice(0, -".jsonl".length);
-        out.push({ path: path.join(projDir, entry.name), project, sessionId, agentId: "main", agentType: "main", isMain: true });
+        out.push({ provider: "claude", path: path.join(projDir, entry.name), project, sessionId, agentId: "main", agentType: "main", isMain: true });
       }
       if (entry.isDirectory()) out.push(...subagents(projDir, project, entry.name));
     }
@@ -41,7 +38,7 @@ function subagents(projDir: string, project: string, sessionId: string): Transcr
   return fs.readdirSync(subDir).flatMap((name) => {
     const agentId = SUBAGENT.exec(name)?.[1];
     if (agentId === undefined) return [];
-    return [{ path: path.join(subDir, name), project, sessionId, agentId, agentType: agentType(path.join(subDir, `agent-${agentId}.meta.json`)), isMain: false }];
+    return [{ provider: "claude" as const, path: path.join(subDir, name), project, sessionId, agentId, agentType: agentType(path.join(subDir, `agent-${agentId}.meta.json`)), isMain: false }];
   });
 }
 

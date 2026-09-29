@@ -18,16 +18,31 @@ const count = (table: string): number => (db.prepare(`SELECT COUNT(*) n FROM ${t
 beforeEach(() => {
   db = openDb(":memory:");
   const p = path.join(tmpDir(), "proj", "s1.jsonl");
-  file = { path: p, project: "proj", sessionId: "s1", agentId: "main", agentType: "main", isMain: true };
+  file = { provider: "claude", path: p, project: "proj", sessionId: "s1", agentId: "main", agentType: "main", isMain: true };
 });
 
 describe("ingestFile", () => {
+  it("passes each line's absolute byte offset to the provider parser, across incremental reads", () => {
+    const codex: TranscriptFile = { provider: "codex", path: path.join(tmpDir(), "rollout-x.jsonl"), project: "p", sessionId: "cs", agentId: "main", agentType: "main", isMain: true, agentPath: "/root" };
+    const msg = (text: string) => JSON.stringify({ timestamp: TS, type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
+    const first = `${msg("héllo wörld")}\n`;
+    writeLines(codex.path, [msg("héllo wörld"), "   "]);
+    ingestFile(db, codex, newHealth());
+    appendRaw(codex.path, `${msg("second ask")}\n`);
+    ingestFile(db, codex, newHealth());
+    expect(db.prepare("SELECT uuid, provider FROM events ORDER BY uuid").all()).toEqual([
+      { uuid: "off:0", provider: "codex" },
+      { uuid: `off:${Buffer.byteLength(first) + 4}`, provider: "codex" },
+    ]);
+    expect(db.prepare("SELECT provider FROM files").get()).toEqual({ provider: "codex" });
+  });
+
   it("stores calls with their agent identity", () => {
     writeLines(file.path, [assistant({ id: "m1", ts: TS, input: 2, cacheRead: 10, cacheCreation: 5, output: 3 })]);
     ingestFile(db, file, newHealth());
     expect(db.prepare("SELECT * FROM calls").all()).toEqual([{
       file: file.path, message_id: "m1", project: "proj", session_id: "s1", agent_id: "main", agent_type: "main", is_main: 1,
-      model: "claude-opus-5-5", ts: TS, input: 2, cache_read: 10, cache_creation: 5, output: 3,
+      model: "claude-opus-5-5", ts: TS, input: 2, cache_read: 10, cache_creation: 5, output: 3, provider: "claude",
     }]);
   });
 

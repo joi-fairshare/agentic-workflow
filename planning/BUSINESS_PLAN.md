@@ -4,11 +4,11 @@ This is a developer productivity tool, not a revenue product. This plan frames v
 
 ## Value Proposition
 
-Agentic Workflow provides a portable, self-contained toolkit that turns Claude Code into a multi-agent development platform. It solves three problems that developers face when adopting AI-assisted coding:
+Agentic Workflow provides a portable, self-contained toolkit that turns Claude Code, Codex, or Cursor into a multi-agent development platform. It solves three problems that developers face when adopting AI-assisted coding:
 
-1. **Workflow replication is manual.** Custom skills, prompts, and configurations live in `~/.claude/` and are lost when switching machines. Agentic Workflow archives these as a Git-versioned skill library with a one-command setup script.
+1. **Workflow replication is manual.** Custom skills, prompts, and configurations live in per-provider dotfiles (`~/.claude/`, `~/.codex/`, `~/.cursor/`) and are lost when switching machines or tools. The toolkit archives these as one Git-versioned, provider-neutral skill library with a one-command setup script.
 
-2. **Single-agent bottlenecks.** Claude Code and Codex operate as isolated agents. There is no built-in mechanism for one agent to delegate work to another, wait for results, or maintain conversation history. The MCP bridge provides store-and-forward messaging and task assignment between any number of agents via a shared SQLite database.
+2. **Single-agent bottlenecks.** Claude Code, Codex, and Cursor operate as isolated agents. There is no built-in mechanism for one agent to delegate work to another, wait for results, or maintain conversation history. The MCP bridge provides store-and-forward messaging and task assignment between any number of agents via a shared SQLite database.
 
 3. **Code review requires context switching.** Reviewing a PR means reading diffs, mentally categorizing concerns (security, performance, style), and writing comments. The `/review` skill automates this by spawning domain-specific reviewer subagents in parallel, saving structured findings to a local cache, and optionally publishing them to GitHub.
 
@@ -16,8 +16,8 @@ Agentic Workflow provides a portable, self-contained toolkit that turns Claude C
 
 | User Profile | Use Case |
 |-------------|----------|
-| Individual developers using Claude Code | Portable skill library, bootstrapping new repos with documentation, enhanced prompts |
-| Teams running Claude Code + Codex | Multi-agent communication via MCP bridge — delegate frontend work to one agent, backend to another, coordinate results |
+| Individual developers using Claude Code, Codex, or Cursor | Portable skill library, bootstrapping new repos with documentation, enhanced prompts |
+| Teams mixing Claude Code, Codex, and Cursor | Multi-agent communication via MCP bridge — delegate frontend work to one agent, backend to another, coordinate results |
 | Open-source maintainers | Automated PR review pipeline — triage, parallel domain review, batch comment posting |
 | Developers setting up new projects | `/bootstrap` generates up to 17 Pivot-pattern documentation files adapted to the detected tech stack |
 
@@ -27,11 +27,11 @@ Agentic Workflow provides a portable, self-contained toolkit that turns Claude C
 |-----------|------|-------|
 | Infrastructure | $0 | Runs entirely on the developer's local machine. SQLite file-based storage, no external services. |
 | Runtime dependencies | $0 | All npm packages are open-source (MIT/ISC/Apache-2.0). |
-| Claude Code API usage | Variable | Costs are borne by the developer's existing Claude Code subscription or API quota. This tool does not add API calls beyond what the workflows themselves require. |
+| Agent provider usage | Variable | Costs are borne by the developer's existing Claude Code, Codex, or Cursor subscription or API quota. This tool does not add API calls beyond what the workflows themselves require. |
 | GitHub API | $0 | Uses the `gh` CLI with the developer's existing authentication. No separate API keys needed. |
 | Maintenance | Volunteer time | Open-source project — maintenance is contributor-driven. |
 
-Total recurring cost to the end user: **$0 beyond their existing Claude Code subscription.**
+Total recurring cost to the end user: **$0 beyond their existing agent provider subscription.**
 
 ## Time Savings Estimate
 
@@ -53,7 +53,7 @@ For a team reviewing 5 PRs/week, this saves approximately 3-7 hours per week.
 | Activity | Manual Time | Automated Time | Savings |
 |----------|-------------|----------------|---------|
 | Write ARCHITECTURE.md, ERD, API docs | 4-8 hours | 10-15 min | 3.75-7.75 hours |
-| Create CLAUDE.md for AI context | 30-60 min | Included in bootstrap | 30-60 min |
+| Create AGENTS.md / CLAUDE.md for AI context | 30-60 min | Included in bootstrap | 30-60 min |
 | **Total per new repo** | **4.5-9 hours** | **10-15 min** | **4.25-8.75 hours** |
 
 ### Multi-Agent Task Delegation (MCP Bridge)
@@ -76,12 +76,12 @@ For a team reviewing 5 PRs/week, this saves approximately 3-7 hours per week.
 
 This is **not** a product competing for market share. It is an open-source reference implementation that demonstrates:
 
-- How to build portable, version-controlled Claude Code skill libraries
+- How to build portable, version-controlled, provider-neutral agent skill libraries
 - How to use the MCP protocol for inter-agent communication
 - How to structure multi-agent workflows with store-and-forward messaging
 - How to automate code review with domain-specific subagents
 
-The project's value grows as the Claude Code and MCP ecosystems mature. Skills and bridge configurations developed here can be shared, forked, and adapted by the community.
+The project's value grows as the agent-CLI (Claude Code, Codex, Cursor) and MCP ecosystems mature. Skills and bridge configurations developed here can be shared, forked, and adapted by the community.
 
 ## Success Metrics
 

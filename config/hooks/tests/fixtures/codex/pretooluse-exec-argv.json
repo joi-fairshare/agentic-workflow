@@ -1,0 +1,1 @@
+{"session_id":"cx-1","turn_id":"t-1","cwd":"/tmp","hook_event_name":"PreToolUse","tool_name":"exec_command","tool_use_id":"call_4","tool_input":{"cmd":["git","reset","--hard"]}}

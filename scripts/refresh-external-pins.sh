@@ -5,15 +5,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PINS_FILE="$REPO_ROOT/EXTERNAL_PINS.env"
 
-declare -A PACKS=(
-  [IMPECCABLE_PIN]="pbakaus/impeccable"
-  [EMIL_PIN]="emilkowalski/skill"
-  [TASTE_PIN]="Leonxlnx/taste-skill"
-)
+# "VAR repo" pairs — a plain list rather than `declare -A`, so this runs on
+# macOS's stock bash 3.2.
+PACKS="IMPECCABLE_PIN pbakaus/impeccable
+EMIL_PIN emilkowalski/skill
+TASTE_PIN Leonxlnx/taste-skill"
 
-for var in "${!PACKS[@]}"; do
-  repo="${PACKS[$var]}"
-  sha=$(gh api "repos/$repo/commits/HEAD" --jq .sha)
+while read -r var repo; do
+  [ -n "$var" ] || continue
+  sha=$(gh api "repos/$repo/commits/HEAD" --jq .sha </dev/null)
   if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
     echo "ERROR: invalid SHA returned by gh api for $repo: $sha" >&2
     exit 1
@@ -25,6 +25,8 @@ for var in "${!PACKS[@]}"; do
   else
     echo "${var}=${sha}" >> "$PINS_FILE"
   fi
-done
+done <<EOF
+$PACKS
+EOF
 
 echo "Updated $PINS_FILE"

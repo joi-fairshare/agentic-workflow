@@ -47,6 +47,7 @@ export const uiElementRepair: QuestionModule<UiElementRepairInput, "repaired" | 
   timeBudgetMs: 10000,
   threshold: 0.6,
   preRules: (input) => (input.candidates.length === 0 ? "no-good-candidate" : null),
+  extraProperties: { chosenIndex: { type: "integer" } },
   prompt: (input) =>
     [
       `A Playwright step failed: "${input.step}" could not find "${input.brokenSelector}".`,

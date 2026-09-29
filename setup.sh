@@ -1,31 +1,39 @@
 #!/usr/bin/env bash
+# Agentic Workflow — one-command setup for Claude Code, Codex, and Cursor.
+#
+# Usage:
+#   ./setup.sh [--providers claude,codex,cursor] [--dry-run]
+#   ./setup.sh --install-agents [--providers ...] [--dry-run]
+#   ./setup.sh --profile <web-app|ios|personal> --target <dir> [--dry-run]
+#
+# --providers defaults to every provider whose CLI is installed
+# (`claude`, `codex`, `cursor-agent`/`cursor`). Shared steps (bridge build,
+# scorer/judge, Serena image, external pack clone, rtk, headroom) run once;
+# per-provider steps live in providers/<name>/install.sh.
+#
+# State stays under ~/.agentic-workflow (kept for compatibility):
+#   ~/.agentic-workflow/toolkit    → this repo (skills read _shared via it)
+#   ~/.agentic-workflow/providers  → "<name> <skills-dir>" per installed provider
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOLKIT_DIR="$SCRIPT_DIR"
 CLAUDE_DIR="$HOME/.claude"
 
-# Portable canonical path resolver — works on macOS (Python fallback for pre-Big Sur,
-# where BSD readlink lacks -f) and Linux (GNU readlink -f).
-canonicalize() {
-  if command -v readlink &>/dev/null && readlink -f / &>/dev/null; then
-    readlink -f "$1"
-  elif command -v python3 &>/dev/null; then
-    python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$1"
-  else
-    # Fallback: cd into the dir and pwd
-    (cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")")
-  fi
+ALL_PROVIDERS="claude codex cursor"
+
+usage() {
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-# Check for jq (required by statusline install and runtime)
+# Check for jq (required by the installer and the statusline at runtime)
 if ! command -v jq &>/dev/null; then
   echo ""
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                  MISSING REQUIRED DEPENDENCY                ║"
   echo "║                                                              ║"
-  echo "║  jq is required to install and run the Claude Code          ║"
-  echo "║  statusline. Without it, setup cannot wire the statusline   ║"
-  echo "║  into your Claude settings and the script will not work.    ║"
+  echo "║  jq is required by Agentic Workflow installer  ║"
+  echo "║  (settings/MCP config merges) and by the statusline.        ║"
   echo "║                                                              ║"
   echo "║  Install jq, then re-run setup:                             ║"
   echo "║    brew install jq        (macOS)                           ║"
@@ -38,9 +46,10 @@ fi
 
 # --- --profile <name> [--target <dir>] [--dry-run] ---
 # Applies a repo profile's skillOverrides via the native settings.local.json
-# mechanism (see config/lib/apply-profile.sh). Gated on config/lib/diff-skill-pairs.sh
-# for the 14 camelCase/kebab-case skill pairs (Task 1 of the startup-diet plan) —
-# refuses to write if any of the 11 assumed-safe case-fold pairs unexpectedly DIFFERS.
+# mechanism (see config/lib/apply-profile.sh). Claude Code only — skillOverrides
+# is a Claude settings key. Gated on config/lib/diff-skill-pairs.sh for the 14
+# camelCase/kebab-case skill pairs — refuses to write if any of the 11
+# assumed-safe case-fold pairs unexpectedly DIFFERS.
 if [ "${1:-}" = "--profile" ]; then
   PROFILE_NAME="${2:-}"
   TARGET_DIR=""
@@ -73,7 +82,6 @@ if [ "${1:-}" = "--profile" ]; then
   WA_SKILLS_DIR="$TARGET_DIR/.claude/skills"
 
   echo "=== diff-skill-pairs: checking the 14 known camelCase/kebab-case skill pairs ==="
-  REFUSE=0
   if [ -d "$AW_SKILLS_DIR" ] && [ -d "$WA_SKILLS_DIR" ]; then
     PAIRS_FILE="$(mktemp)"
     AW_LIST="$(mktemp)"; WA_LIST="$(mktemp)"
@@ -123,27 +131,77 @@ if [ "${1:-}" = "--profile" ]; then
   exit 0
 fi
 
+# --- General flags ---
+MODE="install"
+PROVIDERS_ARG=""
+AW_DRY_RUN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --providers) PROVIDERS_ARG="${2:-}"; shift 2 || { echo "--providers needs a value"; exit 1; } ;;
+    --providers=*) PROVIDERS_ARG="${1#--providers=}"; shift ;;
+    --install-agents) MODE="agents"; shift ;;
+    --dry-run) AW_DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1"; echo ""; usage; exit 1 ;;
+  esac
+done
+export AW_DRY_RUN TOOLKIT_DIR
+
+# shellcheck source=providers/lib.sh
+source "$SCRIPT_DIR/providers/lib.sh"
+# shellcheck source=config/lib/install-agents.sh
+source "$SCRIPT_DIR/config/lib/install-agents.sh"
+for _p in $ALL_PROVIDERS; do
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/providers/$_p/install.sh"
+done
+
+# Resolve the provider list: explicit --providers, else detect installed CLIs.
+PROVIDERS=""
+if [ -n "$PROVIDERS_ARG" ]; then
+  for _p in $(printf '%s' "$PROVIDERS_ARG" | tr ',' ' '); do
+    case " $ALL_PROVIDERS " in
+      *" $_p "*) PROVIDERS="$PROVIDERS $_p" ;;
+      *) echo "unknown provider: $_p (expected: $(echo $ALL_PROVIDERS | tr ' ' ','))"; exit 1 ;;
+    esac
+  done
+else
+  for _p in $ALL_PROVIDERS; do
+    if "${_p}_detect"; then PROVIDERS="$PROVIDERS $_p"; fi
+  done
+fi
+PROVIDERS="$(echo $PROVIDERS)"
+if [ -z "$PROVIDERS" ]; then
+  echo "No supported agent CLI found (claude, codex, cursor-agent). Install one, or pass --providers."
+  exit 1
+fi
+for _p in $PROVIDERS; do
+  "${_p}_detect" || echo "WARN: --providers includes $_p but its CLI is not on PATH; installing files anyway"
+done
+export AW_PROVIDERS="$PROVIDERS"
+
 # --- --install-agents ---
-# Installs config/agents/*.md (lean pinned-model agent types) to ~/.claude/agents/,
-# ownership tracked in ~/.agentic-workflow/managed/agents.json (a content-hash manifest).
-if [ "${1:-}" = "--install-agents" ]; then
-  source "$SCRIPT_DIR/config/lib/install-agents.sh"
-  mkdir -p "$HOME/.agentic-workflow/managed"
-  MANIFEST="$HOME/.agentic-workflow/managed/agents.json"
-  [ -f "$MANIFEST" ] || echo '{}' > "$MANIFEST"
-  install_agents "$SCRIPT_DIR/config/agents" "$HOME/.claude/agents" "$MANIFEST"
-  echo "installed lean agent types to $HOME/.claude/agents (manifest: $MANIFEST)"
+# Installs config/agents/*.md (lean pinned-model agent types) for each provider:
+#   claude → ~/.claude/agents/*.md (verbatim)
+#   codex  → ~/.codex/agents/*.toml (translated)
+#   cursor → ~/.cursor/agents/*.md (translated frontmatter)
+# Ownership tracked in ~/.agentic-workflow/managed/agents[-<provider>].json.
+if [ "$MODE" = "agents" ]; then
+  echo "=== Agentic Workflow: installing lean agent types ($PROVIDERS) ==="
+  for _p in $PROVIDERS; do
+    "${_p}_install_agents"
+  done
   exit 0
 fi
 
 # Check for native build tools (required by better-sqlite3 when no prebuilt binary exists)
-if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
+if ! aw_dry && { ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; }; then
   echo ""
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                  MISSING BUILD TOOLS                        ║"
   echo "║                                                              ║"
   echo "║  make and g++ are required to compile native Node addons    ║"
-  echo "║  (better-sqlite3, sqlite-vec). Prebuilt binaries may not    ║"
+  echo "║  (better-sqlite3). Prebuilt binaries may not                ║"
   echo "║  be available for your Node version.                        ║"
   echo "║                                                              ║"
   echo "║  Install build tools, then re-run setup:                    ║"
@@ -156,666 +214,238 @@ if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
 fi
 
 # Canonical list of skills managed by this toolkit.
-# Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS.
-# It is not symlinked directly — each skill accesses it via path traversal
-# from its own symlink: $(dirname "$(readlink -f "$HOME/.claude/skills/<name>/SKILL.md")")/../_shared
+# Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS. It is not
+# linked into any provider's skills dir — skills read it through the stable path
+# $HOME/.agentic-workflow/toolkit/skills/_shared (toolkit symlink created below).
 MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR)
 
-# --- Cleanup: remove deprecated impeccable forks ---
-# These 20 standalone skill dirs in ~/.claude/skills/ are stale copies left over
-# from a previous setup.sh that copied (cp -r) individual impeccable skills.
-# Canonical pbakaus/impeccable v3.1.1+ is a single umbrella skill, fetched via
-# the External Skill Packs section. Idempotent — safe on every run.
+# Stale standalone copies of impeccable skills from an older setup.sh that
+# copied (cp -r) individual skills. Canonical pbakaus/impeccable v3.1.1+ is a
+# single umbrella skill, fetched via the External Skill Packs section.
+# Removed from every provider skills dir on each run (idempotent).
 DEPRECATED_SKILLS=(bolder critique audit polish animate distill colorize typeset arrange quieter harden onboard delight clarify normalize extract adapt optimize overdrive teach-impeccable)
-for s in "${DEPRECATED_SKILLS[@]}"; do
-  target="$CLAUDE_DIR/skills/$s"
-  if [ -L "$target" ]; then
-    rm -f "$target"
-    echo "  removed stale symlink: $s"
-  elif [ -d "$target" ]; then
-    rm -rf "$target"
-    echo "  removed deprecated dir: $s"
-  fi
-done
+
+echo "=== Agentic Workflow Setup ==="
+echo "  providers: $PROVIDERS"
+aw_dry && echo "  mode:      DRY RUN — nothing will be written"
+echo ""
 
 # Also clean up the old impeccable-cache directory from the previous setup.sh era
 if [ -d "$HOME/.claude/impeccable-cache" ]; then
-  rm -rf "$HOME/.claude/impeccable-cache"
+  aw_run rm -rf "$HOME/.claude/impeccable-cache"
   echo "  removed legacy impeccable-cache directory"
 fi
 
-echo "=== Agentic Workflow Setup ==="
-echo ""
+# --- Stable paths ---
+echo "Creating stable paths..."
+aw_run mkdir -p "$AW_STATE_ROOT"
+echo "  $AW_STATE_ROOT/: output + state directory"
+aw_link_toolkit
 
-# --- Helper: install or refresh a skill symlink ---
-install_skill() {
-  local skill="$1"
-  local target="$2"
-  local source="$3"
-
-  if [ -L "$target" ]; then
-    local current_target
-    current_target=$(readlink "$target" 2>/dev/null || echo "")
-
-    if [ "$current_target" = "$source" ]; then
-      echo "  $skill: up to date"
-    elif [[ "$current_target" == *"/agentic-workflow/"* ]] || [[ "$current_target" == *"/agentic-workflow-"* ]]; then
-      # Symlink points to a previous agentic-workflow install — refresh it
-      rm "$target"
-      ln -s "$source" "$target"
-      echo "  $skill: refreshed (was: $current_target)"
-    else
-      # Symlink points to a different source entirely — collision
-      echo ""
-      echo "  ⚠ COLLISION: $skill"
-      echo "    Existing symlink points to: $current_target"
-      echo "    Our source is:              $source"
-      echo "    This may be a different skill with the same name from another toolkit."
-      echo "    Replace with ours? (y/n)"
-      read -r answer
-      if [ "$answer" = "y" ]; then
-        rm "$target"
-        ln -s "$source" "$target"
-        echo "  $skill: replaced (backed up target was a symlink, original still exists at: $current_target)"
-      else
-        echo "  $skill: skipped (keeping existing)"
-      fi
-    fi
-  elif [ -d "$target" ]; then
-    # Real directory (not a symlink) — potential collision from another source
-    # Check if it has a SKILL.md we can inspect for name match
-    if [ -f "$target/SKILL.md" ]; then
-      local existing_name
-      existing_name=$(grep -m1 '^name:' "$target/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' || echo "")
-      if [ "$existing_name" = "$skill" ]; then
-        echo ""
-        echo "  ⚠ COLLISION: $skill"
-        echo "    A non-symlinked directory exists at: $target"
-        echo "    It contains a skill named '$existing_name' — this appears to match ours."
-        echo "    Back up and replace with symlink? (y/n)"
-      else
-        echo ""
-        echo "  ⚠ COLLISION: $skill"
-        echo "    A non-symlinked directory exists at: $target"
-        echo "    It contains a skill named '$existing_name' — this does NOT match our '$skill' skill."
-        echo "    This is likely a DIFFERENT skill from another toolkit."
-        echo "    Back up and replace with symlink? (y/n)"
-      fi
-      read -r answer
-    else
-      echo ""
-      echo "  ⚠ COLLISION: $skill"
-      echo "    A directory exists at: $target (no SKILL.md found — unknown origin)"
-      echo "    Back up and replace with symlink? (y/n)"
-      read -r answer
-    fi
-
-    if [ "$answer" = "y" ]; then
-      mv "$target" "$target.bak.$(date +%s)"
-      ln -s "$source" "$target"
-      echo "  $skill: backed up and linked"
-    else
-      echo "  $skill: skipped (keeping existing directory)"
-    fi
-  elif [ -f "$target" ]; then
-    echo "  $skill: WARNING — a file (not directory) exists at $target, skipping"
-  else
-    ln -s "$source" "$target"
-    echo "  $skill: linked"
-  fi
-}
-
-# --- Skills ---
-echo "Installing skills..."
-mkdir -p "$CLAUDE_DIR/skills"
-
-for skill in "${MANAGED_SKILLS[@]}"; do
-  install_skill "$skill" "$CLAUDE_DIR/skills/$skill" "$SCRIPT_DIR/skills/$skill"
-done
-
-# --- Bootstrap Skill (separate dir) ---
-echo ""
-echo "Installing bootstrap skill..."
-install_skill "bootstrap" "$CLAUDE_DIR/skills/bootstrap" "$SCRIPT_DIR/bootstrap"
-
-# --- Clean up stale skills from previous versions ---
-echo ""
-echo "Checking for stale skills..."
-
-# Build a lookup of current managed skills (including bootstrap)
-ALL_MANAGED=("${MANAGED_SKILLS[@]}" "bootstrap")
-
-for existing in "$CLAUDE_DIR/skills"/*/; do
-  [ -d "$existing" ] || continue
-  skill_name=$(basename "$existing")
-
-  # Skip if it's in our managed list
-  is_managed=false
-  for managed in "${ALL_MANAGED[@]}"; do
-    if [ "$skill_name" = "$managed" ]; then
-      is_managed=true
-      break
-    fi
-  done
-  $is_managed && continue
-
-  # Only flag symlinks that point into our repo as stale
-  if [ -L "$existing" ]; then
-    link_target=$(readlink "$existing" 2>/dev/null || echo "")
-    if [[ "$link_target" == *"/agentic-workflow/"* ]] || [[ "$link_target" == *"/agentic-workflow-"* ]]; then
-      echo "  ⚠ STALE: $skill_name → $link_target"
-      echo "    This skill was installed by a previous version of agentic-workflow but is no longer in the current version."
-      echo "    Remove it? (y/n)"
-      read -r answer
-      if [ "$answer" = "y" ]; then
-        rm "$existing"
-        echo "  $skill_name: removed"
-      else
-        echo "  $skill_name: kept"
-      fi
-    fi
-  fi
-done
-
-# --- Settings ---
-echo ""
-echo "Installing settings..."
-
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-if [ -f "$SETTINGS_FILE" ]; then
-  echo "  settings.json already exists."
-  echo "  Current file will NOT be overwritten."
-  echo "  Compare manually: diff $SETTINGS_FILE $SCRIPT_DIR/config/settings.json"
-else
-  cp "$SCRIPT_DIR/config/settings.json" "$SETTINGS_FILE"
-  echo "  settings.json: copied"
-fi
-
-# --- Statusline ---
-echo ""
-echo "Installing statusline..."
-cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/statusline.sh"
-chmod +x "$CLAUDE_DIR/statusline.sh"
-echo "  statusline script installed"
-
-# Merge statusLine into existing settings.json if absent
-if [ -f "$SETTINGS_FILE" ]; then
-  if command -v jq &>/dev/null; then
-    # Add statusLine key if absent (use has() so null values are not re-merged)
-    if ! jq -e 'has("statusLine")' "$SETTINGS_FILE" &>/dev/null; then
-      jq '. + {"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  statusLine config added to existing settings.json"
-    fi
-
-    # Merge Stop hook if not already present
-    if ! jq -e 'has("hooks") and (.hooks | has("Stop"))' "$SETTINGS_FILE" &>/dev/null; then
-      STOP_HOOK='[{"hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; sleep 0.05; true"}]}]'
-      jq --argjson stop "$STOP_HOOK" '.hooks.Stop = $stop' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  hooks.Stop added to existing settings.json"
-    fi
-
-    # Merge PreToolUse hook if not already present
-    if ! jq -e 'has("hooks") and (.hooks | has("PreToolUse"))' "$SETTINGS_FILE" &>/dev/null; then
-      PRETOOLUSE_HOOK='[{"matcher":".*","hooks":[{"type":"command","command":"SHELL_PID=$(cat \"$HOME/.claude/shell_pid\" 2>/dev/null); [ -n \"$SHELL_PID\" ] && kill -WINCH \"$SHELL_PID\" 2>/dev/null; true"}]}]'
-      jq --argjson ptu "$PRETOOLUSE_HOOK" '.hooks.PreToolUse = $ptu' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "  hooks.PreToolUse added to existing settings.json"
-    fi
-  fi
-fi
-
-# --- Safety Hooks ---
-echo ""
-echo "Installing safety hooks..."
-
-HOOKS_DIR="$CLAUDE_DIR/hooks"
-mkdir -p "$HOOKS_DIR"
-
-for hook_file in "$SCRIPT_DIR/config/hooks/"*.sh; do
-  [ -f "$hook_file" ] || continue
-  hook_name="$(basename "$hook_file")"
-  cp "$hook_file" "$HOOKS_DIR/$hook_name"
-  chmod +x "$HOOKS_DIR/$hook_name"
-  echo "  $hook_name: installed"
-done
-
-# Merge safety hooks into existing settings.json
-if [ -f "$SETTINGS_FILE" ] && command -v jq &>/dev/null; then
-  # Replace any existing Bash matcher entry with the canonical one (fully idempotent, handles version drift)
-  HOOK_BASH_ENTRY='{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-destructive.sh"},{"type":"command","command":"~/.claude/hooks/block-push-main.sh"},{"type":"command","command":"~/.claude/hooks/detect-secrets.sh"},{"type":"command","command":"~/.claude/hooks/rtk-rewrite.sh"}]}'
-  jq --argjson entry "$HOOK_BASH_ENTRY" \
-    '.hooks.PreToolUse = ([.hooks.PreToolUse[]? | select(.matcher != "Bash")] + [$entry])' \
-    "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-    && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-  echo "  hooks.PreToolUse: Bash safety hooks installed (idempotent replace)"
-
-  # Add git-context SessionStart hook if not already present
-  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("git-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}]'
-    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
-      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/git-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    else
-      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    fi
-    echo "  hooks.SessionStart: git-context added"
-  fi
-
-  # Add prism-context SessionStart hook if not already present
-  if ! jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("prism-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    HOOK_ENTRY='[{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}]'
-    if jq -e 'has("hooks") and (.hooks | has("SessionStart"))' "$SETTINGS_FILE" &>/dev/null; then
-      jq --argjson entry '{"hooks":[{"type":"command","command":"~/.claude/hooks/prism-context.sh"}]}' '.hooks.SessionStart += [$entry]' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    else
-      jq --argjson entries "$HOOK_ENTRY" '.hooks.SessionStart = $entries' \
-        "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
-        && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    fi
-    echo "  hooks.SessionStart: prism-context added"
-  fi
-
-  # Remove legacy bridge-context SessionStart hook if present
-  if jq -e '.hooks.SessionStart[]? | select(.hooks[]?.command | test("bridge-context"))' "$SETTINGS_FILE" &>/dev/null; then
-    jq '.hooks.SessionStart = [.hooks.SessionStart[]? | select(.hooks[]?.command | (test("bridge-context") | not))]' \
-      "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    echo "  hooks.SessionStart: removed legacy bridge-context hook"
-  fi
-
-  # Print installed hooks by owner (aw:* = agentic-workflow, prism = prism connect)
-  # shellcheck source=config/lib/merge-hook.sh
-  source "$SCRIPT_DIR/config/lib/merge-hook.sh"
-  echo "  hooks by owner:"
-  hook_owners "$SETTINGS_FILE" | awk -F'\t' '{printf "    %-18s %-8s %s\n", $1, $3, $4}'
-fi
-
-# --- Shell Integration (terminal width sync for statusline) ---
-echo ""
-echo "Installing shell integration..."
-
-SHELL_INTEGRATION_FILE="$CLAUDE_DIR/shell-integration.sh"
-# Write integration content to a temp file first; skip overwrite if identical
-_SI_TMP="$(mktemp)"
-cat > "$_SI_TMP" << 'SHELL_EOF'
-# Claude Code shell integration — written by agentic-workflow setup.sh
-# Keeps ~/.claude/terminal_width updated so statusline.sh can read the actual
-# terminal width. Claude Code subprocesses cannot access /dev/tty or $COLUMNS,
-# so the interactive shell (which always has the correct value) writes it here.
-#
-# Also writes ~/.claude/shell_pid so Claude Code hooks can send SIGWINCH to
-# this shell, triggering a width update mid-session when the window is resized.
-# When zsh receives SIGWINCH it calls ioctl(TIOCGWINSZ) on its terminal and
-# updates $COLUMNS before running the WINCH trap — so $COLUMNS is always current.
-
-_claude_update_width() {
-  # Write our PID so hooks can find and signal us
-  printf '%s\n' "$$" > "$HOME/.claude/shell_pid"
-  # Use $COLUMNS (updated by zsh/bash via ioctl on SIGWINCH) as primary source.
-  # tput cols fallback covers environments where $COLUMNS isn't set.
-  local width="${COLUMNS:-$(tput cols 2>/dev/null)}"
-  [ -n "$width" ] && [ "$width" -gt 0 ] 2>/dev/null && \
-    printf '%s\n' "$width" > "$HOME/.claude/terminal_width"
-}
-
-if [ -n "$ZSH_VERSION" ]; then
-  autoload -U add-zsh-hook 2>/dev/null && add-zsh-hook precmd _claude_update_width
-  trap '_claude_update_width' WINCH
-elif [ -n "$BASH_VERSION" ]; then
-  [[ "$PROMPT_COMMAND" != *"_claude_update_width"* ]] && \
-    PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }_claude_update_width"
-  trap '_claude_update_width' WINCH
-fi
-
-_claude_update_width
-SHELL_EOF
-
-if cmp -s "$_SI_TMP" "$SHELL_INTEGRATION_FILE" 2>/dev/null; then
-  echo "  shell-integration.sh: already up to date (skipped)"
-else
-  mv "$_SI_TMP" "$SHELL_INTEGRATION_FILE"
-  echo "  shell-integration.sh: written"
-fi
-rm -f "$_SI_TMP"
-
-# Add one source line to shell config if not already present
-INTEGRATION_LINE='[ -f ~/.claude/shell-integration.sh ] && source ~/.claude/shell-integration.sh'
-SHELL_CONFIGS=("$HOME/.zshrc" "$HOME/.bashrc")
-ADDED_TO=()
-
-for shell_config in "${SHELL_CONFIGS[@]}"; do
-  if [ -f "$shell_config" ]; then
-    if ! grep -qF 'source ~/.claude/shell-integration.sh' "$shell_config" 2>/dev/null; then
-      printf '\n# Claude Code statusline width sync\n%s\n' "$INTEGRATION_LINE" >> "$shell_config"
-      ADDED_TO+=("$shell_config")
-      echo "  Added to $shell_config"
-    else
-      echo "  Already in $shell_config"
-    fi
-  fi
-done
-
-# Initialize the width file immediately from the current interactive shell's tty.
-# Running shell-integration.sh in a non-interactive subshell leaves $COLUMNS unset,
-# causing tput to return 80 regardless of actual terminal size. Reading from /dev/tty
-# directly via stty gives the real dimensions of the parent terminal.
-CURRENT_WIDTH=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
-CURRENT_WIDTH="${CURRENT_WIDTH:-${COLUMNS:-80}}"
-printf '%s\n' "$CURRENT_WIDTH" > "$CLAUDE_DIR/terminal_width"
-echo "  terminal_width initialized: $CURRENT_WIDTH cols"
-
-if [ "${#ADDED_TO[@]}" -gt 0 ]; then
-  echo ""
-  echo "  Shell integration added. To enable width sync in this session:"
-  for config in "${ADDED_TO[@]}"; do
-    echo "    source $config"
-  done
-fi
-
-# --- MCP Config ---
-echo ""
-echo "Installing MCP config..."
-
-MCP_FILE="$CLAUDE_DIR/mcp.json"
-if [ -f "$MCP_FILE" ]; then
-  echo "  mcp.json already exists."
-  echo "  Current file will NOT be overwritten."
-  echo "  Compare manually: diff $MCP_FILE $SCRIPT_DIR/config/mcp.json"
-else
-  cp "$SCRIPT_DIR/config/mcp.json" "$MCP_FILE"
-  echo "  mcp.json: copied"
-fi
-
-# --- MCP Bridge: Install, Build, Register ---
+# --- MCP Bridge: Install, Build ---
 echo ""
 echo "Installing MCP bridge..."
-
 BRIDGE_DIR="$SCRIPT_DIR/mcp-bridge"
-
 if [ -f "$BRIDGE_DIR/package.json" ]; then
-  (cd "$BRIDGE_DIR" && npm install && npm run build)
-  echo "  MCP bridge: built successfully"
+  if aw_dry; then
+    echo "  [dry-run] would run: npm install && npm run build (in $BRIDGE_DIR)"
+  else
+    (cd "$BRIDGE_DIR" && npm install && npm run build)
+    echo "  MCP bridge: built successfully"
+  fi
 else
   echo "  MCP bridge: package.json not found, skipping"
 fi
 
-"$SCRIPT_DIR/scripts/install-scorer.sh"
-bash "$SCRIPT_DIR/scripts/install-judge.sh"
-
-echo ""
-echo "=== Installing wake gating (lever 1A) ==="
-bash "$SCRIPT_DIR/scripts/install-wake-gating.sh"
-
-echo ""
-echo "=== Installing context-guard (lever 2B) ==="
-bash "$SCRIPT_DIR/scripts/install-context-guard.sh"
-
-echo ""
-echo "=== Installing evaluator gates (lever 3) ==="
-bash "$SCRIPT_DIR/scripts/install-scope-gate.sh"
-bash "$SCRIPT_DIR/scripts/install-done-gate.sh"
-bash "$SCRIPT_DIR/scripts/install-external-write-guard.sh"
-
-# Register with Claude Code
-echo ""
-echo "Registering MCP bridge with Claude Code..."
-if command -v claude &>/dev/null; then
-  if claude mcp list 2>&1 | grep -q "agentic-bridge"; then
-    echo "  agentic-bridge: already registered in Claude Code"
-  else
-    claude mcp add --scope user agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
-    echo "  agentic-bridge: registered in Claude Code"
-  fi
+# --- Scorer + judge (shared CLIs) ---
+if aw_dry; then
+  echo "  [dry-run] would run scripts/install-scorer.sh and scripts/install-judge.sh --build-only"
 else
-  echo "  claude CLI not found, skipping Claude Code registration"
+  "$SCRIPT_DIR/scripts/install-scorer.sh"
+  bash "$SCRIPT_DIR/scripts/install-judge.sh" --build-only
 fi
 
-# Register with Codex
-echo ""
-echo "Registering MCP bridge with Codex..."
-if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "agentic-bridge"; then
-    echo "  agentic-bridge: already registered in Codex"
-  else
-    codex mcp add agentic-bridge -- node "$BRIDGE_DIR/dist/mcp.js"
-    echo "  agentic-bridge: registered in Codex"
-  fi
-else
-  echo "  codex CLI not found, skipping Codex registration"
-fi
-
-# --- Serena MCP ---
+# --- Serena MCP (Docker image + wrapper) ---
 echo ""
 echo "=== Serena prerequisites ==="
-command -v docker &>/dev/null || { echo "FATAL: Docker not installed. Install Docker Desktop and re-run setup.sh."; exit 1; }
+if ! command -v docker &>/dev/null; then
+  if aw_dry; then
+    echo "  WARN: Docker not installed (a real run would stop here)"
+  else
+    echo "FATAL: Docker not installed. Install Docker Desktop and re-run setup.sh."; exit 1
+  fi
+fi
 
 # Derive version from committed wrapper — single source of truth, no dual-maintenance
-SERENA_VERSION=$(grep '^BASE_VERSION=' "$(dirname "$0")/scripts/serena-docker" \
+SERENA_VERSION=$(grep '^BASE_VERSION=' "$SCRIPT_DIR/scripts/serena-docker" \
   | sed 's/BASE_VERSION="//;s/".*//')
 if [ -z "$SERENA_VERSION" ]; then
   echo "FATAL: Could not parse BASE_VERSION from scripts/serena-docker"; exit 1
 fi
 
-echo "=== Building Serena base image (TS + Python) ==="
-if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
-  echo "Building serena-local:${SERENA_VERSION} (~5 min)..."
-  docker build \
-    --pull \
-    --progress plain \
-    --build-arg BASE_TAG="${SERENA_VERSION}" \
-    -t "serena-local:${SERENA_VERSION}" \
-    -f "$(dirname "$0")/Dockerfile.serena" \
-    "$(dirname "$0")" \
-    || { echo "FATAL: Base image build failed."; exit 1; }
-  echo "Built serena-local:${SERENA_VERSION}"
+if aw_dry; then
+  echo "  [dry-run] would build serena-local:${SERENA_VERSION} if missing (+ -csharp / -swift variants when detected)"
+  echo "  [dry-run] would install scripts/serena-docker → $HOME/.local/bin/serena-docker"
 else
-  echo "serena-local:${SERENA_VERSION} already exists, skipping"
-fi
-
-echo "=== Building Serena C# extension image (opt-in) ==="
-# Auto-detect C# projects or honour BUILD_CSHARP=1 env var override
-_build_csharp=0
-if [ "${BUILD_CSHARP:-0}" = "1" ]; then
-  _build_csharp=1
-elif find "$SCRIPT_DIR" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
-  _build_csharp=1
-fi
-
-if [ "$_build_csharp" = "1" ]; then
-  if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
-    echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
+  echo "=== Building Serena base image (TS + Python) ==="
+  if ! docker image inspect "serena-local:${SERENA_VERSION}" &>/dev/null; then
+    echo "Building serena-local:${SERENA_VERSION} (~5 min)..."
     docker build \
       --pull \
       --progress plain \
-      --build-arg LOCAL_TAG="${SERENA_VERSION}" \
-      -t "serena-local:${SERENA_VERSION}-csharp" \
-      -f "$SCRIPT_DIR/Dockerfile.serena-csharp" \
+      --build-arg BASE_TAG="${SERENA_VERSION}" \
+      -t "serena-local:${SERENA_VERSION}" \
+      -f "$SCRIPT_DIR/Dockerfile.serena" \
       "$SCRIPT_DIR" \
-      || { echo "FATAL: C# image build failed."; exit 1; }
-    echo "Built serena-local:${SERENA_VERSION}-csharp"
+      || { echo "FATAL: Base image build failed."; exit 1; }
+    echo "Built serena-local:${SERENA_VERSION}"
   else
-    echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
+    echo "serena-local:${SERENA_VERSION} already exists, skipping"
   fi
-else
-  echo "=== Skipping C# Serena image (no .csproj/.cs found) ==="
-  echo "To build later, run: BUILD_CSHARP=1 ./setup.sh"
-fi
 
-echo "=== Building Serena Swift extension image (opt-in) ==="
-# Auto-detect Swift projects or honour BUILD_SWIFT=1 env var override
-# The Swift image adds socat + a sourcekit-lsp shim; sourcekit-lsp itself runs on the host.
-_build_swift=0
-if [ "${BUILD_SWIFT:-0}" = "1" ]; then
-  _build_swift=1
-elif find "$SCRIPT_DIR" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null | grep -q .; then
-  _build_swift=1
-fi
-
-if [ "$_build_swift" = "1" ]; then
-  # Ensure socat is available on the host — required for the host-side LSP bridge process
-  if ! command -v socat &>/dev/null; then
-    if command -v brew &>/dev/null; then
-      echo "Installing socat (required for Swift LSP bridge)..."
-      brew install socat
-    else
-      echo "WARN: 'socat' not found and Homebrew is not available."
-      echo "      Install socat manually, then re-run setup.sh:"
-      echo "        brew install socat   (macOS with Homebrew)"
-      echo "        apt-get install socat (Debian/Ubuntu)"
-      echo "      Skipping Swift image build."
-      _build_swift=0
-    fi
+  echo "=== Building Serena C# extension image (opt-in) ==="
+  # Auto-detect C# projects or honour BUILD_CSHARP=1 env var override
+  _build_csharp=0
+  if [ "${BUILD_CSHARP:-0}" = "1" ]; then
+    _build_csharp=1
+  elif find "$SCRIPT_DIR" -maxdepth 3 \( -name "*.csproj" -o -name "*.cs" \) -print -quit 2>/dev/null | grep -q .; then
+    _build_csharp=1
   fi
-  if [ "$_build_swift" = "1" ]; then
-    if ! docker image inspect "serena-local:${SERENA_VERSION}-swift" &>/dev/null; then
-      echo "Building serena-local:${SERENA_VERSION}-swift (socat + sourcekit-lsp shim)..."
+
+  if [ "$_build_csharp" = "1" ]; then
+    if ! docker image inspect "serena-local:${SERENA_VERSION}-csharp" &>/dev/null; then
+      echo "Building serena-local:${SERENA_VERSION}-csharp (~15 min — .NET SDK download)..."
       docker build \
+        --pull \
         --progress plain \
         --build-arg LOCAL_TAG="${SERENA_VERSION}" \
-        -t "serena-local:${SERENA_VERSION}-swift" \
-        -f "$SCRIPT_DIR/Dockerfile.serena-swift" \
+        -t "serena-local:${SERENA_VERSION}-csharp" \
+        -f "$SCRIPT_DIR/Dockerfile.serena-csharp" \
         "$SCRIPT_DIR" \
-        || { echo "FATAL: Swift image build failed."; exit 1; }
-      echo "Built serena-local:${SERENA_VERSION}-swift"
+        || { echo "FATAL: C# image build failed."; exit 1; }
+      echo "Built serena-local:${SERENA_VERSION}-csharp"
     else
-      echo "serena-local:${SERENA_VERSION}-swift already exists, skipping"
+      echo "serena-local:${SERENA_VERSION}-csharp already exists, skipping"
     fi
+  else
+    echo "=== Skipping C# Serena image (no .csproj/.cs found) ==="
+    echo "To build later, run: BUILD_CSHARP=1 ./setup.sh"
   fi
-else
-  echo "=== Skipping Swift Serena image (no *.swift found) ==="
-  echo "To build later, run: BUILD_SWIFT=1 ./setup.sh"
-fi
 
-echo "=== Installing serena-docker wrapper ==="
-mkdir -p "$HOME/.local/bin"
-cp "$(dirname "$0")/scripts/serena-docker" "$HOME/.local/bin/serena-docker"
-chmod +x "$HOME/.local/bin/serena-docker"
+  echo "=== Building Serena Swift extension image (opt-in) ==="
+  # Auto-detect Swift projects or honour BUILD_SWIFT=1 env var override
+  # The Swift image adds socat + a sourcekit-lsp shim; sourcekit-lsp itself runs on the host.
+  _build_swift=0
+  if [ "${BUILD_SWIFT:-0}" = "1" ]; then
+    _build_swift=1
+  elif find "$SCRIPT_DIR" -maxdepth 4 -name "*.swift" -print -quit 2>/dev/null | grep -q .; then
+    _build_swift=1
+  fi
+
+  if [ "$_build_swift" = "1" ]; then
+    # Ensure socat is available on the host — required for the host-side LSP bridge process
+    if ! command -v socat &>/dev/null; then
+      if command -v brew &>/dev/null; then
+        echo "Installing socat (required for Swift LSP bridge)..."
+        brew install socat
+      else
+        echo "WARN: 'socat' not found and Homebrew is not available."
+        echo "      Install socat manually, then re-run setup.sh:"
+        echo "        brew install socat   (macOS with Homebrew)"
+        echo "        apt-get install socat (Debian/Ubuntu)"
+        echo "      Skipping Swift image build."
+        _build_swift=0
+      fi
+    fi
+    if [ "$_build_swift" = "1" ]; then
+      if ! docker image inspect "serena-local:${SERENA_VERSION}-swift" &>/dev/null; then
+        echo "Building serena-local:${SERENA_VERSION}-swift (socat + sourcekit-lsp shim)..."
+        docker build \
+          --progress plain \
+          --build-arg LOCAL_TAG="${SERENA_VERSION}" \
+          -t "serena-local:${SERENA_VERSION}-swift" \
+          -f "$SCRIPT_DIR/Dockerfile.serena-swift" \
+          "$SCRIPT_DIR" \
+          || { echo "FATAL: Swift image build failed."; exit 1; }
+        echo "Built serena-local:${SERENA_VERSION}-swift"
+      else
+        echo "serena-local:${SERENA_VERSION}-swift already exists, skipping"
+      fi
+    fi
+  else
+    echo "=== Skipping Swift Serena image (no *.swift found) ==="
+    echo "To build later, run: BUILD_SWIFT=1 ./setup.sh"
+  fi
+
+  echo "=== Installing serena-docker wrapper ==="
+  mkdir -p "$HOME/.local/bin"
+  cp "$SCRIPT_DIR/scripts/serena-docker" "$HOME/.local/bin/serena-docker"
+  chmod +x "$HOME/.local/bin/serena-docker"
+fi
 
 # Ensure ~/.local/bin is in PATH for the rest of this script and future shells
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
   export PATH="$HOME/.local/bin:$PATH"
-  LOCAL_BIN_LINE='export PATH="$HOME/.local/bin:$PATH"'
-  _added_local_bin=false
-  for _rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [ -f "$_rc" ] && ! grep -qF '.local/bin' "$_rc" 2>/dev/null; then
-      printf '\n# Added by agentic-workflow setup.sh\n%s\n' "$LOCAL_BIN_LINE" >> "$_rc"
-      _added_local_bin=true
-    fi
-  done
-  if [ "$_added_local_bin" = true ]; then
-    echo "  ~/.local/bin added to PATH (updated shell profile)"
+  if aw_dry; then
+    echo "  [dry-run] would add ~/.local/bin to PATH in ~/.bashrc / ~/.zshrc"
   else
-    echo "  ~/.local/bin added to PATH (this session only)"
+    LOCAL_BIN_LINE='export PATH="$HOME/.local/bin:$PATH"'
+    _added_local_bin=false
+    for _rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      if [ -f "$_rc" ] && ! grep -qF '.local/bin' "$_rc" 2>/dev/null; then
+        printf '\n# Added by Agentic Workflow setup.sh\n%s\n' "$LOCAL_BIN_LINE" >> "$_rc"
+        _added_local_bin=true
+      fi
+    done
+    if [ "$_added_local_bin" = true ]; then
+      echo "  ~/.local/bin added to PATH (updated shell profile)"
+    else
+      echo "  ~/.local/bin added to PATH (this session only)"
+    fi
   fi
-fi
-
-echo "=== Registering Serena MCP (global) ==="
-claude mcp add --scope user serena -- "$HOME/.local/bin/serena-docker" \
-  2>/dev/null \
-  || echo "WARN: Serena already registered (or claude CLI not found)"
-
-if [ "$(uname)" = "Darwin" ]; then
-  echo "=== Registering XcodeBuildMCP (macOS only) ==="
-  XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading
-  claude mcp add --scope user xcodebuildmcp -- npx -y "xcodebuildmcp@$XCODEBUILDMCP_VERSION" mcp \
-    2>/dev/null \
-    || echo "WARN: xcodebuildmcp already registered (or claude CLI not found)"
-else
-  echo "=== Skipping XcodeBuildMCP (macOS only — not Darwin) ==="
-fi
-
-echo "=== Security check ==="
-if grep -qE "Users/${USER}/\*\*|home/${USER}/\*\*" "$HOME/.claude/settings.local.json" 2>/dev/null; then
-  echo "WARN: Broad Read rule detected in settings.local.json — narrow to repos/**, .claude/**, .agentic-workflow/**"
-fi
-
-# --- Claude Code Plugins ---
-echo ""
-echo "Installing Claude Code plugins..."
-
-if command -v claude &>/dev/null; then
-  # Marketplaces
-  MARKETPLACES=(
-    "anthropics/claude-plugins-official"
-    "VoltAgent/awesome-claude-code-subagents"
-    "EveryInc/compound-engineering-plugin"
-  )
-
-  for repo in "${MARKETPLACES[@]}"; do
-    name=$(basename "$repo")
-    if claude plugins marketplace list 2>&1 | grep -q "$name"; then
-      echo "  marketplace $name: already added"
-    else
-      claude plugins marketplace add "github:$repo" 2>&1 && \
-        echo "  marketplace $name: added" || \
-        echo "  marketplace $name: failed to add (non-fatal)"
-    fi
-  done
-
-  # Plugins
-  PLUGINS=(
-    "github@claude-plugins-official"
-    "superpowers@claude-plugins-official"
-    "compound-engineering@compound-engineering-plugin"
-    "playwright@claude-plugins-official"
-  )
-
-  for plugin in "${PLUGINS[@]}"; do
-    if claude plugins list 2>&1 | grep -q "$plugin"; then
-      echo "  plugin $plugin: already installed"
-    else
-      claude plugins install "$plugin" 2>&1 && \
-        echo "  plugin $plugin: installed" || \
-        echo "  plugin $plugin: failed to install (non-fatal)"
-    fi
-  done
-else
-  echo "  claude CLI not found, skipping plugin installation"
 fi
 
 # --- Dembrandt CLI ---
 echo ""
 echo "Installing Dembrandt CLI..."
-
 DEMBRANDT_VERSION="0.7.0"
-
 if command -v dembrandt &>/dev/null; then
   echo "  dembrandt: already installed ($(dembrandt --version 2>/dev/null || echo 'unknown version'))"
+elif aw_dry; then
+  echo "  [dry-run] would run: npm install -g dembrandt@$DEMBRANDT_VERSION"
 else
   npm install -g "dembrandt@$DEMBRANDT_VERSION" 2>&1 && \
     echo "  dembrandt: installed globally ($DEMBRANDT_VERSION)" || \
     echo "  dembrandt: failed to install (non-fatal, install manually: npm install -g dembrandt)"
 fi
 
-# --- External Skill Packs ---
+# --- External Skill Packs (clone once; linked per provider below) ---
 echo ""
-echo "=== Installing external skill packs ==="
+echo "=== Fetching external skill packs ==="
 
-EXTERNAL_DIR="$HOME/.agentic-workflow/external-skills"
-mkdir -p "$EXTERNAL_DIR"
+EXTERNAL_DIR="$AW_STATE_ROOT/external-skills"
+aw_run mkdir -p "$EXTERNAL_DIR"
+AW_EXTERNAL_SKILL_DIRS=""
 
-install_external_pack() {
+fetch_external_pack() {
   local repo="$1"   # e.g. pbakaus/impeccable
   local pin="$2"    # commit SHA
-  local target="$EXTERNAL_DIR/$(basename "$repo")"
+  local target
+  target="$EXTERNAL_DIR/$(basename "$repo")"
 
-  if [ ! -d "$target/.git" ]; then
-    echo "  $repo: cloning..."
-    git clone "https://github.com/$repo.git" "$target" 2>&1 \
-      || { echo "  WARN: failed to clone $repo (non-fatal)"; return 1; }
-  fi
-  (cd "$target" && git fetch origin --quiet) || true
-  if [ -n "$pin" ] && [ "$pin" != "HEAD" ]; then
-    (cd "$target" && git checkout "$pin" --quiet) 2>/dev/null \
-      || echo "  WARN: pin $pin not found in $repo, using current HEAD"
+  if aw_dry; then
+    echo "  [dry-run] would clone/fetch $repo into $target and check out ${pin}"
+  else
+    if [ ! -d "$target/.git" ]; then
+      echo "  $repo: cloning..."
+      git clone "https://github.com/$repo.git" "$target" 2>&1 \
+        || { echo "  WARN: failed to clone $repo (non-fatal)"; return 0; }
+    fi
+    (cd "$target" && git fetch origin --quiet) || true
+    if [ -n "$pin" ] && [ "$pin" != "HEAD" ]; then
+      (cd "$target" && git checkout "$pin" --quiet) 2>/dev/null \
+        || echo "  WARN: pin $pin not found in $repo, using current HEAD"
+    fi
   fi
 
   # Find the skill source directory — tries both layouts
@@ -825,38 +455,18 @@ install_external_pack() {
   elif [ -d "$target/.claude/skills" ]; then
     skills_dir="$target/.claude/skills"
   fi
-
   if [ -z "$skills_dir" ]; then
-    echo "  WARN: no skills directory found in $(basename "$repo")"
+    aw_dry || echo "  WARN: no skills directory found in $(basename "$repo")"
     return 0
   fi
 
-  local skill_dir name link
+  local skill_dir
   for skill_dir in "$skills_dir"/*/; do
-    [ -d "$skill_dir" ] || continue
     [ -f "$skill_dir/SKILL.md" ] || continue
-    name="$(basename "$skill_dir")"
-    link="$CLAUDE_DIR/skills/$name"
-    # Native repo symlinks always win on collision
-    if [ -L "$link" ] && [ -e "$link" ] && { [[ "$(canonicalize "$link")" == */agentic-workflow/* ]] || [[ "$(canonicalize "$link")" == */agentic-workflow-* ]]; }; then
-      echo "  $name: skipping (native skill takes precedence)"
-      continue
-    fi
-    # Back up real directories before symlinking; safely remove dangling symlinks
-    if [ -d "$link" ] && [ ! -L "$link" ]; then
-      local backup="$link.bak.$(date +%s)"
-      mv "$link" "$backup"
-      echo "  $name: backed up existing dir to $(basename "$backup") before symlinking"
-    fi
-    if [ -L "$link" ] && [ ! -e "$link" ]; then
-      # dangling symlink (target gone) — safe to remove
-      rm -f "$link"
-    fi
-    # Clear any remaining valid symlink before re-linking
-    [ -L "$link" ] && rm -f "$link"
-    ln -sfn "$skill_dir" "$link"
-    echo "  $name: symlinked from $(basename "$repo")"
+    AW_EXTERNAL_SKILL_DIRS="$AW_EXTERNAL_SKILL_DIRS${skill_dir%/}
+"
   done
+  echo "  $repo: ready ($(basename "$skills_dir") in $target)"
 }
 
 if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
@@ -875,15 +485,13 @@ if [ -f "$SCRIPT_DIR/EXTERNAL_PINS.env" ]; then
       echo "HEAD"
     fi
   }
-  IMPECCABLE_PIN="$(read_pin IMPECCABLE_PIN)"
-  EMIL_PIN="$(read_pin EMIL_PIN)"
-  TASTE_PIN="$(read_pin TASTE_PIN)"
-  install_external_pack "pbakaus/impeccable"   "$IMPECCABLE_PIN"
-  install_external_pack "emilkowalski/skill"   "$EMIL_PIN"
-  install_external_pack "Leonxlnx/taste-skill" "$TASTE_PIN"
+  fetch_external_pack "pbakaus/impeccable"   "$(read_pin IMPECCABLE_PIN)"
+  fetch_external_pack "emilkowalski/skill"   "$(read_pin EMIL_PIN)"
+  fetch_external_pack "Leonxlnx/taste-skill" "$(read_pin TASTE_PIN)"
 else
   echo "  WARN: EXTERNAL_PINS.env missing at $SCRIPT_DIR; skipping external pack install"
 fi
+export AW_EXTERNAL_SKILL_DIRS
 
 # --- rtk ---
 echo ""
@@ -892,6 +500,8 @@ if command -v rtk &>/dev/null; then
   echo "  rtk: already installed ($(rtk --version 2>/dev/null || echo 'unknown version'))"
 elif [ -x "$HOME/.local/bin/rtk" ]; then
   echo "  rtk: already installed at ~/.local/bin/rtk ($("$HOME/.local/bin/rtk" --version 2>/dev/null || echo 'unknown version'))"
+elif aw_dry; then
+  echo "  [dry-run] would install rtk (brew on macOS, install.sh elsewhere)"
 else
   if [ "$(uname)" = "Darwin" ]; then
     brew install rtk || { echo "FATAL: rtk installation failed. Install Homebrew and re-run."; exit 1; }
@@ -910,102 +520,90 @@ fi
 echo ""
 echo "=== Installing headroom ==="
 
-# headroom-ai requires Python >= 3.10; find the best available Python
+# headroom-ai requires Python >= 3.10; pick the newest one on PATH, including
+# unversioned `python3` (e.g. a Homebrew or pyenv 3.14 install).
 HEADROOM_PYTHON=""
-for _py in python3.13 python3.12 python3.11 python3.10; do
-  if command -v "$_py" &>/dev/null; then
-    _minor=$("$_py" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
-    if [ "${_minor:-0}" -ge 10 ]; then
-      HEADROOM_PYTHON="$_py"
-      break
-    fi
+_best_minor=-1
+for _py in python3.14 python3.13 python3.12 python3.11 python3.10 python3 python; do
+  command -v "$_py" &>/dev/null || continue
+  _minor=$("$_py" -c "import sys; print(sys.version_info.minor if sys.version_info.major == 3 else -1)" 2>/dev/null)
+  case "$_minor" in ''|*[!0-9-]*) continue ;; esac
+  if [ "$_minor" -ge 10 ] && [ "$_minor" -gt "$_best_minor" ]; then
+    HEADROOM_PYTHON="$_py"
+    _best_minor="$_minor"
   fi
 done
 
-if [ -z "$HEADROOM_PYTHON" ]; then
-  echo "FATAL: Python 3.10+ is required for headroom-ai."
-  echo "  Install via: sudo apt-get install python3 (Debian/Ubuntu) or brew install python@3.13 (macOS)"
-  exit 1
-fi
-
-# Derive user-install bin dir (e.g. ~/Library/Python/3.13/bin on macOS)
-HEADROOM_BIN_DIR=$("$HEADROOM_PYTHON" -m site --user-base 2>/dev/null)/bin
-HEADROOM_BIN="$HEADROOM_BIN_DIR/headroom"
-
+HEADROOM_CMD=""
 if command -v headroom &>/dev/null; then
+  HEADROOM_CMD="$(command -v headroom)"
   echo "  headroom: already installed ($(headroom --version 2>/dev/null || echo 'unknown version'))"
-elif [ -x "$HEADROOM_BIN" ]; then
-  echo "  headroom: already installed at $HEADROOM_BIN ($("$HEADROOM_BIN" --version 2>/dev/null || echo 'unknown version'))"
-else
-  # On Debian/Ubuntu, pip may not be bundled — try ensurepip bootstrap first
-  if ! "$HEADROOM_PYTHON" -m pip --version &>/dev/null; then
-    "$HEADROOM_PYTHON" -m ensurepip --user 2>/dev/null \
-      || { echo "FATAL: pip is not installed for $HEADROOM_PYTHON and ensurepip is unavailable."
-           echo "  Install pip, then re-run setup:"
-           echo "    sudo apt-get install python3-pip          (Debian/Ubuntu)"
-           echo "    sudo dnf install python3-pip              (Fedora/RHEL)"
-           echo "    brew install python@3.13                  (macOS)"
-           exit 1; }
-  fi
-  "$HEADROOM_PYTHON" -m pip install --break-system-packages --user "headroom-ai[all]" 2>/dev/null \
-    || "$HEADROOM_PYTHON" -m pip install --user "headroom-ai[all]" \
-    || { echo "FATAL: headroom installation failed."; exit 1; }
-  [ -x "$HEADROOM_BIN" ] || { echo "FATAL: headroom binary not found after installation at $HEADROOM_BIN."; exit 1; }
-  echo "  headroom: installed"
-fi
-
-# Use full path when headroom is not on PATH (common after --user install)
-HEADROOM_CMD=$(command -v headroom 2>/dev/null || echo "$HEADROOM_BIN")
-
-if command -v claude &>/dev/null; then
-  claude mcp add --scope user headroom -- "$HEADROOM_CMD" mcp serve \
-    2>/dev/null || echo "  WARN: headroom already registered (or claude CLI not found)"
-  echo "  headroom: registered with Claude Code"
-fi
-
-if command -v codex &>/dev/null; then
-  codex mcp add headroom -- "$HEADROOM_CMD" mcp serve \
-    2>/dev/null || echo "  WARN: headroom Codex registration skipped"
-  echo "  headroom: registered with Codex"
-fi
-
-# --- prism-mcp ---
-echo ""
-echo "=== Installing prism-mcp ==="
-
-PRISM_VERSION="5.1.0"  # pin: bump here when upgrading
-
-if command -v claude &>/dev/null; then
-  if claude mcp list 2>&1 | grep -q "prism-mcp"; then
-    echo "  prism-mcp: already registered in Claude Code"
+elif [ -z "$HEADROOM_PYTHON" ]; then
+  if aw_dry; then
+    echo "  WARN: Python 3.10+ not found (a real run would stop here); headroom MCP skipped"
   else
-    claude mcp add --scope user prism-mcp \
-      --env PRISM_DASHBOARD_PORT=7180 \
-      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
-      2>/dev/null || echo "  WARN: prism-mcp registration failed"
-    echo "  prism-mcp: registered in Claude Code (downloads on first use via npx)"
+    echo "FATAL: Python 3.10+ is required for headroom-ai."
+    echo "  Install via: sudo apt-get install python3 (Debian/Ubuntu) or brew install python@3.13 (macOS)"
+    exit 1
   fi
 else
-  echo "  claude CLI not found, skipping prism-mcp registration"
-fi
-
-if command -v codex &>/dev/null; then
-  if codex mcp list 2>&1 | grep -q "prism-mcp"; then
-    echo "  prism-mcp: already registered in Codex"
+  # Derive user-install bin dir (e.g. ~/Library/Python/3.13/bin on macOS)
+  HEADROOM_BIN="$("$HEADROOM_PYTHON" -m site --user-base 2>/dev/null)/bin/headroom"
+  if [ -x "$HEADROOM_BIN" ]; then
+    echo "  headroom: already installed at $HEADROOM_BIN ($("$HEADROOM_BIN" --version 2>/dev/null || echo 'unknown version'))"
+  elif aw_dry; then
+    echo "  [dry-run] would run: $HEADROOM_PYTHON -m pip install --user 'headroom-ai[all]'"
   else
-    codex mcp add prism-mcp \
-      --env PRISM_DASHBOARD_PORT=7180 \
-      -- npx -y "prism-mcp-server@$PRISM_VERSION" \
-      2>/dev/null || echo "  WARN: prism-mcp Codex registration skipped"
-    echo "  prism-mcp: registered with Codex"
+    # On Debian/Ubuntu, pip may not be bundled — try ensurepip bootstrap first
+    if ! "$HEADROOM_PYTHON" -m pip --version &>/dev/null; then
+      "$HEADROOM_PYTHON" -m ensurepip --user 2>/dev/null \
+        || { echo "FATAL: pip is not installed for $HEADROOM_PYTHON and ensurepip is unavailable."
+             echo "  Install pip, then re-run setup:"
+             echo "    sudo apt-get install python3-pip          (Debian/Ubuntu)"
+             echo "    sudo dnf install python3-pip              (Fedora/RHEL)"
+             echo "    brew install python@3.13                  (macOS)"
+             exit 1; }
+    fi
+    "$HEADROOM_PYTHON" -m pip install --break-system-packages --user "headroom-ai[all]" 2>/dev/null \
+      || "$HEADROOM_PYTHON" -m pip install --user "headroom-ai[all]" \
+      || { echo "FATAL: headroom installation failed."; exit 1; }
+    [ -x "$HEADROOM_BIN" ] || { echo "FATAL: headroom binary not found after installation at $HEADROOM_BIN."; exit 1; }
+    echo "  headroom: installed"
   fi
+  # Use full path when headroom is not on PATH (common after --user install)
+  HEADROOM_CMD="$HEADROOM_BIN"
 fi
 
-# --- Output Directory ---
+# --- MCP server catalog (registered with every selected provider) ---
+PRISM_VERSION="5.1.0"          # pin: bump here when upgrading
+XCODEBUILDMCP_VERSION="2.3.0"  # pin: bump here when upgrading (keep config/mcp.json in sync)
+
+AW_MCP_SERVERS="$(jq -nc \
+  --arg bridge "$BRIDGE_DIR/dist/mcp.js" \
+  --arg serena "$HOME/.local/bin/serena-docker" \
+  --arg headroom "$HEADROOM_CMD" \
+  --arg prism "prism-mcp-server@$PRISM_VERSION" \
+  --arg xcode "xcodebuildmcp@$XCODEBUILDMCP_VERSION" \
+  --arg darwin "$([ "$(uname)" = "Darwin" ] && echo 1 || echo 0)" '
+  [ {name: "agentic-bridge", command: "node", args: [$bridge]},
+    {name: "serena", command: $serena, args: []},
+    (if $headroom != "" then {name: "headroom", command: $headroom, args: ["mcp", "serve"]} else empty end),
+    {name: "prism-mcp", command: "npx", args: ["-y", $prism], env: {PRISM_DASHBOARD_PORT: "7180"}},
+    (if $darwin == "1" then {name: "xcodebuildmcp", command: "npx", args: ["-y", $xcode, "mcp"]} else empty end)
+  ]')"
+export AW_MCP_SERVERS
+
+# --- Per-provider install ---
+REGISTRY_ENTRIES=()
+for _p in $PROVIDERS; do
+  "${_p}_install"
+  REGISTRY_ENTRIES+=("$_p $("${_p}_skills_dir")")
+done
+
+# --- Provider registry (read by the skill preamble) ---
 echo ""
-echo "Creating output directory..."
-mkdir -p "$HOME/.agentic-workflow"
-echo "  ~/.agentic-workflow/: created"
+echo "Writing provider registry..."
+aw_write_provider_registry "${REGISTRY_ENTRIES[@]}"
 
 echo ""
 echo "=== Setup Complete ==="
@@ -1017,7 +615,7 @@ echo "  QA:               bugHunt, bugReport"
 echo "  Release:          shipRelease, landAndDeploy, canary, syncDocs"
 echo "  Retrospective:    weeklyRetro"
 echo "  Planning:         officeHours, productReview, archReview, withInterview,"
-echo "                    autoplan, planDesignReview, planDevexReview"
+echo "                    autoplan, planDesignReview, planDevexReview, specToProvenPR"
 echo "  Security:         cso"
 echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
 echo "                    design-mockup [web|ios], design-shotgun, design-implement [web|ios],"
@@ -1026,10 +624,16 @@ echo "  Verification:     verify-app, verify-web, verify-ios"
 echo "  Memory/Status:    prismStatus"
 echo "  Utilities:        enhancePrompt, bootstrap"
 echo ""
-echo "Config location:    $CLAUDE_DIR/"
-echo "Statusline:         $CLAUDE_DIR/statusline.sh"
+echo "Providers:          $PROVIDERS"
+for _entry in "${REGISTRY_ENTRIES[@]}"; do
+  printf '  %-17s %s\n' "${_entry%% *}:" "${_entry#* }"
+done
+echo "Toolkit path:       $AW_STATE_ROOT/toolkit → $TOOLKIT_DIR"
 echo "Output directory:   ~/.agentic-workflow/<repo-slug>/"
-echo "Rules directory:    .claude/rules/ (auto-loaded by Claude Code)"
 echo "MCP bridge:         $BRIDGE_DIR/"
-echo "MCP registered:     Claude Code + Codex (agentic-bridge, prism-mcp)"
-echo "Plugins:            github, superpowers, compound-engineering, playwright"
+echo "MCP registered:     $(printf '%s' "$AW_MCP_SERVERS" | jq -r 'map(.name) | join(", ")')"
+case " $PROVIDERS " in *" claude "*)
+  echo "Claude statusline:  $CLAUDE_DIR/statusline.sh"
+  echo "Claude plugins:     github, superpowers, compound-engineering, playwright" ;;
+esac
+echo "Custom agents:      run ./setup.sh --install-agents to install lean agent types"

@@ -8,6 +8,12 @@ import { formatPct, formatTokens, renderReport } from "../src/render.js";
 const metrics: Metrics = {
   since: "2026-09-25T00:00:00.000Z",
   until: "2026-09-26T00:00:00.000Z",
+  providers: ["claude", "codex", "cursor"],
+  byProvider: [
+    { provider: "claude", hasUsage: true, sessions: 5, calls: 1100, contextTokens: 23_000_000_000, outputTokens: 3_500_000, subagents: 4, prompts: 700, corrections: 30, interrupts: 70 },
+    { provider: "codex", hasUsage: true, sessions: 2, calls: 100, contextTokens: 700_000_000, outputTokens: 500_000, subagents: 1, prompts: 90, corrections: 2, interrupts: 3 },
+    { provider: "cursor", hasUsage: false, sessions: 1, calls: 0, contextTokens: 0, outputTokens: 0, subagents: 0, prompts: 11, corrections: 0, interrupts: 1 },
+  ],
   cost: {
     calls: 1200, contextTokens: 23_700_000_000, outputTokens: 4_000_000, callsOver200k: 300,
     shareOver200k: 0.76, shareOver400k: 0.44, startupPrefixShare: 0.237,
@@ -65,6 +71,15 @@ describe("renderReport", () => {
     expect(md).toContain("| -Users-dev-acme-web-app | 23.7B | 1200 |");
     expect(md).toContain("| idle_notification | 707 |");
     expect(md).toContain("| the user's messages | 801 |");
+  });
+
+  it("renders the by-provider table, with n/a cost for a provider without usage data", () => {
+    const md = renderReport(metrics, { status: "ok", problems: [], notices: [] });
+    expect(md).toContain("## By provider");
+    expect(md).toContain("Providers: claude, codex, cursor.");
+    expect(md).toContain("| claude | 5 | 1100 | 23.0B | 3.5M | 4 | 700 | 30 | 70 |");
+    expect(md).toContain("| codex | 2 | 100 | 700.0M | 500.0k | 1 | 90 | 2 | 3 |");
+    expect(md).toContain("| cursor | 1 | n/a | n/a | n/a | n/a | 11 | 0 | 1 |");
   });
 
   it("renders a Startup accounting section with the floor, first-message estimate, and SessionStart hook chars, each labeled clearly", () => {

@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # aw:probe — hook-input probe (cheap-agent-harness rollout step 0.5).
-# Appends the raw hook input to $AW_PROBE_DIR/<event>.jsonl.
+# Usage: probe-log.sh <event> [provider]
+# Appends the raw hook input to $AW_PROBE_DIR/<event>.jsonl (Claude Code,
+# the default) or $AW_PROBE_DIR/<provider>/<event>.jsonl for any other
+# provider, so `scorer probe` (which reads only the top-level *.jsonl files)
+# keeps summarizing Claude Code input unchanged.
 # Logging only: prints nothing and always exits 0, so it can never block work.
 EVENT="${1:-unknown}"
+PROVIDER="${2:-claude}"
 DIR="${AW_PROBE_DIR:-${AW_STATE_DIR:-$HOME/.agentic-workflow}/probe}"
+[ "$PROVIDER" = "claude" ] || DIR="$DIR/$PROVIDER"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$DIR" 2>/dev/null || exit 0
 INPUT="$(cat 2>/dev/null || true)"

@@ -24,11 +24,11 @@ describe("discoverFiles", () => {
 
     const files = discoverFiles(root).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     expect(files).toEqual([
-      { path: path.join(proj, "s1.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "main", agentType: "main", isMain: true },
-      { path: path.join(proj, "s1", "subagents", "agent-a1.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a1", agentType: "Explore", isMain: false },
-      { path: path.join(proj, "s1", "subagents", "agent-a2.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a2", agentType: "unknown", isMain: false },
-      { path: path.join(proj, "s1", "subagents", "agent-a3.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a3", agentType: "unknown", isMain: false },
-      { path: path.join(proj, "s1", "subagents", "agent-a4.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a4", agentType: "unknown", isMain: false },
+      { provider: "claude", path: path.join(proj, "s1.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "main", agentType: "main", isMain: true },
+      { provider: "claude", path: path.join(proj, "s1", "subagents", "agent-a1.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a1", agentType: "Explore", isMain: false },
+      { provider: "claude", path: path.join(proj, "s1", "subagents", "agent-a2.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a2", agentType: "unknown", isMain: false },
+      { provider: "claude", path: path.join(proj, "s1", "subagents", "agent-a3.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a3", agentType: "unknown", isMain: false },
+      { provider: "claude", path: path.join(proj, "s1", "subagents", "agent-a4.jsonl"), project: "-Users-dev-acme-web-app", sessionId: "s1", agentId: "a4", agentType: "unknown", isMain: false },
     ]);
   });
 

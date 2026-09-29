@@ -1,11 +1,28 @@
 import type { ContextGuardFire } from "./context-guard-fires.js";
 import type { Db } from "./db.js";
 import type { OutboxState } from "./outbox.js";
+import type { ProviderName } from "./transcript/source.js";
 import type { UiEvidenceRunRecord } from "./ui-evidence-runs.js";
+import { PROVIDER_HAS_USAGE, PROVIDERS } from "./transcript/source.js";
+
+export interface ProviderMetrics {
+  provider: ProviderName;
+  hasUsage: boolean; // false → calls/tokens/subagents are structurally 0, not measured 0
+  sessions: number;
+  calls: number;
+  contextTokens: number;
+  outputTokens: number;
+  subagents: number; // distinct subagent transcripts that made a call in the window
+  prompts: number;
+  corrections: number;
+  interrupts: number;
+}
 
 export interface Metrics {
   since: string;
   until: string;
+  providers: ProviderName[];
+  byProvider: ProviderMetrics[];
   cost: {
     calls: number;
     contextTokens: number;
@@ -32,6 +49,8 @@ export interface Metrics {
 }
 
 const CTX = "(input + cache_read + cache_creation)";
+// Bound as @p (a JSON array), never interpolated.
+const IN_PROVIDERS = "provider IN (SELECT value FROM json_each(@p))";
 
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
@@ -57,8 +76,8 @@ export function percentile(values: readonly number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)]!;
 }
 
-export function computeMetrics(db: Db, since: Date, until: Date, firesLog: ContextGuardFire[] = [], uiEvidenceRuns: UiEvidenceRunRecord[] = [], outboxState: OutboxState = { queuedNow: 0, expiredEver: 0 }): Metrics {
-  const w = { s: since.toISOString(), u: until.toISOString() };
+export function computeMetrics(db: Db, since: Date, until: Date, firesLog: ContextGuardFire[] = [], uiEvidenceRuns: UiEvidenceRunRecord[] = [], outboxState: OutboxState = { queuedNow: 0, expiredEver: 0 }, providers: readonly ProviderName[] = PROVIDERS): Metrics {
+  const w = { s: since.toISOString(), u: until.toISOString(), p: JSON.stringify(providers) };
   const totals = db.prepare(`
     SELECT COUNT(*) AS calls,
       COALESCE(SUM(${CTX}), 0) AS ctx,
@@ -66,14 +85,14 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
       COALESCE(SUM(CASE WHEN ${CTX} > 200000 THEN ${CTX} ELSE 0 END), 0) AS ctx200,
       COALESCE(SUM(CASE WHEN ${CTX} > 400000 THEN ${CTX} ELSE 0 END), 0) AS ctx400,
       COALESCE(SUM(CASE WHEN ${CTX} > 200000 THEN 1 ELSE 0 END), 0) AS n200
-    FROM calls WHERE ts >= @s AND ts < @u`).get(w) as { calls: number; ctx: number; out: number; ctx200: number; ctx400: number; n200: number };
+    FROM calls WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS}`).get(w) as { calls: number; ctx: number; out: number; ctx200: number; ctx400: number; n200: number };
 
   const agents = db.prepare(`
     WITH firsts AS (
       SELECT c.file, c.agent_type, (c.input + c.cache_read + c.cache_creation) AS first_ctx
       FROM calls c WHERE c.ts = (SELECT MIN(ts) FROM calls c2 WHERE c2.file = c.file)
       GROUP BY c.file),
-    win AS (SELECT file, COUNT(*) AS n FROM calls WHERE ts >= @s AND ts < @u GROUP BY file)
+    win AS (SELECT file, COUNT(*) AS n FROM calls WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS} GROUP BY file)
     SELECT f.agent_type AS agentType, f.first_ctx AS firstCtx, w.n AS n
     FROM firsts f JOIN win w ON w.file = f.file`).all(w) as Array<{ agentType: string; firstCtx: number; n: number }>;
 
@@ -90,7 +109,7 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
   }));
 
   const hookCtxRows = db.prepare(`
-    SELECT chars FROM startup_ctx WHERE category = 'hook_context' AND ts >= @s AND ts < @u`).all(w) as Array<{ chars: number }>;
+    SELECT chars FROM startup_ctx WHERE category = 'hook_context' AND ts >= @s AND ts < @u AND ${IN_PROVIDERS}`).all(w) as Array<{ chars: number }>;
   const sessionStartHookCharsMedian = median(hookCtxRows.map((h) => h.chars));
 
   const startupRows = db.prepare(`
@@ -103,7 +122,7 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
       FROM startup_ctx sc
       JOIN calls c ON c.session_id = sc.session_id
       LEFT JOIN first_call fc ON fc.session_id = sc.session_id
-      WHERE c.is_main = 1 AND sc.ts >= @s AND sc.ts < @u
+      WHERE c.is_main = 1 AND sc.ts >= @s AND sc.ts < @u AND sc.${IN_PROVIDERS}
         -- deferred_tools has no isInitial-style flag (real shape: addedLines, addedNames,
         -- failedMcpServers, pendingMcpServers, readdedNames, removedNames, surfacedNames,
         -- type, wireHiddenNames — confirmed 2026-09-27) so a mid-session re-surfacing is
@@ -125,14 +144,14 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
 
   const byProject = db.prepare(`
     SELECT project, SUM(${CTX}) AS contextTokens, COUNT(*) AS calls
-    FROM calls WHERE ts >= @s AND ts < @u GROUP BY project ORDER BY contextTokens DESC`).all(w) as Metrics["cost"]["byProject"];
+    FROM calls WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS} GROUP BY project ORDER BY contextTokens DESC`).all(w) as Metrics["cost"]["byProject"];
 
   const prs = db.prepare(`
     SELECT COUNT(*) AS linked, COALESCE(SUM(CASE WHEN s.state = 'MERGED' THEN 1 ELSE 0 END), 0) AS merged
-    FROM (SELECT DISTINCT repo, number FROM pr_links WHERE ts >= @s AND ts < @u) p
+    FROM (SELECT DISTINCT repo, number FROM pr_links WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS}) p
     LEFT JOIN pr_state s ON s.repo = p.repo AND s.number = p.number`).get(w) as { linked: number; merged: number };
 
-  const kinds = new Map((db.prepare("SELECT kind, COUNT(*) AS n FROM events WHERE ts >= @s AND ts < @u GROUP BY kind").all(w) as Array<{ kind: string; n: number }>).map((r) => [r.kind, r.n]));
+  const kinds = new Map((db.prepare(`SELECT kind, COUNT(*) AS n FROM events WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS} GROUP BY kind`).all(w) as Array<{ kind: string; n: number }>).map((r) => [r.kind, r.n]));
   const k = (kind: string): number => kinds.get(kind) ?? 0;
   const prompts = k("user_prompt") + k("user_continue") + k("user_correction");
   const share = (part: number): number => (totals.ctx === 0 ? 0 : part / totals.ctx);
@@ -143,6 +162,8 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
   return {
     since: w.s,
     until: w.u,
+    providers: [...providers],
+    byProvider: providerMetrics(db, w, providers),
     cost: {
       calls: totals.calls,
       contextTokens: totals.ctx,
@@ -173,4 +194,34 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
     involvement: { prompts, continues: k("user_continue"), corrections: k("user_correction"), interrupts: k("interrupt"), promptsPerMergedPr: perMerged(prompts) },
     wakeGating: { queuedNow: outboxState.queuedNow, expiredEver: outboxState.expiredEver },
   };
+}
+
+function providerMetrics(db: Db, w: { s: string; u: string; p: string }, providers: readonly ProviderName[]): ProviderMetrics[] {
+  const calls = new Map((db.prepare(`
+    SELECT provider, COUNT(*) AS calls, SUM(${CTX}) AS ctx, SUM(output) AS out,
+      COUNT(DISTINCT CASE WHEN is_main = 0 THEN file END) AS subagents
+    FROM calls WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS} GROUP BY provider`).all(w) as Array<{ provider: string; calls: number; ctx: number; out: number; subagents: number }>).map((r) => [r.provider, r]));
+  const sessions = new Map((db.prepare(`
+    SELECT provider, COUNT(DISTINCT session_id) AS n FROM (
+      SELECT provider, session_id FROM calls WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS}
+      UNION SELECT provider, session_id FROM events WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS}
+    ) GROUP BY provider`).all(w) as Array<{ provider: string; n: number }>).map((r) => [r.provider, r.n]));
+  const events = db.prepare(`
+    SELECT provider, kind, COUNT(*) AS n FROM events WHERE ts >= @s AND ts < @u AND ${IN_PROVIDERS} GROUP BY provider, kind`).all(w) as Array<{ provider: string; kind: string; n: number }>;
+  const ev = (provider: string, ...ks: string[]): number => events.filter((e) => e.provider === provider && ks.includes(e.kind)).reduce((sum, e) => sum + e.n, 0);
+  return providers.map((provider) => {
+    const c = calls.get(provider);
+    return {
+      provider,
+      hasUsage: PROVIDER_HAS_USAGE[provider],
+      sessions: sessions.get(provider) ?? 0,
+      calls: c?.calls ?? 0,
+      contextTokens: c?.ctx ?? 0,
+      outputTokens: c?.out ?? 0,
+      subagents: c?.subagents ?? 0,
+      prompts: ev(provider, "user_prompt", "user_continue", "user_correction"),
+      corrections: ev(provider, "user_correction"),
+      interrupts: ev(provider, "interrupt"),
+    };
+  });
 }

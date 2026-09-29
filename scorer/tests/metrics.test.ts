@@ -5,18 +5,18 @@ import { openDb } from "../src/db.js";
 import { computeFixedPrefixFloor, computeMetrics, estimateFirstMessageSize, median, percentile } from "../src/metrics.js";
 
 const startupCtx = (file: string, uuid: string, category: string, source: string, chars: number, ts = "2026-09-26T01:00:00.000Z") =>
-  db.prepare("INSERT INTO startup_ctx VALUES (?, ?, 's', ?, ?, ?, ?)").run(file, uuid, ts, category, source, chars);
+  db.prepare("INSERT INTO startup_ctx VALUES (?, ?, 's', ?, ?, ?, ?, 'claude')").run(file, uuid, ts, category, source, chars);
 
 let db: Db;
 const SINCE = new Date("2026-09-26T00:00:00.000Z");
 const UNTIL = new Date("2026-09-27T00:00:00.000Z");
 
 function call(file: string, id: string, ts: string, ctx: number, o: { output?: number; type?: string; project?: string } = {}) {
-  db.prepare("INSERT INTO calls VALUES (?, ?, ?, 's', 'a', ?, 1, 'm', ?, ?, 0, 0, ?)").run(file, id, o.project ?? "p", o.type ?? "main", ts, ctx, o.output ?? 0);
+  db.prepare("INSERT INTO calls VALUES (?, ?, ?, 's', 'a', ?, 1, 'm', ?, ?, 0, 0, ?, 'claude')").run(file, id, o.project ?? "p", o.type ?? "main", ts, ctx, o.output ?? 0);
 }
-const event = (uuid: string, kind: string, ts = "2026-09-26T05:00:00.000Z") => db.prepare("INSERT INTO events VALUES ('f', ?, ?, 's', ?, NULL)").run(uuid, kind, ts);
+const event = (uuid: string, kind: string, ts = "2026-09-26T05:00:00.000Z") => db.prepare("INSERT INTO events VALUES ('f', ?, ?, 's', ?, NULL, 'claude')").run(uuid, kind, ts);
 const pr = (n: number, st: string | null, ts = "2026-09-26T05:00:00.000Z") => {
-  db.prepare("INSERT INTO pr_links VALUES ('f', ?, 'o/r', ?, ?)").run(`s${n}`, n, ts);
+  db.prepare("INSERT INTO pr_links VALUES ('f', ?, 'o/r', ?, ?, 'claude')").run(`s${n}`, n, ts);
   if (st !== null) db.prepare("INSERT INTO pr_state VALUES ('o/r', ?, ?, 'x')").run(n, st);
 };
 
@@ -114,6 +114,28 @@ describe("computeMetrics", () => {
     expect(m.cost.byProject).toEqual([{ project: "p", contextTokens: 700_000, calls: 2 }, { project: "q", contextTokens: 30_000, calls: 1 }]);
   });
 
+  it("breaks cost and involvement down by provider and filters to the selected providers", () => {
+    call("f1", "a", "2026-09-26T01:00:00.000Z", 1_000, { output: 10 });
+    db.prepare("INSERT INTO calls (file, message_id, project, session_id, agent_id, agent_type, is_main, model, ts, input, cache_read, cache_creation, output, provider) VALUES ('cx', 'tc:1', 'p', 'cs', 'main', 'main', 1, 'gpt', ?, 100, 400, 0, 5, 'codex')").run("2026-09-26T02:00:00.000Z");
+    db.prepare("INSERT INTO calls (file, message_id, project, session_id, agent_id, agent_type, is_main, model, ts, input, cache_read, cache_creation, output, provider) VALUES ('cx-sub', 'tc:2', 'p', 'cs', 'sub', 'explorer', 0, 'gpt', ?, 50, 0, 0, 1, 'codex')").run("2026-09-26T02:00:00.000Z");
+    const evt = (uuid: string, kind: string, provider: string, session: string) =>
+      db.prepare("INSERT INTO events (file, uuid, kind, session_id, ts, detail, provider) VALUES ('f', ?, ?, ?, '2026-09-26T05:00:00.000Z', NULL, ?)").run(uuid, kind, session, provider);
+    evt("c1", "user_prompt", "codex", "cs"); evt("c2", "user_correction", "codex", "cs"); evt("k1", "user_continue", "cursor", "ks"); evt("k2", "interrupt", "cursor", "ks");
+    const all = computeMetrics(db, SINCE, UNTIL);
+    expect(all.providers).toEqual(["claude", "codex", "cursor"]);
+    expect(all.byProvider).toEqual([
+      { provider: "claude", hasUsage: true, sessions: 1, calls: 1, contextTokens: 1_000, outputTokens: 10, subagents: 0, prompts: 0, corrections: 0, interrupts: 0 },
+      { provider: "codex", hasUsage: true, sessions: 1, calls: 2, contextTokens: 550, outputTokens: 6, subagents: 1, prompts: 2, corrections: 1, interrupts: 0 },
+      { provider: "cursor", hasUsage: false, sessions: 1, calls: 0, contextTokens: 0, outputTokens: 0, subagents: 0, prompts: 1, corrections: 0, interrupts: 1 },
+    ]);
+    expect(all.cost.calls).toBe(3);
+    expect(all.involvement.prompts).toBe(3);
+    const codexOnly = computeMetrics(db, SINCE, UNTIL, [], [], undefined, ["codex"]);
+    expect(codexOnly.byProvider.map((p) => p.provider)).toEqual(["codex"]);
+    expect(codexOnly.cost.calls).toBe(2);
+    expect(codexOnly.involvement).toMatchObject({ prompts: 2, corrections: 1, interrupts: 0 });
+  });
+
   it("divides by merged PRs linked in the window only", () => {
     call("f1", "a", "2026-09-26T01:00:00.000Z", 1_000, { output: 200 });
     pr(1, "MERGED"); pr(2, "OPEN"); pr(3, null); pr(4, "MERGED", "2026-09-20T00:00:00.000Z");
@@ -134,11 +156,11 @@ describe("computeMetrics", () => {
   });
 
   it("only counts a deferred_tools row that arrives before the session's first call", () => {
-    db.prepare("INSERT INTO calls VALUES ('f1', 'a', 'p', 's1', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0)").run("2026-09-26T01:00:00.000Z");
+    db.prepare("INSERT INTO calls VALUES ('f1', 'a', 'p', 's1', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0, 'claude')").run("2026-09-26T01:00:00.000Z");
     // before the first call: counts
-    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1', 's1', ?, 'deferred_tools', 'acme', 20000)").run("2026-09-26T00:59:00.000Z");
+    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1', 's1', ?, 'deferred_tools', 'acme', 20000, 'claude')").run("2026-09-26T00:59:00.000Z");
     // a mid-session re-surfacing on a DIFFERENT source, arriving after the first call — must not count at all
-    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u2', 's1', ?, 'deferred_tools', 'claude_ai_Linear', 500)").run("2026-09-26T01:30:00.000Z");
+    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u2', 's1', ?, 'deferred_tools', 'claude_ai_Linear', 500, 'claude')").run("2026-09-26T01:30:00.000Z");
     const m = computeMetrics(db, SINCE, UNTIL);
     const acmeRow = m.cost.startupAccounting.find((r) => r.category === "deferred_tools" && r.source === "acme");
     const lateRow = m.cost.startupAccounting.find((r) => r.category === "deferred_tools" && r.source === "claude_ai_Linear");
@@ -147,12 +169,12 @@ describe("computeMetrics", () => {
   });
 
   it("computes per-category median/p90 startup accounting from the first occurrence per session, main sessions only", () => {
-    db.prepare("INSERT INTO calls VALUES ('f1', 'a', 'p', 's1', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0)").run("2026-09-26T01:00:00.000Z");
-    db.prepare("INSERT INTO calls VALUES ('f2', 'b', 'p', 's2', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0)").run("2026-09-26T01:00:00.000Z");
-    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1', 's1', ?, 'skill_listing', 'catalog', 30000)").run("2026-09-26T01:00:00.000Z");
-    db.prepare("INSERT INTO startup_ctx VALUES ('f2', 'u2', 's2', ?, 'skill_listing', 'catalog', 20000)").run("2026-09-26T01:00:00.000Z");
+    db.prepare("INSERT INTO calls VALUES ('f1', 'a', 'p', 's1', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0, 'claude')").run("2026-09-26T01:00:00.000Z");
+    db.prepare("INSERT INTO calls VALUES ('f2', 'b', 'p', 's2', 'a', 'main', 1, 'm', ?, 10000, 0, 0, 0, 'claude')").run("2026-09-26T01:00:00.000Z");
+    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1', 's1', ?, 'skill_listing', 'catalog', 30000, 'claude')").run("2026-09-26T01:00:00.000Z");
+    db.prepare("INSERT INTO startup_ctx VALUES ('f2', 'u2', 's2', ?, 'skill_listing', 'catalog', 20000, 'claude')").run("2026-09-26T01:00:00.000Z");
     // a later, non-first occurrence in the same session/category/source should not double count
-    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1b', 's1', ?, 'skill_listing', 'catalog', 500)").run("2026-09-26T02:00:00.000Z");
+    db.prepare("INSERT INTO startup_ctx VALUES ('f1', 'u1b', 's1', ?, 'skill_listing', 'catalog', 500, 'claude')").run("2026-09-26T02:00:00.000Z");
     const m = computeMetrics(db, SINCE, UNTIL);
     const skillRow = m.cost.startupAccounting.find((r) => r.category === "skill_listing" && r.source === "catalog");
     expect(skillRow).toEqual({ category: "skill_listing", source: "catalog", medianChars: 25_000, p90Chars: 30_000, medianTokensEstimate: 6250 });

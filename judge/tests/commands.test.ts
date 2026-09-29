@@ -188,6 +188,16 @@ describe("runConfigGet / runConfigSet", () => {
     expect(written.questions["some-other-question"]).toEqual({ enabled: false, threshold: 0.7 });
   });
 
+  it("set preserves a hand-edited providers block", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "judge-cfg-set-"));
+    const file = path.join(dir, "config.json");
+    fs.writeFileSync(file, JSON.stringify({ questions: {}, providers: { agentClis: ["codex-cli"], jev: false } }));
+    runConfigSet("wake-gate", "threshold", "0.8", file);
+    const written = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(written.providers).toEqual({ agentClis: ["codex-cli"], jev: false });
+    expect(written.questions["wake-gate"].threshold).toBe(0.8);
+  });
+
   it("set writes a numeric threshold and reads it back", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "judge-cfg-set-"));
     const file = path.join(dir, "config.json");

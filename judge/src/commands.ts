@@ -168,7 +168,8 @@ export function runConfigSet(
     if (!Number.isFinite(n)) return { exitCode: 1, stdout: "", stderr: `not a number: ${rawValue}` };
     updated = { ...existing, threshold: n };
   }
-  const next: JudgeConfig = { questions: { ...current.questions, [question]: updated } };
+  // Spread `current` so a hand-edited "providers" block survives a config set.
+  const next: JudgeConfig = { ...current, questions: { ...current.questions, [question]: updated } };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(next, null, 2));
   return { exitCode: 0, stdout: JSON.stringify(next) };

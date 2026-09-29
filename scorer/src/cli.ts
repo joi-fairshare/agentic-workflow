@@ -13,7 +13,7 @@ const exec = promisify(execFile);
 const parsed = parseArgs(process.argv.slice(2), new Date(), os.homedir());
 if (!parsed.ok) {
   console.error(`scorer: ${parsed.error}`);
-  console.error("usage: scorer [probe] [--since 7d|12h|ISO] [--projects-dir DIR] [--state-dir DIR] [--no-pr-lookup]");
+  console.error("usage: scorer [probe] [--since 7d|12h|ISO] [--provider claude|codex|cursor|all] [--projects-dir DIR] [--codex-dir DIR] [--cursor-dir DIR] [--state-dir DIR] [--no-pr-lookup]");
   process.exit(1);
 }
 if (parsed.options.command === "probe") {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { openDb } from "../../src/db.js";
 import { DEFAULT_CONFIG } from "../../src/config.js";
 import { evaluate } from "../../src/evaluate.js";
+import { toRef } from "../../src/question.js";
 import { uiElementRepair } from "../../src/questions/ui-element-repair.js";
 import { fakeProvider } from "../helpers.js";
 
@@ -58,5 +59,13 @@ describe("describeCandidate — null fields", () => {
       candidates: [{ index: 0, role: null, accessibleName: null, testId: null, text: null }],
     });
     expect(prompt).toContain("role=? name=? testId=? text=?");
+  });
+});
+
+describe("uiElementRepair — extra response field", () => {
+  it("declares chosenIndex so schema-strict providers (codex-cli) can return it, and toRef passes it through", () => {
+    expect(uiElementRepair.extraProperties).toEqual({ chosenIndex: { type: "integer" } });
+    const ref = toRef(uiElementRepair, { brokenSelector: "#x", step: "click", candidates: [] });
+    expect(ref.extraProperties).toEqual({ chosenIndex: { type: "integer" } });
   });
 });

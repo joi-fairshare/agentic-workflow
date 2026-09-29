@@ -1,6 +1,6 @@
 # Design Artifact Paths (shared)
 
-Single source of truth for every file under `~/.agentic-workflow/<repo-slug>/design/`: owner skill, consumer skills, and the comparison-report schema. Referenced by all design-* skills, verify-web, shipRelease, specToProvenPR, and `.claude/rules/design.md`.
+Single source of truth for every file under `~/.agentic-workflow/<repo-slug>/design/`: owner skill, consumer skills, and the comparison-report schema. Referenced by all design-* skills, verify-web, shipRelease, specToProvenPR, and `.agents/rules/design.md`.
 Referenced via: SHARED_DIR pattern (CD2).
 
 ## Artifact table
@@ -47,8 +47,8 @@ Legacy baselines `mockup-<screen>.png` / `mockup-ios.png` are still globbed by v
   "overall": { "max_diff_pct": 0.0, "verdict": "PASS|WARN|FAIL" } }
 ```
 
-`diff_pct` is bound to the numeric diff-percentage field of the `mcp__design-comparison__compare_design` response. CD11 thresholds: `≤2%` PASS, `2–10%` WARN, `>10%` FAIL. design-implement completion gate: PASS or WARN (≤10%); FAIL ⇒ `[BLOCKED]`.
+`diff_pct` is bound to the numeric diff-percentage field of the `mcp: design-comparison/compare_design` response. CD11 thresholds: `≤2%` PASS, `2–10%` WARN, `>10%` FAIL. design-implement completion gate: PASS or WARN (≤10%); FAIL ⇒ `[BLOCKED]`.
 
 ## Report-honesty rule
 
-Pixel diffs may only claim **region-level** deviations ("header area differs by N%"). Token-level attribution ("wrong `--color-accent`") requires a `mcp__plugin_playwright_playwright__browser_evaluate` computed-style step (web) and is otherwise forbidden.
+Pixel diffs may only claim **region-level** deviations ("header area differs by N%"). Token-level attribution ("wrong `--color-accent`") requires a `mcp: playwright/browser_evaluate` computed-style step (web) and is otherwise forbidden.
