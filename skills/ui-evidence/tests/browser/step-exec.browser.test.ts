@@ -51,6 +51,21 @@ describe("executeStep expected-state assertion", () => {
   });
 });
 
+describe("executeStep expected-state robustness", () => {
+  it("text-visible ignores a hidden duplicate that comes first in the DOM", async () => {
+    expect(await executeStep(page, { action: "expect-visible", target: "Schedule", expectedState: { kind: "text-visible", text: "Schedule" } }, fixture.host, never, T)).toBe("passed");
+  });
+
+  it("text-absent passes only when no *visible* copy exists (hidden copies do not count)", async () => {
+    expect(await executeStep(page, click("noop", { kind: "text-absent", text: "Draft banner" }), fixture.host, never, T)).toBe("passed");
+    expect(await executeStep(page, click("noop", { kind: "text-absent", text: "Schedule" }), fixture.host, never, T)).toBe("failed");
+  });
+
+  it("url-path waits for client-side routing that lags the click", async () => {
+    expect(await executeStep(page, click("go-b", { kind: "url-path", path: "/b" }), fixture.host, never, T)).toBe("passed");
+  });
+});
+
 describe("executeStep selector repair", () => {
   const brokenClick = click("save-old-name", saved);
 

@@ -93,4 +93,18 @@ describe("decideVisual", () => {
     await decideVisual(next.input);
     expect(next.critique).toHaveBeenCalledTimes(1);
   });
+
+  it("does not crash on an unreadable image: skips the cache, still critiques, caches nothing", async () => {
+    const shared: Manifest = {};
+    const { input, critique } = make({ compare: () => changed, hash: () => { throw new Error("ENOENT"); } }, shared);
+    expect(await decideVisual(input)).toMatchObject({ visual: "looks-right" });
+    expect(critique).toHaveBeenCalledTimes(1);
+    expect(shared).toEqual({});
+  });
+
+  it("falls back to the full images when cropping throws", async () => {
+    const { input, critique } = make({ compare: () => changed, crop: () => { throw new Error("bad crop"); } });
+    await decideVisual(input);
+    expect(critique).toHaveBeenCalledWith("after.png", "base.png");
+  });
 });

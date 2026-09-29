@@ -22,7 +22,7 @@ export async function performAction(page: Page, step: ScriptStep, host: string, 
   } else if (step.action === "fill") {
     await page.getByTestId(step.target).fill(step.value ?? "", { timeout });
   } else {
-    await page.getByText(step.target).waitFor({ state: "visible", timeout });
+    await page.getByText(step.target).locator("visible=true").first().waitFor({ state: "visible", timeout });
   }
 }
 

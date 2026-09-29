@@ -1,7 +1,10 @@
 import http from "node:http";
 
 const PAGE = `<!doctype html><html><body>
+<nav style="display:none"><span>Schedule</span><span>Draft banner</span></nav>
 <h1>Schedule</h1>
+<p id="banner" style="display:none">Draft banner</p>
+<a data-testid="go-b" href="#" onclick="setTimeout(()=>history.pushState({},'','/b'),300);return false">Go B</a>
 <input data-testid="note-input" aria-label="Note" />
 <button data-testid="save-renamed" onclick="document.getElementById('out').textContent='Saved!'">Save</button>
 <button data-testid="noop" onclick="void 0">Do nothing</button>

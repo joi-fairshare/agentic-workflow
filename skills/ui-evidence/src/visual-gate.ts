@@ -48,16 +48,30 @@ export async function decideVisual(input: GateInput): Promise<GateOutput> {
     return { visual: "unchanged", reasons: [], diffScore, diff };
   }
 
-  const key = cacheKey(input.hash(input.after), input.baseline === null ? null : input.hash(input.baseline), input.ctx);
-  const cached = lookup(input.manifest, key, input.ctx, input.runId);
+  // An unreadable image must never abort the run: skip the cache (no key) and
+  // let the critique decide or fail closed to "unchecked".
+  let key: string | null = null;
+  try {
+    key = cacheKey(input.hash(input.after), input.baseline === null ? null : input.hash(input.baseline), input.ctx);
+  } catch {
+    key = null;
+  }
+  const cached = key === null ? null : lookup(input.manifest, key, input.ctx, input.runId);
   if (cached !== null) {
     input.record({ phase: "visual-critique", model: null, elapsedMs: 0, ok: true, inputTokens: null, outputTokens: null, cacheHit: true });
     return { visual: cached.decision, reasons: cached.reasons, diffScore, diff };
   }
 
-  const region = diff !== null && diff.box !== null && input.baseline !== null ? input.crop(diff) : null;
+  let region: { after: string; baseline: string } | null = null;
+  if (diff !== null && diff.box !== null && input.baseline !== null) {
+    try {
+      region = input.crop(diff);
+    } catch {
+      region = null; // crop failed: send the full images instead
+    }
+  }
   const verdict = await input.critique(region?.after ?? input.after, region?.baseline ?? input.baseline);
   if (verdict === null) return { visual: "unchecked", reasons: [], diffScore, diff };
-  store(input.manifest, key, verdict, input.runId);
+  if (key !== null) store(input.manifest, key, verdict, input.runId);
   return { visual: verdict.decision, reasons: verdict.reasons, diffScore, diff };
 }
