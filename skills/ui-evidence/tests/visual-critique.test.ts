@@ -1,14 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("node:child_process", () => ({
-  execFile: (
-    _cmd: string,
-    _args: string[],
-    _opts: unknown,
-    cb: (err: Error | null, res: { stdout: string; stderr: string }) => void,
-  ) => cb(null, { stdout: JSON.stringify({ decision: "looks-right" }), stderr: "" }),
-}));
-
 import { runVisualCritique } from "../src/visual-critique.js";
 
 describe("runVisualCritique", () => {
@@ -45,14 +36,6 @@ describe("runVisualCritique", () => {
   it("defaults reasons to [] when the judge call omits them", async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: JSON.stringify({ decision: "looks-right" }), code: 0 });
     const result = await runVisualCritique("after.png", null, "/tmp/run1", exec);
-    expect(result).toEqual({ decision: "looks-right", reasons: [] });
-  });
-
-  it("uses the default exec (real judge subprocess wiring) when none is injected", async () => {
-    // Exercises defaultExec's own body end-to-end via a mocked
-    // node:child_process (see the vi.mock above) instead of a real `judge`
-    // binary on PATH.
-    const result = await runVisualCritique("after.png", null, "/tmp/run1");
     expect(result).toEqual({ decision: "looks-right", reasons: [] });
   });
 });

@@ -6,6 +6,13 @@ model: sonnet
 ---
 
 You write a short, concrete Playwright script plan: which route, which
-role to log in as, each step, and the expected visible state after each
-step, for both desktop and phone viewports. You do not run anything
-yourself. Output only the script plan — no narration.
+role to log in as, each step, and the expected state after each step, for
+both desktop and phone viewports. You do not run anything yourself. Output
+only the script plan as JSON — no narration.
+
+Every step's `expectedState` must be a machine-checkable object, never
+prose: `{"kind":"text-visible","text":"..."}`, `{"kind":"text-absent","text":"..."}`,
+`{"kind":"testid-visible","testId":"..."}`, `{"kind":"url-path","path":"/..."}`,
+or `{"kind":"input-value","testId":"...","value":"..."}`. Prefer the assertion
+that would fail if the change under test were broken. Scope routes to what the
+diff touches. Include `planning: {"pr":"<number>","model":"<your model>"}`.

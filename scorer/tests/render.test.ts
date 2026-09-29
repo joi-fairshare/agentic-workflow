@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { openDb as openJudgeDb, recordDecision } from "../../judge/src/db.js";
 import type { Metrics } from "../src/metrics.js";
 import { judgeSection } from "../src/judge-section.js";
-import { formatPct, formatTokens, renderReport } from "../src/render.js";
+import { formatKnown, formatPct, formatTokens, renderReport } from "../src/render.js";
 
 const metrics: Metrics = {
   since: "2026-09-25T00:00:00.000Z",
@@ -31,7 +31,18 @@ const metrics: Metrics = {
     byProject: [{ project: "-Users-dev-acme-web-app", contextTokens: 23_700_000_000, calls: 1200 }],
     prsLinked: 4, prsMerged: 2, tokensPerMergedPr: 11_852_000_000,
     contextGuard: { fires: 6 },
-    uiEvidence: { runs: 3, brokenSteps: 1, visualUnchecked: 1 },
+    uiEvidence: {
+      runs: 3, brokenSteps: 1, visualUnchecked: 1, visualUnchanged: 1,
+      cost: {
+        phases: [
+          { phase: "planning", calls: 1, cacheHits: 0, failures: 0, elapsedMs: { total: 1200, unknown: 0 }, inputTokens: { total: null, unknown: 1 }, outputTokens: { total: null, unknown: 1 } },
+          { phase: "selector-repair", calls: 2, cacheHits: 0, failures: 1, elapsedMs: { total: 500, unknown: 1 }, inputTokens: { total: 4000, unknown: 1 }, outputTokens: { total: 90, unknown: 0 } },
+          { phase: "visual-critique", calls: 0, cacheHits: 2, failures: 0, elapsedMs: { total: null, unknown: 0 }, inputTokens: { total: null, unknown: 0 }, outputTokens: { total: null, unknown: 0 } },
+        ],
+        byPrRoute: [{ pr: "42", route: "/schedule", runs: 2, brokenSteps: 1, calls: 3, elapsedMs: { total: 1700, unknown: 1 }, inputTokens: { total: null, unknown: 3 }, visual: { unchecked: 1, unchanged: 1, "looks-right": 0, "looks-off": 0, sloppy: 0 } },
+                   { pr: null, route: null, runs: 1, brokenSteps: 0, calls: 0, elapsedMs: { total: null, unknown: 0 }, inputTokens: { total: null, unknown: 0 }, visual: { unchecked: 0, unchanged: 0, "looks-right": 1, "looks-off": 0, sloppy: 0 } }],
+      },
+    },
   },
   wakes: { idle: 707, text: 558, terminate: 19 },
   involvement: { prompts: 801, continues: 101, corrections: 32, interrupts: 74, promptsPerMergedPr: 400.5 },
@@ -192,5 +203,25 @@ describe("Quality section (ask-check escalate rate)", () => {
     const md = renderReport(metrics, { status: "ok", problems: [], notices: [] }, rows);
     expect(md).toContain("| ask-check decisions | 2 |");
     expect(md).toContain("| ask-check escalate rate | 50.0% |");
+  });
+});
+
+describe("UI evidence cost rendering", () => {
+  const md = renderReport(metrics, { status: "ok", problems: [], notices: [] });
+  it("prints unknown — never 0 — for token usage nobody reported", () => {
+    expect(md).toContain("| planning | 1 | 0 | 0 | 1.2s | unknown | unknown |");
+    expect(md).toContain("| visual-critique | 0 | 2 | 0 | unknown | unknown | unknown |");
+  });
+  it("shows the known part and how many calls are missing on a partial report", () => {
+    expect(md).toContain("| selector-repair | 2 | 0 | 1 | 500ms (+1 unknown) | 4.0k (+1 unknown) | 90 |");
+  });
+  it("breaks runs out per PR and route, tolerating runs with neither", () => {
+    expect(md).toContain("| 42 | /schedule | 2 | 1 | 3 | 1.7s (+1 unknown) | unknown | 1 / 0 / 0 / 0 / 1 |");
+    expect(md).toContain("| unknown | unknown | 1 | 0 | 0 | unknown | unknown | 0 / 1 / 0 / 0 / 0 |");
+  });
+  it("formatKnown handles exact, partial and unreported", () => {
+    expect(formatKnown({ total: 5, unknown: 0 }, String)).toBe("5");
+    expect(formatKnown({ total: 5, unknown: 2 }, String)).toBe("5 (+2 unknown)");
+    expect(formatKnown({ total: null, unknown: 0 }, String)).toBe("unknown");
   });
 });

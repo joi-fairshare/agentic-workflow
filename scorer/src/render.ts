@@ -1,6 +1,7 @@
 import type { Verdict } from "./format-health.js";
 import { renderJudgeSection, type JudgeReportRow } from "./judge-section.js";
 import type { Metrics } from "./metrics.js";
+import type { Known } from "./ui-evidence-cost.js";
 
 export function formatTokens(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
@@ -12,6 +13,17 @@ export function formatTokens(n: number): string {
 export function formatPct(x: number): string {
   return `${(x * 100).toFixed(1)}%`;
 }
+
+const UNKNOWN = "unknown";
+
+// A quantity nobody reported prints "unknown", never 0; a partial report
+// prints the known part and how many calls are missing.
+export function formatKnown(k: Known, fmt: (n: number) => string): string {
+  if (k.total === null) return UNKNOWN;
+  return k.unknown === 0 ? fmt(k.total) : `${fmt(k.total)} (+${k.unknown} unknown)`;
+}
+
+const formatMs = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${Math.round(n)}ms`);
 
 const NO_MERGES = "n/a (no merged PRs)";
 // the user's /context reading, 2026-09-27 — see the plan's "Spec correction" section.
@@ -51,6 +63,16 @@ export function renderReport(m: Metrics, v: Verdict, judgeRows: JudgeReportRow[]
     `| Runs | ${c.uiEvidence.runs} |`,
     `| Broken steps | ${c.uiEvidence.brokenSteps} |`,
     `| Visual unchecked | ${c.uiEvidence.visualUnchecked} |`,
+    `| Visual unchanged (no model consulted) | ${c.uiEvidence.visualUnchanged} |`,
+    "",
+    "### UI evidence — model cost by phase", "",
+    "Token usage prints `unknown` when the provider reported none; it is never counted as 0. Cache hits are not model calls.", "",
+    "| Phase | Model calls | Cache hits | Failures | Elapsed | Input tokens | Output tokens |", "|---|---|---|---|---|---|---|",
+    ...c.uiEvidence.cost.phases.map((p) => `| ${p.phase} | ${p.calls} | ${p.cacheHits} | ${p.failures} | ${formatKnown(p.elapsedMs, formatMs)} | ${formatKnown(p.inputTokens, formatTokens)} | ${formatKnown(p.outputTokens, formatTokens)} |`),
+    "",
+    "### UI evidence — by PR and route", "",
+    "| PR | Route | Runs | Broken steps | Model calls | Elapsed | Input tokens | Visual (unchanged / right / off / sloppy / unchecked) |", "|---|---|---|---|---|---|---|---|",
+    ...c.uiEvidence.cost.byPrRoute.map((r) => `| ${r.pr ?? UNKNOWN} | ${r.route ?? UNKNOWN} | ${r.runs} | ${r.brokenSteps} | ${r.calls} | ${formatKnown(r.elapsedMs, formatMs)} | ${formatKnown(r.inputTokens, formatTokens)} | ${r.visual.unchanged} / ${r.visual["looks-right"]} / ${r.visual["looks-off"]} / ${r.visual.sloppy} / ${r.visual.unchecked} |`),
     "",
     "### First-call context by agent type", "", "| Agent type | Agents | First-call context, median |", "|---|---|---|",
     ...c.firstCallMedianByType.map((t) => `| ${t.agentType} | ${t.agents} | ${formatTokens(t.median)} |`),

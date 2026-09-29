@@ -32,7 +32,7 @@ describe("publishEvidence", () => {
     const result = await publishEvidence({ runId: "r1", localDir: "/tmp/r1", provenance: "seeded", linearIssueId: "ISS-1", uploadToLinear, postPrComment, ask }, summary);
     expect(uploadToLinear).not.toHaveBeenCalled();
     expect(postPrComment).not.toHaveBeenCalled();
-    expect(result).toEqual({ linearUploaded: false, prCommentPosted: false, localPaths: ["/tmp/1.png"] });
+    expect(result).toEqual({ linearUploaded: false, prCommentPosted: false, localPaths: ["/tmp/1.png"], artifactUrls: {} });
   });
 
   it("still posts the PR comment with local paths when the Linear upload fails (RF-4)", async () => {

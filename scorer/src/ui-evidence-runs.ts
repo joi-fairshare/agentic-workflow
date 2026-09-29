@@ -3,17 +3,46 @@ import path from "node:path";
 
 import { z } from "zod";
 
+export const PHASES = ["planning", "selector-repair", "visual-critique"] as const;
+export type Phase = (typeof PHASES)[number];
+
+// null = the provider reported nothing. Kept distinct from 0 all the way to
+// the rendered report.
+export interface InvocationRecord {
+  phase: Phase;
+  ok: boolean;
+  elapsedMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheHit: boolean;
+}
+
 export interface UiEvidenceRunRecord {
   ts: string;
   brokenSteps: number;
-  visual: "unchecked" | "looks-right" | "looks-off" | "sloppy";
+  visual: "unchecked" | "unchanged" | "looks-right" | "looks-off" | "sloppy";
+  pr: string | null;
+  route: string | null;
+  invocations: InvocationRecord[];
 }
+
+const InvocationSchema = z.object({
+  phase: z.enum(PHASES),
+  ok: z.boolean(),
+  elapsedMs: z.number().nullable(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  cacheHit: z.boolean().optional(),
+});
 
 const RunSummarySchema = z.object({
   ts: z.string(),
   steps: z.array(z.object({ name: z.string(), status: z.enum(["passed", "failed", "broken"]), screenshot: z.string() })),
-  visual: z.enum(["unchecked", "looks-right", "looks-off", "sloppy"]),
+  visual: z.enum(["unchecked", "unchanged", "looks-right", "looks-off", "sloppy"]),
   visualReasons: z.array(z.string()),
+  pr: z.string().optional(),
+  route: z.string().optional(),
+  invocations: z.array(InvocationSchema).optional(),
   lintFindings: z.array(z.object({ rule: z.string(), selector: z.string(), detail: z.string() })),
 });
 
@@ -37,6 +66,7 @@ export function readUiEvidenceRuns(dir: string): UiEvidenceRunRecord[] {
     const parsed = RunSummarySchema.safeParse(raw);
     if (!parsed.success) return [];
     const brokenSteps = parsed.data.steps.filter((s) => s.status === "broken").length;
-    return [{ ts: parsed.data.ts, brokenSteps, visual: parsed.data.visual }];
+    const invocations = (parsed.data.invocations ?? []).map((i) => ({ ...i, cacheHit: i.cacheHit === true }));
+    return [{ ts: parsed.data.ts, brokenSteps, visual: parsed.data.visual, pr: parsed.data.pr ?? null, route: parsed.data.route ?? null, invocations }];
   });
 }

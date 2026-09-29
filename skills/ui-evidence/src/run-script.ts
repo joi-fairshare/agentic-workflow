@@ -1,37 +1,65 @@
-// skills/ui-evidence/src/run-script.ts — real-browser driver. Not unit-tested
-// (excluded from coverage, matching judge/src/cli.ts's precedent): a browser
-// automation entry point isn't meaningfully testable without a real browser,
-// and this plan doesn't stand up a browser-in-CI harness.
-import { execFile } from "node:child_process";
+// skills/ui-evidence/src/run-script.ts — real-browser driver. Excluded from
+// unit coverage; its step logic (step-exec.ts) is exercised against a local
+// fixture page in tests/browser/, and the pure decisions it delegates to
+// (visual-gate, verdict-cache, pixel-diff) are unit-tested at 100%.
 import fs from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { chromium, type Page } from "playwright";
 
-import type { UiScript, ScriptStep } from "./script-schema.js";
+import { runJudge } from "./judge-exec.js";
+import type { UiScript } from "./script-schema.js";
 import { lintPage, type PageSnapshot } from "./lint-page.js";
+import { comparePngs, cropPng, sha256File } from "./pixel-diff.js";
 import type { RunStep, RunSummary } from "./publish.js";
+import { executeStep, type RepairFn } from "./step-exec.js";
+import { timed, type ModelInvocation } from "./usage.js";
+import { hashJson, loadManifest, saveManifest, type CacheContext } from "./verdict-cache.js";
 import { runVisualCritique } from "./visual-critique.js";
+import { decideVisual } from "./visual-gate.js";
 
-const exec = promisify(execFile);
 const HOST = "http://localhost:3000"; // never dev/prod — hardcoded, no override
+export const VISUAL_PROMPT_VERSION = "visual-critique/v1";
 
-async function repairSelector(brokenSelector: string, step: string, candidates: unknown[]): Promise<{ decision: string; chosenIndex?: number } | null> {
+export interface RunOptions {
+  /** App build identity (commit SHA); unknown builds only reuse verdicts within one run. */
+  appBuild?: string;
+  /** Fixture / seed identity. */
+  fixtures?: string;
+  /** Verdict-cache manifest to read/write; defaults to <runDir>/verdict-cache.json. */
+  cacheManifest?: string;
+  /** Host override for the local fixture browser tests only. */
+  host?: string;
+}
+
+const judgeRepair: RepairFn = async (brokenSelector, step, candidates) => {
   const input = JSON.stringify({ brokenSelector, step, candidates });
   try {
-    const { stdout } = await exec("judge", ["ui-element-repair"], { input, timeout: 6000 } as never);
-    return JSON.parse(String(stdout)) as { decision: string; chosenIndex?: number };
+    const { stdout } = await runJudge(["ui-element-repair"], input, 6000);
+    return JSON.parse(stdout) as { decision: string; chosenIndex?: number };
   } catch {
     return null; // fails open: caller treats this exactly like "no-good-candidate"
   }
-}
+};
 
-export async function runScript(script: UiScript, runDir: string, mainBaselineScreenshot?: string): Promise<RunSummary> {
+export async function runScript(script: UiScript, runDir: string, mainBaselineScreenshot?: string, opts: RunOptions = {}): Promise<RunSummary> {
   fs.mkdirSync(runDir, { recursive: true });
+  const runId = path.basename(runDir);
+  const host = opts.host ?? HOST;
+  const invocations: ModelInvocation[] = [];
+  const record = (i: ModelInvocation): void => void invocations.push(i);
+  if (script.planning !== undefined) {
+    const p = script.planning;
+    record({ phase: "planning", model: p.model ?? null, elapsedMs: p.elapsedMs ?? null, ok: true, inputTokens: p.inputTokens ?? null, outputTokens: p.outputTokens ?? null });
+  }
+  // Every repair call is timed at the judge boundary (usage is unknown to the CLI).
+  const repair: RepairFn = (b, s, c) => timed("selector-repair", record, () => judgeRepair(b, s, c));
+
   const browser = await chromium.launch({ headless: true });
+  const browserVersion = browser.version();
   const steps: RunStep[] = [];
   const lintFindings: RunSummary["lintFindings"] = [];
+  const traces: string[] = [];
 
   for (const viewport of script.viewports) {
     const context = await browser.newContext({
@@ -45,93 +73,77 @@ export async function runScript(script: UiScript, runDir: string, mainBaselineSc
     for (const step of script.steps) {
       i++;
       const shot = path.join(runDir, `${viewport}-${i}-${step.action}.png`);
-      try {
-        await runStep(page, step, HOST);
-        await page.screenshot({ path: shot });
-        steps.push({ name: `${viewport}: ${step.action} ${step.target}`, status: "passed", screenshot: shot });
-      } catch {
-        const repaired = await tryRepair(page, step, HOST);
-        if (repaired) {
-          await page.screenshot({ path: shot });
-          steps.push({ name: `${viewport}: ${step.action} ${step.target}`, status: "passed", screenshot: shot });
-        } else {
-          await page.screenshot({ path: shot }).catch(() => undefined);
-          steps.push({ name: `${viewport}: ${step.action} ${step.target}`, status: "broken", screenshot: shot });
-        }
-      }
+      const status = await executeStep(page, step, host, repair);
+      await page.screenshot({ path: shot }).catch(() => undefined);
+      steps.push({ name: `${viewport}: ${step.action} ${step.target}`, status, screenshot: shot });
     }
 
-    const snapshot = await captureSnapshot(page);
-    lintFindings.push(...lintPage(snapshot));
+    lintFindings.push(...lintPage(await captureSnapshot(page)));
 
-    await context.tracing.stop({ path: path.join(runDir, `${viewport}-trace.zip`) });
+    const trace = path.join(runDir, `${viewport}-trace.zip`);
+    await context.tracing.stop({ path: trace });
+    traces.push(trace);
     await context.close();
   }
 
   await browser.close();
+  const videos = fs.readdirSync(runDir).filter((f) => f.endsWith(".webm")).map((f) => path.join(runDir, f));
 
-  // One visual critique per run, against the last passed step's screenshot
-  // (the "after" state the script's own steps built up to) — not per step,
-  // matching the spec's intent (a single rubric read per run, not a model
-  // call per click, which is exactly the cost this whole plan exists to
-  // avoid). Falls back to unchecked on no passed steps, a failed call, a
-  // timeout, or an out-of-enum result (RF-5) — never a default "looks-right".
+  // Visual verdict: pixel compare first, cache second, one critique on the
+  // changed region last. Steps above always ran for real — a cached or
+  // "unchanged" visual never stands in for a behavior check.
   const lastPassed = [...steps].reverse().find((s) => s.status === "passed");
-  const visualResult = lastPassed === undefined ? null : await runVisualCritique(lastPassed.screenshot, mainBaselineScreenshot ?? null, runDir);
-
-  return {
-    steps,
-    visual: visualResult?.decision ?? "unchecked",
-    visualReasons: visualResult?.reasons ?? [],
-    lintFindings,
+  const manifestFile = opts.cacheManifest ?? path.join(runDir, "verdict-cache.json");
+  const manifest = loadManifest(manifestFile);
+  const diffOut = path.join(runDir, "visual-diff.png");
+  const ctx: CacheContext = {
+    promptVersion: VISUAL_PROMPT_VERSION,
+    model: process.env.AW_VISUAL_MODEL ?? "judge-default",
+    appBuild: opts.appBuild ?? null,
+    scenario: hashJson({ route: script.route, role: script.role, steps: script.steps, viewports: script.viewports }),
+    fixtures: opts.fixtures ?? null,
+    viewport: script.viewports.join(","),
+    browserVersion,
   };
-}
+  const hasFailedSteps = steps.some((s) => s.status !== "passed");
 
-async function runStep(page: Page, step: ScriptStep, host: string): Promise<void> {
-  if (step.action === "goto") {
-    await page.goto(`${host}${step.target}`);
-  } else if (step.action === "click") {
-    await page.getByTestId(step.target).click({ timeout: 5000 });
-  } else if (step.action === "fill") {
-    await page.getByTestId(step.target).fill(step.value ?? "", { timeout: 5000 });
-  } else {
-    await page.getByText(step.target).waitFor({ state: "visible", timeout: 5000 });
+  let gate: Awaited<ReturnType<typeof decideVisual>> = { visual: "unchecked", reasons: [], diffScore: null, diff: null };
+  if (lastPassed !== undefined) {
+    gate = await decideVisual({
+      after: lastPassed.screenshot,
+      baseline: mainBaselineScreenshot ?? null,
+      hasFailedSteps,
+      runId,
+      ctx,
+      manifest,
+      compare: (a, b) => comparePngs(a, b, diffOut),
+      hash: sha256File,
+      crop: (d) => ({
+        after: cropPng(lastPassed.screenshot, d.box!, path.join(runDir, "crop-after.png")),
+        baseline: cropPng(mainBaselineScreenshot!, d.box!, path.join(runDir, "crop-baseline.png")),
+      }),
+      critique: (after, baseline) => timed("visual-critique", record, () => runVisualCritique(after, baseline, runDir)),
+      record,
+    });
+    saveManifest(manifestFile, manifest);
   }
-}
 
-async function tryRepair(page: Page, step: ScriptStep, _host: string): Promise<boolean> {
-  // Capped at two tries (spec, Lever 4 step 3). Candidate enumeration reads
-  // real accessible-name/role/testId data from the DOM via an accessibility
-  // snapshot — an integration seam this file owns because it's the only
-  // place with a real `page` object; ui-element-repair's own decision logic
-  // is unit-tested against injected candidates (judge/tests).
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const candidates = await enumerateCandidates(page);
-    const result = await repairSelector(step.target, step.expectedState, candidates);
-    if (result?.decision === "repaired") return true;
-  }
-  return false;
-}
-
-async function enumerateCandidates(page: Page): Promise<unknown[]> {
-  // Enumerates real, currently-visible interactive elements — role, testId
-  // and accessible name/text read straight from the DOM — never a free-form
-  // selector guess (ui-element-repair's whole point per RF-3).
-  return page.evaluate(() => {
-    const out: Array<{ index: number; role: string | null; accessibleName: string | null; testId: string | null; text: string | null }> = [];
-    const nodes = document.querySelectorAll<HTMLElement>("button, a, input, [role], [data-testid]");
-    let index = 0;
-    for (const el of Array.from(nodes)) {
-      out.push({
-        index: index++,
-        role: el.getAttribute("role") ?? el.tagName.toLowerCase(),
-        accessibleName: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? null,
-        testId: el.getAttribute("data-testid"),
-        text: el.textContent?.trim() ?? null,
-      });
-    }
-    return out;
-  });
+  const summary: RunSummary = {
+    runId,
+    ts: new Date().toISOString(),
+    route: script.route,
+    ...(script.planning?.pr !== undefined ? { pr: script.planning.pr } : {}),
+    steps,
+    visual: gate.visual,
+    visualReasons: gate.reasons,
+    lintFindings,
+    diffScore: gate.diffScore,
+    invocations,
+    ...(script.planning !== undefined ? { planning: script.planning } : {}),
+    evidence: { traces, videos, diff: gate.diff !== null && !gate.diff.sizeMismatch ? diffOut : null },
+  };
+  fs.writeFileSync(path.join(runDir, "summary.json"), JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 async function captureSnapshot(page: Page): Promise<PageSnapshot> {
