@@ -59,7 +59,9 @@ implementer subagents to fix, and decides "resolved" only when:
 
 - Runs Phases 0–3.5. Temporary instrumentation added to confirm a hypothesis (log lines, narrowed
   test runs) is reverted before the skill exits; the working tree is left as it was.
-- Skips Phase 4. Final status is `diagnosed`. Never dispatches `bugHunt` (Sub-skill Dispatch is off).
+- Skips Phase 4. Final status is `diagnosed` when a hypothesis is confirmed, `unfixed` when every one
+  was ruled out. The report's Fix Applied / Verification sections read `n/a — investigate-only`.
+  Never dispatches `bugHunt` (Sub-skill Dispatch is off).
 - The handoff (`investigations/<slug>/handoff.md`) gains a table:
 
   ```markdown
@@ -70,7 +72,7 @@ implementer subagents to fix, and decides "resolved" only when:
   ```
 
   `Result` is one of `confirmed | ruled-out | untested`.
-- The JSON tail's `status` gains the value `diagnosed`.
+- The JSON tail's `status` gains the value `diagnosed`, and the tail gains `handoff_path`.
 - Without the flag, rootCause behaves exactly as it does today.
 
 ## Phases
@@ -84,9 +86,10 @@ implementer subagents to fix, and decides "resolved" only when:
 - `bugfix-state init --ticket <json>`.
 
 ### 2. INVESTIGATE
-- Invoke `/rootCause --investigate-only --depth 1 "<symptom from brief>"`.
+- Invoke `/rootCause --investigate-only --depth 1 "<symptom from brief>"`; take `handoff_path` from its JSON tail.
 - `bugfix-state advance investigate --evidence <handoff.md>`. The helper requires that the handoff
-  parses, has status `diagnosed`, and has at least one hypothesis row.
+  parses, has status `diagnosed`, and has a `confirmed` hypothesis. No confirmed hypothesis → ask the
+  user; never fix an unconfirmed cause.
 
 ### 3. REPRODUCE
 - **UI bug** (rootCause produced navigate/click/fill repro steps against the web app): dispatch the
@@ -95,12 +98,17 @@ implementer subagents to fix, and decides "resolved" only when:
   `--app-build $(git rev-parse HEAD)`.
 - **Otherwise:** dispatch one implementer to write **only** a regression test (no fix) and commit
   it. The orchestrator then runs it through the helper:
-  `bugfix-state run-test --check <test-file> -- <command>`. The helper executes the command itself
-  and writes `test-result.json` `{ command, exitCode, commit, checkSha256 }` from what it observed,
-  so the result is never agent-reported.
+  `bugfix-state run-test --check <test-file> -- <command>`. The helper refuses a command that
+  doesn't reference the check file, executes it itself, writes `test-result.json`
+  `{ command, exitCode, commit, checkSha256, log }` from what it observed, and registers the file's
+  hash in `state.runs`, so the result is never agent-reported. The same argv must be used for every
+  later run of the check.
 - `bugfix-state advance reproduce --evidence <summary.json | test-result.json>`. The helper records
-  the check's path and sha256 and **refuses unless the run failed**.
-- A passing baseline means the bug was not reproduced: set `status: needs-human` and ask the user.
+  the check's path, sha256 and (for tests) argv, and **refuses unless the run failed**. The check
+  must be a committed, unmodified file inside the repo, and the run must carry its hash
+  (ui-evidence `scriptSha256`, run-test `checkSha256`).
+- A passing baseline means the bug was not reproduced: the helper refuses and the orchestrator asks
+  the user.
 - A `ui-evidence` run that exits 2 only because a step is `broken` (a selector problem, not a failed
   expectation) is not a reproduction. `qa-runner` repairs the script once; if it's still broken,
   ask the user.
@@ -117,21 +125,25 @@ Mode selection, in order:
 - Each implementer brief contains: the ticket brief, the handoff, the failing check, its assigned
   area or hypothesis, and on a retry the previous diff plus the exact failure reasons (failed
   steps/assertions and the judge's reasoning). Implementers may not modify the check file.
-- Dispatches set `skillInternal: true` so the `brief-scope` gate treats them as the skill's own
-  approved steps.
+- Every dispatch prompt carries explicit `Goal:`, `Acceptance criteria:` and `Proof command:` lines,
+  which the `brief-scope` gate reads. (No dispatch tool can set the hook's `skill_internal` flag.)
 - Implementers run heavy checks once per commit, not per edit.
 - `bugfix-state start-attempt --mode <A|B|C>` opens the attempt (the helper increments `attempt` and
   refuses a 4th); `bugfix-state record-candidate --branch <b> --cwd <worktree>` records each candidate.
-- Every candidate branch starts from the baseline commit (`bugfix/<ticket-slug>-a<attempt>[-c<n>]`),
+- Every candidate worktree starts from the baseline commit (`bugfix/<ticket-slug>-a<attempt>`, and
+  `-a<attempt>-h<hypothesis#>` for B),
   never from a failed attempt. The check itself is committed on `bugfix/<ticket-slug>` — never on the
   base branch.
 
 ### 5. EVALUATE
 For each candidate:
-1. Re-run the **same** check on the candidate's branch (`ui-evidence … --app-build <head>`, or
-   `bugfix-state run-test`).
-2. `bugfix-state record-run <candidate> --evidence <path>`. The helper requires that the check's
-   sha256 still matches the baseline, and that the run's commit equals the candidate's head commit.
+1. Detach the main checkout at the candidate's commit (dependencies and the running app live there;
+   for UI, restart the app from it so `--app-build` is true), and re-run the **same** check
+   (`ui-evidence … --app-build <head>`, or the baseline's exact `bugfix-state run-test` command).
+2. `bugfix-state record-run <candidate> --evidence <path>`. The helper requires the check's sha256
+   (on disk and as executed) to match the baseline, the test argv to match, the run's commit to be
+   the candidate's head, and the candidate tree to be clean. A broken ui-evidence run is refused
+   rather than counted as a failed attempt.
 3. If the run passed: `judge resolution-check`, then
    `bugfix-state record-judge <candidate> --decision-id <id>` (the helper fetches the decision
    through `judge why` instead of trusting the agent's copy), or `--escalated <reason_code>` when the
@@ -139,13 +151,14 @@ For each candidate:
 4. Outcome:
    - check passed **and** judge `resolved` → candidate eligible.
    - judge `partial | unresolved`, or check failed → back to Phase 4 with the reasons.
-   - judge escalated (below threshold or timeout) → `status: needs-human`; the user decides.
+   - judge escalated (below threshold or timeout) → `record-judge --escalated` sets
+     `status: needs-human`; the user decides.
 
 With B, the first eligible candidate wins; if both are eligible, the orchestrator picks the smaller
 diff and records why. The losing worktree is removed and its branch kept until the ticket closes.
 
 ### 6. REPORT
-- `bugfix-state advance report --evidence <candidate-id>`. For `resolved`, the helper requires the
+- `bugfix-state advance report --candidate <id>` (or `--unresolved`). For `resolved`, the helper requires the
   candidate to have a passed run and a judge decision of `resolved`.
 - Write `resolution.md`: ticket, root cause, fix commits, before/after evidence paths, the judge
   decision ID, attempts, and the modes used.
@@ -170,7 +183,7 @@ diff and records why. The losing worktree is removed and its branch kept until t
   "attempt": 0,
   "handoff": "<path>",
   "check": { "kind": "ui-evidence|test", "path": "<script.json|test file>", "sha256": "..." },
-  "baseline": { "evidence": "<path>", "failed": true, "commit": "<sha>" },
+  "baseline": { "evidence": "<path>", "commit": "<sha>" },
   "candidates": [
     { "id": "c1", "attempt": 1, "mode": "A|B|C", "branch": "...", "cwd": "<worktree or repo>",
       "commit": "<sha>", "run": { "evidence": "...", "passed": true },
@@ -187,18 +200,18 @@ Exit codes: `0` allowed, `3` refused (reason on stderr), `1` bad usage or invali
 | Command | Enforces |
 |---------|----------|
 | `init --ticket <json>` | Ticket has a non-empty `brief` and `expected`; no unfinished (`active` / `needs-human`) state for the slug |
-| `advance investigate --evidence <handoff>` | Phase `intake`; handoff parses, has status `diagnosed`, has ≥ 1 hypothesis |
-| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | Clean tracked tree in `--cwd`; runs the command itself and writes `runs/<ts>-test-result.json` (observed exit code, `HEAD`, check sha256) plus a log |
-| `advance reproduce --evidence <run> --check <file> [--cwd <dir>]` | Phase `investigate`; run **failed** (not passed, not broken-only); run commit equals `HEAD` of `--cwd`; records the check path, sha256, and baseline commit |
-| `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out. Increments `attempt`, clears `needs-human` |
-| `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix`; one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has a clean tracked tree, and `HEAD` differs from the baseline. The commit is read from `--cwd`, not passed in |
-| `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; same check kind as the baseline; run commit equals the candidate's commit, which is still the candidate's `HEAD`; check sha256 unchanged |
-| `record-judge <candidate> (--decision-id <id> \| --escalated <reason_code>)` | Phase `evaluate`; the candidate has a passing run and no judge decision; the decision exists (`judge why`), is for `resolution-check`, is not undone, and has an outcome. `--escalated` sets `status: needs-human` |
+| `advance investigate --evidence <handoff>` | Phase `intake`; handoff parses, has status `diagnosed`, and has a `confirmed` hypothesis |
+| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | The command references the check file; `--cwd` has no uncommitted or untracked changes; the check is committed and unmodified inside the repo. Runs the command itself (30-min timeout), writes `runs/<ts>-test-result.json` (argv, observed exit code, `HEAD`, check sha256, log) and registers its hash in `state.runs` |
+| `advance reproduce --evidence <run> --check <file> [--cwd <dir>]` | Phase `investigate`; test evidence registered and unmodified; run **failed** (not passed, not broken-only); run commit equals `HEAD` of `--cwd`; check committed, unmodified, inside the repo; the run's recorded check hash equals the file's. Records check path, sha256, test argv, baseline commit |
+| `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out (an unreadable handoff is refused). Increments `attempt`, clears `needs-human` |
+| `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix` or `evaluate` (mode B may evaluate one candidate before recording the second); one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has no uncommitted or untracked changes, `HEAD` differs from the baseline and from every other candidate. The commit is read from `--cwd` |
+| `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; test evidence registered; same check kind; not broken; same test argv as the baseline; run commit equals the candidate's commit, which is still its `HEAD`; candidate tree clean; check file and executed check hash unchanged |
+| `record-judge <candidate> (--decision-id <id> \| --escalated <reason_code>)` | Phase `evaluate`; the candidate has a passing run and no judge decision; the decision is not used by another candidate, exists (`judge why`, zod-validated), is for `resolution-check`, is not undone, postdates the run, and has an outcome. `--escalated` sets `status: needs-human` |
 | `advance report (--candidate <id> \| --unresolved)` | Not already reported; `--candidate` needs a passing run and a `resolved` judge decision |
 | `status` / `resume` | — (print the state / the current phase and the next action) |
 
-Test evidence only counts when it lives under `<state>/runs/`, i.e. when `run-test` produced it.
-ui-evidence runs are tied to a commit through `summary.json`'s `appBuild`.
+`judge` is looked up on `PATH` only — there is no override an agent could point at a forging script.
+Any unexpected error (not a git repo, unreadable file) exits 1 with a one-line message.
 
 The orchestrator must report any refusal and may not work around it. After context loss it runs
 `bugfix-state resume`.
@@ -225,7 +238,7 @@ The orchestrator must report any refusal and may not work around it. After conte
 
 | Situation | Behaviour |
 |-----------|-----------|
-| Baseline check passes | Not reproduced → `needs-human`, ask the user |
+| Baseline check passes | Not reproduced → helper refuses, ask the user |
 | `ui-evidence` step `broken` | One `qa-runner` repair, then ask the user |
 | Helper refuses (exit 3) | Report the reason; never work around it |
 | Judge escalates | `needs-human`; the user decides |
@@ -248,14 +261,19 @@ Vitest, no `/* v8 ignore */`, following `.agents/rules/testing.md`.
   test helpers.
 - **`rootCause --investigate-only`:** a text-level check that the flag, the `diagnosed` status, and
   the `## Hypotheses` handoff table are documented.
-- **`providers/tests/install.test.sh`:** `bugFixOrchestrator` is linked, and the skill-package build
-  step runs (and is skipped in dry-run).
+- **`providers/tests/install.test.sh`:** `aw_build_skill_packages` builds each package, warns and
+  continues on a failed build, skips a package-less skill, only prints in dry-run; and every
+  `skills/*/package.json` is in `AW_SKILL_PACKAGES`.
 
 ## Change to `ui-evidence`
 
 `summary.json` gains `appBuild` (the `--app-build` value, or `null`). Today the value is used only
 for the verdict-cache key and is not written out, so a run cannot be tied to a commit. The helper
 requires `appBuild` to equal the candidate's head commit (or the baseline commit for REPRODUCE).
+It also gains `scriptSha256` (hash of the script file the run executed), so the helper can prove the
+run executed the frozen check. Both are recorded by the ui-evidence CLI; that the served app was
+actually built from `appBuild` is the orchestrator's responsibility (it restarts the app from the
+detached candidate checkout).
 
 ## Install, merge gate, docs
 

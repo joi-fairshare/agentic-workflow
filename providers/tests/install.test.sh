@@ -171,7 +171,7 @@ NPM
   echo "$out" | grep -q "good: built" || fail "good package not built"
   echo "$out" | grep -q "WARN: bad build failed" || fail "failed build should warn, not abort"
   echo "$out" | grep -q "nopkg: no package.json, skipping" || fail "package-less skill should be skipped"
-  grep -q "^good ci --no-audit --no-fund$" "$NPM_LOG" || fail "npm ci not run for good"
+  grep -q "^good ci --ignore-scripts --no-audit --no-fund$" "$NPM_LOG" || fail "npm ci not run for good"
   grep -q "^good run build$" "$NPM_LOG" || fail "npm run build not run for good"
   : > "$NPM_LOG"
   out="$(AW_DRY_RUN=1 PATH="$bin:$PATH" aw_build_skill_packages "$root")"

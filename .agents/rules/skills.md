@@ -146,6 +146,8 @@ When writing the bootstrap AGENTS.md template, do not include Skills tables or K
 6. Update the skill count in the `AGENTS.md` tagline (line 3)
 7. Re-run `./setup.sh` so the skill is linked into every installed provider's skills dir
 
+A skill that ships a TypeScript helper (`skills/<name>/package.json`, run as `node .../dist/bin.js`) must also be added to `AW_SKILL_PACKAGES` in `providers/lib.sh`, so `setup.sh` builds it (`npm ci --ignore-scripts && npm run build`); `providers/tests/install.test.sh` fails if a `package.json` skill is missing from that list. Add its `typecheck` and `test` to the AGENTS.md merge gate.
+
 ## Symlink Installation
 
 `setup.sh --providers claude,codex,cursor` (default: detect installed CLIs) installs skills for each provider via `providers/<name>/install.sh`, and records each installed provider in `$HOME/.agentic-workflow/providers` — one `<name> <skills-dir>` line per provider. It also creates `$HOME/.agentic-workflow/toolkit` as a symlink to this repo.
