@@ -87,6 +87,11 @@
   /* Code */
   .term { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 14px 16px; margin: 10px 0; font: 13.5px/1.7 var(--mono); overflow-x: auto; white-space: pre; }
   .term .c { color: #7f8793; }
+  .term[data-kind]::before { content: attr(data-kind); display: block; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #7f8793; margin-bottom: 4px; }
+  .where { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px; }
+  .where .card { padding: 16px 18px; }
+  .where .glyph { font: 700 13px var(--mono); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--code-bg); color: #7ee2a8; margin-right: 8px; vertical-align: -2px; }
+  .where .card p { margin-top: 6px; }
   .term .pr { color: #7ee2a8; user-select: none; }
   .copy { position: absolute; top: 8px; right: 8px; border: 1px solid #333842; background: #22252c; color: #c9c6bd; font: 12px var(--sans); padding: 3px 9px; border-radius: 6px; cursor: pointer; opacity: .8; }
   .copy:hover { opacity: 1; }
@@ -183,14 +188,14 @@
   .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 
   .callout { display: flex; gap: 12px; background: var(--warn-soft); color: var(--ink); border-radius: 10px; padding: 12px 16px; font-size: 14.5px; margin: 14px 0; }
-  .callout b { color: var(--warn); }
+  .callout b { color: var(--warn); white-space: nowrap; }
 
   footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 14px; }
 
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     nav.toc { display: none; }
-    .hero-grid, .two, .stage-detail { grid-template-columns: 1fr; }
+    .hero-grid, .two, .stage-detail, .where { grid-template-columns: 1fr; }
     .pipeline { grid-template-columns: repeat(7, minmax(64px, 1fr)); overflow-x: auto; }
     .progress, .progress-label { display: none; }
   }
@@ -232,6 +237,17 @@
       <p class="eyebrow">Onboarding guide</p>
       <h1>From a fresh clone to your first shipped PR.</h1>
       <p class="lede">Agentic Workflow gives your AI coding agent a shared set of skills, safety rails, and tools. It works the same way in Claude Code, Codex, and Cursor. Install it once and it's available in every repo.</p>
+      <div class="where">
+        <div class="card">
+          <h3><span class="glyph">$</span>Terminal</h3>
+          <p>Blocks labeled <b>terminal</b> run in your shell (zsh, bash): <code>./setup.sh</code>, <code>git pull</code>, <code>scorer --since 7d</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="glyph">›</span>Agent session</h3>
+          <p>Skills like <code data-cmd>bootstrap</code> and <code data-cmd>review</code> run <b>inside the agent</b>. Start <code>claude</code>, <code>codex</code>, or <code>cursor-agent</code> in the repo, then type them at its prompt.</p>
+        </div>
+      </div>
+      <div class="callout"><b>Heads up</b><span>Typing a skill into your terminal fails with <code>zsh: no such file or directory: /prismStatus</code>. The shell reads it as a file path. Run it at the agent's prompt instead.</span></div>
       <p class="muted">Pick your agent CLI in the top-right corner. Every command on this page updates to use your CLI's skill syntax (<code data-cmd-prefix>/</code>).</p>
       <div class="hero-grid">
         <div class="hero-card"><b>44</b><span>skills for planning, design, build, review, debugging, and shipping</span></div>
@@ -326,19 +342,20 @@
     <section id="verify">
       <p class="eyebrow">03 · Check your setup</p>
       <h2>Check it worked</h2>
-      <p class="sub">Open a <b>new</b> agent session in any git repo and tick each item off. Your progress is saved in this browser and shown in the top bar.</p>
+      <p class="sub">Open a <b>new</b> agent session in any git repo (<code>cd</code> into it and run <code>claude</code>, <code>codex</code>, or <code>cursor-agent</code>) and tick each item off. Your progress is saved in this browser and shown in the top bar.</p>
       <div class="checklist" id="checklist">
         <label class="check"><input type="checkbox" data-key="gitctx"><div><div class="t">Git context appears when the session starts</div><div class="e">You see an <code>=== Git Context ===</code> block with your branch and recent commits.</div></div></label>
         <label class="check"><input type="checkbox" data-key="skills"><div><div class="t">Skills show up in autocomplete</div><div class="e">Type <code data-cmd-prefix>/</code> and look for <code data-cmd>officeHours</code>, <code data-cmd>review</code>, <code data-cmd>rootCause</code>.</div></div></label>
         <label class="check"><input type="checkbox" data-key="hooks"><div><div class="t">Safety hooks block destructive commands</div><div class="e">Ask the agent to run <code>rm -rf /tmp/x</code>. It should be blocked with <code>BLOCKED: rm -rf is destructive…</code></div></div></label>
-        <label class="check"><input type="checkbox" data-key="prism"><div><div class="t">Memory server is reachable</div><div class="e">Run <code data-cmd>prismStatus</code>. It reports the dashboard and MCP connection status.</div></div></label>
-        <label class="check"><input type="checkbox" data-key="toolkit"><div><div class="t">The toolkit link exists</div><div class="e"><code>ls ~/.agentic-workflow/</code> shows <code>toolkit</code> and <code>providers</code>.</div></div></label>
+        <label class="check"><input type="checkbox" data-key="prism"><div><div class="t">Memory server is reachable</div><div class="e">In the agent session, run <code data-cmd>prismStatus</code>. It reports the dashboard and MCP connection status.</div></div></label>
+        <label class="check"><input type="checkbox" data-key="toolkit"><div><div class="t">The toolkit link exists</div><div class="e">In a terminal, <code>ls ~/.agentic-workflow/</code> shows <code>toolkit</code> and <code>providers</code>.</div></div></label>
       </div>
 
       <h3 style="margin-top:36px">Something wrong?</h3>
       <p class="muted" style="margin-top:0">Click a symptom to see the fix.</p>
       <details><summary><span><span class="badge">MCP</span><code>serena</code> fails to connect</span></summary><div class="body">Docker isn't running. Start Docker Desktop, then restart the agent session.</div></details>
-      <details><summary><span><span class="badge">WARN</span>“prism-mcp dashboard unreachable at :7180”</span></summary><div class="body">The Mind Palace dashboard isn't up. This only affects memory features, so everything else still works. Run <code data-cmd>prismStatus</code> for details.</div></details>
+      <details><summary><span><span class="badge">WARN</span>“prism-mcp dashboard unreachable at :7180”</span></summary><div class="body">The Mind Palace dashboard isn't up. This only affects memory features, so everything else still works. Run <code data-cmd>prismStatus</code> in your agent session for details.</div></details>
+      <details><summary><span><span class="badge">SHELL</span><code>zsh: no such file or directory: /prismStatus</code></span></summary><div class="body">You typed a skill into your terminal. Skills run inside the agent: start <code>claude</code> (or <code>codex</code>, <code>cursor-agent</code>), then type <code data-cmd>prismStatus</code> at its prompt.</div></details>
       <details><summary><span><span class="badge">SKILLS</span>Skills missing in Codex or Cursor</span></summary><div class="body">Re-run <code>./setup.sh --providers &lt;name&gt;</code>, then check that <code>~/.agentic-workflow/providers</code> lists your provider.</div></details>
       <details><summary><span><span class="badge">HOOKS</span>Hooks do nothing in Codex</span></summary><div class="body">You haven't trusted them yet. Open <code>codex</code>, run <code>/hooks</code>, and trust every <code>aw:*</code> entry.</div></details>
       <details><summary><span><span class="badge">SKILLS</span>A skill says “toolkit not installed”</span></summary><div class="body"><code>~/.agentic-workflow/toolkit</code> is missing or broken. Re-run <code>./setup.sh</code> from your clone.</div></details>
@@ -350,7 +367,7 @@
     <section id="bootstrap">
       <p class="eyebrow">04 · Once per repo</p>
       <h2>Bootstrap a repo</h2>
-      <p class="sub">In the repo you want to work in, run one skill. It checks what documentation exists and writes the rest, adapted to your stack. Commit the output so every future session starts with the same context.</p>
+      <p class="sub">Start an agent session in the repo you want to work in, then run one skill. It checks what documentation exists and writes the rest, adapted to your stack. Commit the output so every future session starts with the same context.</p>
       <div class="two">
         <div>
           <div class="term"><span class="pr">› </span><span data-cmd>bootstrap</span>
@@ -405,7 +422,7 @@
     <section id="finder">
       <p class="eyebrow">07 · Quick reference</p>
       <h2>Which skill do I reach for?</h2>
-      <p class="sub">Search by what you're trying to do.</p>
+      <p class="sub">Search by what you're trying to do. Every command here is a skill, so type it in your agent session.</p>
       <div class="finder">
         <div class="finder-top">
           <input id="finderInput" type="search" placeholder="e.g. debug, security, spec, deploy…" aria-label="Search skills">
@@ -595,6 +612,7 @@
         <div class="term">${cmds}</div>
         ${s.out ? `<p class="eyebrow" style="color:var(--ink-3);margin-top:14px">Produces</p><div class="out">${escapeHtml(s.out)}</div>` : ""}
       </div>`;
+    labelTerms(d);
     document.getElementById("prevStage").disabled = current === 0;
     const next = document.getElementById("nextStage");
     next.disabled = current === STAGES.length - 1;
@@ -662,9 +680,18 @@
   }, { rootMargin: "-40% 0px -55% 0px" });
   document.querySelectorAll("main section").forEach(s => io.observe(s));
 
+  function labelTerms(root) {
+    root.querySelectorAll(".term").forEach(t => {
+      const prompts = [...t.querySelectorAll(".pr")].map(p => p.textContent.trim());
+      const shell = prompts.includes("$"), agent = prompts.includes("›");
+      t.dataset.kind = shell && agent ? "terminal, then agent session" : agent ? "agent session" : "terminal";
+    });
+  }
+
   function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
   document.querySelectorAll(".tree").forEach(el => { el.innerHTML = el.innerHTML.trim(); });
+  labelTerms(document);
   applyProvider();
   renderStage();
   renderFinder();

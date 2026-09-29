@@ -4,7 +4,14 @@ A how-to guide for engineers and PMs who want to use Agentic Workflow in their o
 
 > **Prefer a visual walkthrough?** Open [`docs/onboarding.html`](docs/onboarding.html) in a browser (`open docs/onboarding.html`). It has an interactive pipeline, a setup checklist, and a skill finder you can search.
 
-> **Invoking skills:** this guide writes skills as `/<name>`, which is the Claude Code and Cursor syntax. In Codex, use `$<name>` instead (for example, `$review`).
+> **Where to type commands.** This guide has two kinds of commands:
+>
+> | Where | Looks like | How to run it |
+> |-------|------------|---------------|
+> | **Terminal** | `bash` blocks: `./setup.sh`, `git pull`, `scorer --since 7d` | Your shell (zsh, bash) |
+> | **Agent session** | Blocks labeled *In your agent session*: `/bootstrap`, `/review 123` | Start `claude`, `codex`, or `cursor-agent` in the repo, then type the skill at the agent's prompt |
+>
+> Skills are written `/<name>`, the Claude Code and Cursor syntax. In Codex, use `$<name>` (for example, `$review`). If you type a skill into your terminal, the shell treats it as a file path and fails with `zsh: no such file or directory: /prismStatus`.
 
 ---
 
@@ -51,7 +58,7 @@ To install for specific providers only, use `./setup.sh --providers claude` (or 
 
 ### Provider-specific follow-ups
 
-- **Codex:** open `codex`, run `/hooks`, and trust every `aw:*` entry. Codex won't run hooks you haven't trusted. Repeat this after a reinstall that changes a hook.
+- **Codex:** start `codex`, run `/hooks` at its prompt, and trust every `aw:*` entry. Codex won't run hooks you haven't trusted. Repeat this after a reinstall that changes a hook.
 - **Cursor:** if an MCP server is disabled on first use, run `cursor-agent mcp enable <name>` for it.
 - **Claude Code:** nothing else to do. Setup also installs the statusline and shell integration. Open a new terminal so the shell integration loads.
 
@@ -59,22 +66,23 @@ To install for specific providers only, use `./setup.sh --providers claude` (or 
 
 ## 3. Check it worked
 
-Open a new agent session in any git repo and check the following:
+Open a new agent session in any git repo (for example, `cd` into it and run `claude`) and check the following:
 
 | Check | Expected |
 |-------|----------|
 | Session start output | An `=== Git Context ===` block with your branch and recent commits |
 | Type `/` (or `$` in Codex) | Skills such as `officeHours`, `review`, and `rootCause` appear |
 | Ask the agent to run `rm -rf /tmp/x` | `BLOCKED: rm -rf is destructive and irreversible.` |
-| `/prismStatus` | Reports whether the prism-mcp dashboard and MCP connection are reachable |
-| `ls ~/.agentic-workflow/` | `toolkit` (symlink to your clone) and `providers` |
+| In the session, run `/prismStatus` | Reports whether the prism-mcp dashboard and MCP connection are reachable |
+| In a terminal, run `ls ~/.agentic-workflow/` | `toolkit` (symlink to your clone) and `providers` |
 
 ### Common first-day problems
 
 | Symptom | Fix |
 |---------|-----|
 | `serena` MCP fails to connect | Docker isn't running. Start Docker Desktop, then restart the session. |
-| `⚠ prism-mcp dashboard unreachable at :7180` at session start | The Mind Palace dashboard isn't up. It only affects memory features. Run `/prismStatus` for details. |
+| `⚠ prism-mcp dashboard unreachable at :7180` at session start | The Mind Palace dashboard isn't up. It only affects memory features. Run `/prismStatus` in your agent session for details. |
+| `zsh: no such file or directory: /prismStatus` (or any `/<skill>`) | You typed a skill into your terminal. Skills run inside the agent: start `claude` (or `codex`, `cursor-agent`), then type `/prismStatus` at its prompt. |
 | Skills missing in Codex or Cursor | Re-run `./setup.sh --providers <name>`, then check `~/.agentic-workflow/providers` |
 | Hooks do nothing in Codex | You haven't trusted them yet. Run `/hooks` in `codex`. |
 | A skill says the toolkit isn't installed | `~/.agentic-workflow/toolkit` is missing or broken. Re-run `./setup.sh` from your clone. |
@@ -85,7 +93,9 @@ Open a new agent session in any git repo and check the following:
 
 ## 4. Bootstrap a repo (once per repo)
 
-In the repo you want to work in, run:
+Start an agent session in the repo you want to work in, then run:
+
+*In your agent session:*
 
 ```
 /bootstrap
@@ -110,6 +120,8 @@ This walkthrough takes a small feature from idea to merged PR. You don't have to
 
 ### Step 1: Clarify the idea *(optional)*
 
+*In your agent session:*
+
 ```
 /withInterview officeHours "add CSV export to the reports page"
 ```
@@ -117,6 +129,8 @@ This walkthrough takes a small feature from idea to merged PR. You don't have to
 The agent interviews you first, then runs the skill you named (`officeHours` here) with a better prompt. Use it when the idea is still fuzzy. If the idea is already clear, `/enhancePrompt <request>` does a lighter version: it reads the repo docs and rewrites your request with that context.
 
 ### Step 2: Write the spec
+
+*In your agent session:*
 
 ```
 /officeHours add CSV export to the reports page
@@ -135,6 +149,8 @@ This is a working session. The agent proposes requirements, and you push back an
 
 ### Step 3: Pressure-test the plan *(optional but cheap)*
 
+*In your agent session:*
+
 ```
 /autoplan
 ```
@@ -142,6 +158,8 @@ This is a working session. The agent proposes requirements, and you push back an
 This runs the product, architecture, design, devex, and security reviews in parallel and consolidates the findings, including places where the reviews disagree. To run one review on its own, use `/productReview --mode mvp`, `/archReview`, `/planDesignReview`, `/planDevexReview`, or `/cso --plan`.
 
 ### Step 4: Design *(UI work only)*
+
+*In your agent session:*
 
 ```
 /design-language https://example.com     # brand personality + tokens (design-tokens.json, .impeccable.md)
@@ -154,6 +172,8 @@ Each of these checks whether the repo is web or iOS and routes to the matching `
 
 ### Step 5: Build it
 
+*In your agent session:*
+
 ```
 /specToProvenPR ~/.agentic-workflow/<repo-slug>/plans/<feature>/plan.md
 ```
@@ -164,6 +184,8 @@ If you'd rather build it yourself, just work normally and run `/verify-app auto`
 
 ### Step 6: Review
 
+*In your agent session:*
+
 ```
 /review 123           # parallel reviewers, one per domain → ~/.agentic-workflow/<repo-slug>/reviews/123.json
 /postReview 123       # publish findings to GitHub as batched PR comments (one review per agent)
@@ -173,6 +195,8 @@ If you'd rather build it yourself, just work normally and run `/verify-app auto`
 `/review` never posts to GitHub. It only writes to your local state file, so you can read the findings first. `/addressReview` also picks up new comments from human reviewers on the PR.
 
 ### Step 7: Ship
+
+*In your agent session:*
 
 ```
 /shipRelease          # sync, test, check coverage, push, open PR → /landAndDeploy → /canary → /syncDocs
@@ -185,6 +209,8 @@ After a deploy, `/canary` watches error rate, latency, and logs. If things look 
 ---
 
 ## 6. Which skill do I reach for?
+
+Everything in the right-hand column is a skill, so type it in your agent session.
 
 | I want to… | Use |
 |------------|-----|
