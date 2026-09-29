@@ -103,12 +103,14 @@ describe("realDeps", () => {
   it("looks up judge decisions through the judge binary, null on a non-zero exit or bad JSON", () => {
     const bin = tmpDir();
     const judge = path.join(bin, "judge");
-    fs.writeFileSync(judge, '#!/bin/sh\ncase "$2" in\n  ok) echo \'{"question":"resolution-check","decision":"resolved","reason_code":"model","undone_at":null,"ts":"2026-09-29T00:00:00Z","input_digest":"abc"}\';;\n  shape) echo \'{"question":"resolution-check"}\';;\n  bad) echo "not json";;\n  *) exit 1;;\nesac\n');
+    fs.writeFileSync(judge, '#!/bin/sh\n[ "$1" = resolution-check ] && { cat; exit 3; }\ncase "$2" in\n  ok) echo \'{"question":"resolution-check","decision":"resolved","reason_code":"model","undone_at":null,"ts":"2026-09-29T00:00:00Z","input_digest":"abc"}\';;\n  shape) echo \'{"question":"resolution-check"}\';;\n  bad) echo "not json";;\n  *) exit 1;;\nesac\n');
     fs.chmodSync(judge, 0o755);
     const deps = realDeps(judge);
     expect(deps.judgeWhy("ok")).toEqual({ question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: null, ts: "2026-09-29T00:00:00Z", input_digest: "abc" });
     expect(deps.judgeWhy("shape")).toBeNull();
     expect(deps.judgeWhy("bad")).toBeNull();
     expect(deps.judgeWhy("missing")).toBeNull();
+    expect(deps.judgeRun('{"a":1}')).toEqual({ status: 3, stdout: '{"a":1}', stderr: "" });
+    expect(realDeps(path.join(bin, "absent")).judgeRun("{}")).toMatchObject({ status: 1, stdout: "", stderr: "" });
   });
 });

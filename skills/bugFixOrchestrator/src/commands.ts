@@ -96,20 +96,23 @@ function registerRun(dir: string, evidence: string, deps: Deps): void {
 const PROTECTED = new RegExp(
   [
     // test-only directories
-    String.raw`(^|/)(tests?|__tests__|specs?|fixtures?|mocks?|__mocks__|__snapshots__|e2e|cypress|playwright|test-?utils|testing|testdata|\.ui-evidence)(/|$)`,
+    String.raw`(^|/)(tests?|__tests__|specs?|fixtures?|__fixtures__|mocks?|__mocks__|__snapshots__|e2e|cypress|playwright|test-?utils|testing|testdata|\.ui-evidence)(/|$)`,
     // test-file naming across ecosystems
-    String.raw`\.(test|spec)\.[^/]+$`, String.raw`(^|/)test_[^/]+\.py$`, String.raw`_test\.(go|py|rb)$`, String.raw`tests?\.(swift|kt|java|cs)$`, String.raw`\.snap$`,
+    String.raw`\.(test|spec)\.[^/]+$`, String.raw`(^|/)test_[^/]+\.py$`, String.raw`_test\.(go|py|rb)$`, String.raw`\.snap$`,
     // runner config and setup
     String.raw`(^|/)(vitest|vite|jest|playwright|karma|cypress|babel)\.(config|setup|workspace)\.[^/]+$`, String.raw`(^|/)(jest|vitest)\.setup[^/]*$`,
-    String.raw`(^|/)setupTests\.[^/]+$`, String.raw`(^|/)conftest\.py$`, String.raw`(^|/)\.mocharc[^/]*$`, String.raw`(^|/)(pytest\.ini|tox\.ini|pyproject\.toml|setup\.cfg)$`,
+    String.raw`(^|/)(jest|vitest)-setup[^/]*$`, String.raw`(^|/)setupTests\.[^/]+$`, String.raw`(^|/)conftest\.py$`, String.raw`(^|/)\.mocharc[^/]*$`,
+    String.raw`(^|/)(pytest\.ini|tox\.ini|pyproject\.toml|setup\.cfg)$`, String.raw`(^|/)\.babelrc[^/]*$`, String.raw`(^|/)\.env\.test[^/]*$`, String.raw`(^|/)tsconfig[^/]*\.json$`,
     // package manifests carry test scripts and runner config
     String.raw`(^|/)package\.json$`,
   ].join("|"),
   "i",
 );
+// FooTest.swift / BarTests.kt: case-sensitive, so Latest.kt or Contest.cs don't match.
+const JVM_STYLE_TEST = /(^|\/)[^/]*[a-z0-9]Tests?\.(swift|kt|java|cs)$/;
 function protectedFiles(files: readonly string[], checkPath: string): string[] {
   const checkDir = path.dirname(checkPath);
-  return files.filter((f) => f === checkPath || PROTECTED.test(f) || (checkDir !== "." && f.startsWith(`${checkDir}/`)));
+  return files.filter((f) => f === checkPath || PROTECTED.test(f) || JVM_STYLE_TEST.test(f) || (checkDir !== "." && f.startsWith(`${checkDir}/`)));
 }
 
 function readRun(dir: string, state: State, evidencePath: string, deps: Deps): RunEvidence | Result {
@@ -316,40 +319,7 @@ export function recordRun(dir: string, candidateId: string, evidencePath: string
       "evaluate",
       abs,
     );
-    return ok({ candidate: candidateId, passed, next: passed ? "judge resolution-check, then record-judge" : "start-attempt with the failure reasons" });
-  });
-}
-
-export function recordJudge(dir: string, candidateId: string, decisionId: string | undefined, escalated: string | undefined, deps: Deps): Result {
-  if ((decisionId === undefined) === (escalated === undefined)) return bad("pass exactly one of --decision-id <id> or --escalated <reason_code>");
-  return withState(dir, (state) => {
-    const wrongPhase = requirePhase(state, ["evaluate"]);
-    if (wrongPhase) return wrongPhase;
-    const candidate = state.candidates.find((c) => c.id === candidateId);
-    if (candidate === undefined) return bad(`unknown candidate: ${candidateId}`);
-    const run = candidate.run;
-    if (run?.passed !== true) return refuse(`${candidateId} has no passing run; judge only runs after the check passes`);
-    if (candidate.judge !== null) return refuse(`a judge decision is already recorded for ${candidateId}`);
-    if (escalated !== undefined) {
-      transition(dir, { ...updateCandidate(state, { ...candidate, judge: { decisionId: null, decision: "escalated", reasonCode: escalated } }), status: "needs-human" }, deps, `record-judge ${candidateId}`, "evaluate", null);
-      return ok({ candidate: candidateId, decision: "escalated", status: "needs-human" });
-    }
-    const id = decisionId as string;
-    const reused = state.candidates.find((c) => c.judge?.decisionId === id);
-    if (reused) return refuse(`decision ${id} is already recorded for ${reused.id}`);
-    const row = deps.judgeWhy(id);
-    if (row === null) return refuse(`judge has no decision ${id}`);
-    if (row.question !== "resolution-check") return refuse(`decision ${id} is for ${row.question}, not resolution-check`);
-    if (row.undone_at !== null) return refuse(`decision ${id} was undone`);
-    const decidedAt = Date.parse(row.ts);
-    if (Number.isNaN(decidedAt) || decidedAt < Date.parse(run.recordedAt)) return refuse(`decision ${id} (${row.ts}) does not postdate ${candidateId}'s run (${run.recordedAt})`);
-    // The decision must be about exactly the input judge-input built from state.
-    if (candidate.judgeInputDigest === null) return refuse(`run bugfix-state judge-input ${candidateId} first`);
-    if (row.input_digest !== candidate.judgeInputDigest) return refuse(`decision ${id} judged a different input than judge-input built for ${candidateId}`);
-    const decision = row.decision;
-    if (decision !== "resolved" && decision !== "partial" && decision !== "unresolved") return refuse(`decision ${id} has no usable outcome (${String(decision)})`);
-    transition(dir, updateCandidate(state, { ...candidate, judge: { decisionId: id, decision, reasonCode: row.reason_code } }), deps, `record-judge ${candidateId}`, "evaluate", null);
-    return ok({ candidate: candidateId, decision });
+    return ok({ candidate: candidateId, passed, next: passed ? `judge ${candidateId}` : "start-attempt with the failure reasons" });
   });
 }
 
@@ -416,21 +386,23 @@ export function runUi(dir: string, checkPath: string, cwd: string, deps: Deps): 
   });
 }
 
+const firstLine = (text: string): string => text.trim().split("\n")[0];
+
 /**
- * Builds the judge resolution-check input from state (ticket text, root
- * cause, run outcome, diff) and records the digest judge will store for it,
- * so record-judge can bind the decision to exactly this input.
+ * Asks judge resolution-check exactly once per candidate, on an input the
+ * helper builds from state (ticket text verbatim, the snapshotted root cause,
+ * a description of the frozen check, the diff stat), and records that
+ * decision. The agent never picks among decisions, so a verdict can't be
+ * re-rolled.
  */
-export function judgeInput(dir: string, candidateId: string, deps: Deps): Result {
+export function judgeCandidate(dir: string, candidateId: string, deps: Deps): Result {
   return withState(dir, (state) => {
     const wrongPhase = requirePhase(state, ["evaluate"]);
     if (wrongPhase) return wrongPhase;
     const candidate = state.candidates.find((c) => c.id === candidateId);
     if (candidate === undefined) return bad(`unknown candidate: ${candidateId}`);
     if (candidate.run?.passed !== true) return refuse(`${candidateId} has no passing run; judge only runs after the check passes`);
-    // One input per candidate: re-building it would let an unfavourable
-    // verdict be discarded and the judge asked again.
-    if (candidate.judgeInputDigest !== null) return refuse(`the judge input for ${candidateId} was already built; run judge on ${path.join(dir, `judge-${candidateId}.json`)} and record that decision`);
+    if (candidate.judge !== null) return refuse(`${candidateId} was already judged (${candidate.judge.decision}); a verdict is never re-asked`);
     const base = (state.baseline as { commit: string }).commit;
     const check = state.check as NonNullable<State["check"]>;
     // Derived from state, not agent-written, so it can't steer the verdict.
@@ -449,17 +421,56 @@ export function judgeInput(dir: string, candidateId: string, deps: Deps): Result
       afterPassed: true,
       diffStat: deps.git(candidate.cwd, ["diff", "--stat", base, candidate.commit]),
     };
-    const file = path.join(dir, `judge-${candidateId}.json`);
-    fs.writeFileSync(file, JSON.stringify(input));
-    const judgeInputDigest = createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 16);
-    saveState(dir, updateCandidate(state, { ...candidate, judgeInputDigest }));
-    return ok({ input: file, digest: judgeInputDigest });
+    const text = JSON.stringify(input);
+    const judgeInputDigest = createHash("sha256").update(text).digest("hex").slice(0, 16);
+    fs.writeFileSync(path.join(dir, `judge-${candidateId}.json`), text);
+    const r = deps.judgeRun(text);
+    let out: { id?: unknown; reason_code?: unknown; extra?: { reasons?: unknown } } = {};
+    try {
+      out = JSON.parse(r.stdout) as typeof out;
+    } catch {
+      // handled per exit code below
+    }
+    if (r.status === 2) {
+      const reasonCode = typeof out.reason_code === "string" ? out.reason_code : "escalated";
+      transition(
+        dir,
+        { ...updateCandidate(state, { ...candidate, judgeInputDigest, judge: { decisionId: null, decision: "escalated", reasonCode } }), status: "needs-human" },
+        deps,
+        `judge ${candidateId}`,
+        "evaluate",
+        null,
+      );
+      return ok({ candidate: candidateId, decision: "escalated", reasonCode, status: "needs-human" });
+    }
+    // No verdict was obtained, so nothing is recorded and a retry is not a re-roll.
+    if (r.status !== 0) return refuse(`judge failed (exit ${r.status}): ${firstLine(r.stderr) || firstLine(r.stdout)} — no verdict recorded; fix judge and re-run`);
+    if (typeof out.id !== "string") return refuse("judge printed no decision id — no verdict recorded");
+    const row = deps.judgeWhy(out.id);
+    if (row === null) return refuse(`judge has no decision ${out.id}`);
+    if (row.question !== "resolution-check" || row.input_digest !== judgeInputDigest) return refuse(`decision ${out.id} is not a resolution-check decision on the input the helper built`);
+    const decision = row.decision;
+    if (decision !== "resolved" && decision !== "partial" && decision !== "unresolved") return refuse(`decision ${out.id} has no usable outcome (${String(decision)})`);
+    transition(
+      dir,
+      updateCandidate(state, { ...candidate, judgeInputDigest, judge: { decisionId: out.id, decision, reasonCode: row.reason_code } }),
+      deps,
+      `judge ${candidateId}`,
+      "evaluate",
+      null,
+    );
+    const reasons = Array.isArray(out.extra?.reasons) ? out.extra.reasons : [];
+    return ok({ candidate: candidateId, decision, decisionId: out.id, reasons });
   });
 }
 
 export function status(dir: string): Result {
   return withState(dir, (state) => ok(JSON.stringify(state, null, 2)));
 }
+
+// Phase 5 runs in the main checkout detached at the candidate — possibly left
+// that way by an interrupted session, so always name the exact commit.
+const evaluateStep = (c: Candidate): string => `detach the main checkout at ${c.commit} (${c.id}), run the same check, then record-run ${c.id}`;
 
 export function nextAction(state: State): string {
   if (state.status === "resolved" || state.status === "unresolved") return `done (${state.status}); write resolution.md if not written`;
@@ -474,16 +485,16 @@ export function nextAction(state: State): string {
     case "fix": {
       const current = state.candidates.filter((c) => c.attempt === state.attempt);
       if (current.length === 0) return "dispatch the implementer(s), then record-candidate";
-      return "run the same check on each candidate, then record-run";
+      return evaluateStep(current.find((c) => c.run === null) as Candidate);
     }
     case "evaluate": {
       const current = state.candidates.filter((c) => c.attempt === state.attempt);
       const eligible = current.find(isEligible);
       if (eligible) return `advance report --candidate ${eligible.id}`;
       const needsRun = current.find((c) => c.run === null);
-      if (needsRun) return `run the same check on ${needsRun.id}, then record-run`;
+      if (needsRun) return evaluateStep(needsRun);
       const needsJudge = current.find((c) => !isEvaluated(c));
-      if (needsJudge) return `judge resolution-check for ${needsJudge.id}, then record-judge`;
+      if (needsJudge) return `judge ${needsJudge.id}`;
       if (state.attempt < MAX_ATTEMPTS) return "start-attempt with the failure reasons";
       return "advance report --unresolved";
     }

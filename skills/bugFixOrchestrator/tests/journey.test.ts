@@ -6,15 +6,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { main } from "../src/cli.js";
 import type { Deps } from "../src/deps.js";
 import { StateSchema, type State } from "../src/schema.js";
-import type { JudgeDecisionRow } from "../src/deps.js";
-import { HANDOFF, TICKET, commitFile, git, judgeRow, makeRepo, testDeps, tmpDir, writeJson } from "./helpers.js";
+import { HANDOFF, TICKET, commitFile, fakeJudge, git, makeRepo, testDeps, tmpDir, writeJson, type FakeJudge } from "./helpers.js";
 
 let repo: string;
 let state: string;
 let scratch: string;
 let deps: Deps;
 
-let judgeRows: Record<string, JudgeDecisionRow>;
+let judgeFake: FakeJudge;
 
 const run = (...argv: string[]) => main(["--state", state, ...argv], deps);
 const readState = (): State => StateSchema.parse(JSON.parse(fs.readFileSync(path.join(state, "state.json"), "utf8")));
@@ -31,12 +30,10 @@ function toReproduced(): void {
   expect(run("advance", "reproduce", "--evidence", baseline.evidence, "--check", "check.sh", "--cwd", repo).exitCode).toBe(0);
 }
 
-/** Builds the judge input for a candidate and registers a judge decision about exactly it; returns the decision id. */
-function judge(c: string, decision: string): string {
-  const out = JSON.parse(run("judge-input", c).stdout) as { digest: string };
-  const id = `d-${c}-${decision}`;
-  judgeRows[id] = judgeRow(decision, out.digest);
-  return id;
+/** Has the helper ask the (fake) judge about a candidate, which returns the given verdict. */
+function judge(c: string, verdict: string): { exitCode: number; stdout: string; stderr?: string } {
+  judgeFake.verdicts.push(verdict);
+  return run("judge", c);
 }
 
 /** Starts an attempt and records a candidate that creates fixed.txt on a branch. */
@@ -53,8 +50,8 @@ beforeEach(() => {
   repo = makeRepo();
   scratch = tmpDir();
   state = path.join(tmpDir(), "bugfix", "phone");
-  judgeRows = {};
-  deps = testDeps(judgeRows);
+  judgeFake = fakeJudge();
+  deps = testDeps(judgeFake);
 });
 
 // Real git repos and processes: allow well beyond the 10s default under coverage.
@@ -67,8 +64,11 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     expect(after.exitCode).toBe(0);
     expect(after.commit).toBe(git(repo, "rev-parse", "HEAD"));
     expect(JSON.parse(run("record-run", c, "--evidence", after.evidence).stdout)).toMatchObject({ passed: true });
-    expect(JSON.parse(run("resume").stdout)).toMatchObject({ phase: "evaluate", next: `judge resolution-check for ${c}, then record-judge` });
-    expect(run("record-judge", c, "--decision-id", judge(c, "resolved")).exitCode).toBe(0);
+    expect(JSON.parse(run("resume").stdout)).toMatchObject({ phase: "evaluate", next: `judge ${c}` });
+    expect(JSON.parse(judge(c, "resolved").stdout)).toMatchObject({ decision: "resolved", reasons: ["because"] });
+    // One verdict per candidate: asking again is refused, so a verdict can't be re-rolled.
+    expect(judge(c, "resolved").stderr).toContain("was already judged (resolved)");
+    expect(judgeFake.calls).toHaveLength(1);
     expect(JSON.parse(run("resume").stdout).next).toBe(`advance report --candidate ${c}`);
     expect(JSON.parse(run("advance", "report", "--candidate", c).stdout)).toMatchObject({ status: "resolved" });
     const final = readState();
@@ -132,7 +132,7 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     for (let i = 1; i <= 3; i++) {
       const c = fixCandidate(`try-${i}`);
       run("record-run", c, "--evidence", runTest().evidence);
-      expect(run("record-judge", c, "--decision-id", judge(c, "partial")).exitCode).toBe(0);
+      expect(judge(c, "partial").exitCode).toBe(0);
       expect(run("advance", "report", "--candidate", c)).toMatchObject({ exitCode: 3 });
     }
     expect(JSON.parse(run("resume").stdout).next).toBe("advance report --unresolved");
@@ -151,9 +151,9 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     commitFile(repo, "wrong.txt", "x\n");
     run("record-candidate", "--branch", "a1", "--cwd", repo);
     expect(run("record-candidate", "--branch", "a1", "--cwd", repo).stderr).toContain("mode A allows 1");
-    expect(JSON.parse(run("resume").stdout).next).toBe("run the same check on each candidate, then record-run");
+    expect(JSON.parse(run("resume").stdout).next).toMatch(/^detach the main checkout at [0-9a-f]{40} \(c1\), run the same check, then record-run c1$/);
     expect(JSON.parse(run("record-run", "c1", "--evidence", runTest().evidence).stdout)).toMatchObject({ passed: false });
-    expect(run("record-judge", "c1", "--decision-id", "anything").stderr).toContain("no passing run");
+    expect(run("judge", "c1").stderr).toContain("no passing run");
     expect(JSON.parse(run("resume").stdout).next).toBe("start-attempt with the failure reasons");
     // Attempt 2 (B): two competing candidates.
     expect(run("start-attempt", "--mode", "B").exitCode).toBe(0);
@@ -171,7 +171,7 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     expect(run("record-candidate", "--branch", "b2", "--cwd", repo, "--hypothesis", "2").exitCode).toBe(0);
     expect(JSON.parse(run("resume").stdout)).toMatchObject({ phase: "evaluate" });
     expect(run("record-candidate", "--branch", "b2", "--cwd", repo, "--hypothesis", "2").stderr).toContain("mode B allows 2");
-    expect(JSON.parse(run("resume").stdout).next).toBe("run the same check on c3, then record-run");
+    expect(JSON.parse(run("resume").stdout).next).toContain("then record-run c3");
     expect(run("start-attempt", "--mode", "A").stderr).toContain("c2 has not been evaluated");
   });
 
@@ -195,9 +195,9 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     toReproduced();
     const c = fixCandidate("bugfix/phone");
     run("record-run", c, "--evidence", runTest().evidence);
-    expect(JSON.parse(run("record-judge", c, "--escalated", "below-threshold").stdout)).toMatchObject({ status: "needs-human" });
+    expect(JSON.parse(judge(c, "escalated").stdout)).toMatchObject({ decision: "escalated", reasonCode: "below-threshold", status: "needs-human" });
     expect(JSON.parse(run("resume").stdout).next).toContain("ask the user");
-    expect(run("record-judge", c, "--decision-id", "d-resolved").stderr).toContain("already recorded");
+    expect(judge(c, "resolved").stderr).toContain("was already judged (escalated)");
     expect(run("init", "--ticket", writeJson(scratch, "t2.json", TICKET)).stderr).toContain("unfinished bugfix");
     expect(JSON.parse(run("start-attempt", "--mode", "A").stdout)).toMatchObject({ attempt: 2 });
     expect(readState().status).toBe("active");

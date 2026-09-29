@@ -40,7 +40,7 @@ const CandidateSchema = z.object({
   hypothesis: z.number().int().nullable(),
   /** Files changed since the baseline, as recorded at record-candidate. */
   changedFiles: z.array(z.string()),
-  /** input_digest judge must report for this candidate's decision (set by judge-input). */
+  /** input_digest of the resolution-check input the helper built and judged (set by `judge`). */
   judgeInputDigest: z.string().nullable(),
   run: RunSchema.nullable(),
   judge: JudgeSchema.nullable(),

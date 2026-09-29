@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -84,10 +85,44 @@ process.exit(status === "passed" ? 0 : 2);
   return file;
 }
 
+export interface FakeJudge {
+  rows: Record<string, JudgeDecisionRow>;
+  /** Verdicts the next judge calls return, in order: a decision, "escalated", or "fail". Default "resolved". */
+  verdicts: string[];
+  calls: string[];
+  run: Deps["judgeRun"];
+}
+
+/** A stand-in for `judge resolution-check`: stores a decision row with the real input digest, like judge does. */
+export function fakeJudge(): FakeJudge {
+  const judge: FakeJudge = {
+    rows: {},
+    verdicts: [],
+    calls: [],
+    run: (input) => {
+      judge.calls.push(input);
+      const verdict = judge.verdicts.shift() ?? "resolved";
+      if (verdict === "fail") return { status: 1, stdout: "", stderr: "input is not valid JSON\nmore" };
+      if (verdict === "escalated") return { status: 2, stdout: JSON.stringify({ escalate: true, reason_code: "below-threshold" }), stderr: "" };
+      const id = `d${Object.keys(judge.rows).length + 1}`;
+      const digest = createHash("sha256").update(JSON.stringify(JSON.parse(input))).digest("hex").slice(0, 16);
+      judge.rows[id] = judgeRow(verdict, digest);
+      return { status: 0, stdout: JSON.stringify({ decision: verdict, id, extra: { reasons: ["because"] } }), stderr: "" };
+    },
+  };
+  return judge;
+}
+
 let tick = 0;
-/** Real git/fs/process deps, a monotonically increasing clock, a stubbed judge lookup (mutable map), and a fake ui-evidence. */
-export function testDeps(judge: Record<string, JudgeDecisionRow> = {}): Deps {
-  return { ...realDeps(), now: () => new Date(Date.UTC(2026, 8, 29, 0, 0, tick++)), judgeWhy: (id) => judge[id] ?? null, uiEvidenceBin: fakeUiEvidence() };
+/** Real git/fs/process deps, a monotonically increasing clock, a fake judge, and a fake ui-evidence. */
+export function testDeps(judge: FakeJudge = fakeJudge()): Deps {
+  return {
+    ...realDeps(),
+    now: () => new Date(Date.UTC(2026, 8, 29, 0, 0, tick++)),
+    judgeWhy: (id) => judge.rows[id] ?? null,
+    judgeRun: (input) => judge.run(input),
+    uiEvidenceBin: fakeUiEvidence(),
+  };
 }
 
 /** A judge row for a resolution-check decision about the given input digest. */

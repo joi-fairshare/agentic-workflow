@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import {
-  advanceInvestigate, advanceReport, advanceReproduce, init, judgeInput, recordCandidate, recordJudge, recordRun, resume, runTest, runUi, startAttempt, status,
+  advanceInvestigate, advanceReport, advanceReproduce, init, judgeCandidate, recordCandidate, recordRun, resume, runTest, runUi, startAttempt, status,
   type Result,
 } from "./commands.js";
 import type { Deps } from "./deps.js";
@@ -15,8 +15,7 @@ const USAGE = `usage: bugfix-state <command> --state <dir> [options]
   start-attempt --mode <A|B|C>
   record-candidate --branch <branch> [--cwd <dir>] [--hypothesis <n>] [--allow-test-changes]
   record-run <candidate> --evidence <run>
-  judge-input <candidate>
-  record-judge <candidate> (--decision-id <id> | --escalated <reason_code>)
+  judge <candidate>
   advance report (--candidate <id> | --unresolved)
   run-test --check <file> [--cwd <dir>] -- <command...>
   run-ui --check <script.json> [--cwd <dir>]
@@ -105,12 +104,9 @@ function dispatch(argv: string[], deps: Deps): Result {
     case "record-run":
       if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
       return missing("evidence") ?? recordRun(dir, sub, flag("evidence") as string, deps);
-    case "record-judge":
+    case "judge":
       if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
-      return recordJudge(dir, sub, flag("decision-id"), flag("escalated"), deps);
-    case "judge-input":
-      if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
-      return judgeInput(dir, sub, deps);
+      return judgeCandidate(dir, sub, deps);
     case "run-ui":
       return missing("check") ?? runUi(dir, flag("check") as string, cwd, deps);
     case "run-test":

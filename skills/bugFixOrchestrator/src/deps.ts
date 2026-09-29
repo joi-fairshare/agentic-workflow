@@ -19,6 +19,8 @@ export type JudgeDecisionRow = z.infer<typeof JudgeDecisionRowSchema>;
 
 /** A test command that hangs must not hang the orchestrator; a timeout kill counts as a failing run. */
 export const RUN_TIMEOUT_MS = 30 * 60_000;
+/** judge walks a provider chain with per-provider budgets; bound the whole call. */
+export const JUDGE_TIMEOUT_MS = 5 * 60_000;
 
 export interface Deps {
   now: () => Date;
@@ -29,6 +31,8 @@ export interface Deps {
   run: (argv: string[], cwd: string, logFile: string) => number;
   /** Looks up a stored judge decision; null when judge doesn't know the id or returns something unexpected. */
   judgeWhy: (id: string) => JudgeDecisionRow | null;
+  /** Runs `judge resolution-check` with the given JSON on stdin. */
+  judgeRun: (input: string) => { status: number; stdout: string; stderr: string };
   /** The ui-evidence CLI (dist/bin.js) that run-ui executes. */
   uiEvidenceBin: string;
 }
@@ -55,6 +59,10 @@ export function realDeps(judgeBin = "judge"): Deps {
       }
     },
     uiEvidenceBin: siblingUiEvidence(),
+    judgeRun: (input) => {
+      const r = spawnSync(judgeBin, ["resolution-check"], { input, encoding: "utf8", timeout: JUDGE_TIMEOUT_MS });
+      return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    },
     judgeWhy: (id) => {
       const r = spawnSync(judgeBin, ["why", id], { encoding: "utf8" });
       if (r.status !== 0) return null;

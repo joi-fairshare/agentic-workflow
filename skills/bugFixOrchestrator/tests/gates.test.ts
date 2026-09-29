@@ -56,8 +56,8 @@ describe("run-ui", { timeout: 30_000 }, () => {
     const after = out<{ evidence: string; exitCode: number }>(run("run-ui", "--check", "script.json", "--cwd", repo));
     expect(after.exitCode).toBe(0);
     expect(out(run("record-run", "c1", "--evidence", after.evidence))).toMatchObject({ passed: true });
-    const input = out<{ input: string }>(run("judge-input", "c1"));
-    expect(JSON.parse(fs.readFileSync(input.input, "utf8"))).toMatchObject({ checkKind: "ui-evidence", checkSummary: "the ui-evidence script script.json" });
+    expect(out(run("judge", "c1"))).toMatchObject({ decision: "resolved" });
+    expect(JSON.parse(fs.readFileSync(path.join(state, "judge-c1.json"), "utf8"))).toMatchObject({ checkKind: "ui-evidence", checkSummary: "the ui-evidence script script.json" });
   });
 
   it("refuses a dirty tree or a missing check, and reports a run that wrote no summary", () => {
@@ -117,6 +117,17 @@ describe("record-candidate gates", { timeout: 30_000 }, () => {
     expect(run("record-candidate", "--branch", "main", "--cwd", repo).stderr).toContain("(checks/helper.sh)");
   });
 
+  it("flags JVM-style test names, __fixtures__ and tsconfig, but not production files that merely end in 'test'", () => {
+    fs.mkdirSync(path.join(repo, "src", "__fixtures__"), { recursive: true });
+    commitFile(repo, "src/Latest.kt", "class Latest");
+    commitFile(repo, "src/ContestTest.kt", "class ContestTest");
+    commitFile(repo, "src/__fixtures__/a.json", "{}");
+    commitFile(repo, "tsconfig.test.json", "{}");
+    const res = run("record-candidate", "--branch", "main", "--cwd", repo);
+    expect(res.stderr).toContain("(src/ContestTest.kt, src/__fixtures__/a.json, tsconfig.test.json)");
+    expect(res.stderr).not.toContain("Latest.kt,");
+  });
+
   it("validates --hypothesis against the handoff", () => {
     commitFile(repo, "fixed.txt", "ok\n");
     expect(run("record-candidate", "--branch", "main", "--cwd", repo, "--hypothesis", "x")).toMatchObject({ exitCode: 1 });
@@ -161,9 +172,9 @@ describe("record-candidate gates", { timeout: 30_000 }, () => {
   });
 });
 
-describe("judge-input", { timeout: 30_000 }, () => {
-  function evaluated(handoff = HANDOFF): { base: string; commit: string } {
-    investigated(handoff);
+describe("judge (input built from state)", { timeout: 30_000 }, () => {
+  function evaluated(): { base: string; commit: string } {
+    investigated();
     const baseline = out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh"));
     out(run("advance", "reproduce", "--evidence", baseline.evidence, "--check", "check.sh", "--cwd", repo));
     const base = git(repo, "rev-parse", "HEAD");
@@ -172,42 +183,23 @@ describe("judge-input", { timeout: 30_000 }, () => {
     out(run("record-candidate", "--branch", "main", "--cwd", repo));
     return { base, commit };
   }
-
-  it("builds the judge input from state in schema order and records the digest judge will store", () => {
-    const { base, commit } = evaluated();
-    expect(run("judge-input", "c1").stderr).toContain("phase is fix");
-    out(run("record-run", "c1", "--evidence", out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh")).evidence));
-    const res = out<{ input: string; digest: string }>(run("judge-input", "c1"));
-    const text = fs.readFileSync(res.input, "utf8");
-    const input = JSON.parse(text) as Record<string, unknown>;
-    expect(Object.keys(input)).toEqual(["brief", "expected", "actual", "rootCause", "checkKind", "checkSummary", "beforePassed", "afterPassed", "diffStat"]);
-    expect(input).toMatchObject({ brief: TICKET.brief, rootCause: "updateProfile() omits phone.", checkKind: "test", checkSummary: "the regression test check.sh, run as `sh check.sh`", beforePassed: false, afterPassed: true });
-    expect(input.diffStat).toBe(git(repo, "diff", "--stat", base, commit));
-    expect(res.digest).toBe(createHash("sha256").update(text).digest("hex").slice(0, 16));
-    expect(readState().candidates[0].judgeInputDigest).toBe(res.digest);
-  });
-
   const passingRun = () => out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh")).evidence;
 
-  it("rejects an unknown candidate or missing id, builds the input once, and uses the root cause snapshotted at investigate", () => {
-    evaluated();
+  it("sends judge the input built from state in schema order — ticket text, snapshotted root cause, frozen check, diff — and records its digest", () => {
+    const { base, commit } = evaluated();
     out(run("record-run", "c1", "--evidence", passingRun()));
     fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF.replace("updateProfile() omits phone.", "It was fine all along."));
-    expect(run("judge-input", "c9")).toMatchObject({ exitCode: 1 });
-    expect(run("judge-input")).toMatchObject({ exitCode: 1 });
-    const res = out<{ input: string }>(run("judge-input", "c1"));
-    expect(JSON.parse(fs.readFileSync(res.input, "utf8"))).toMatchObject({ rootCause: "updateProfile() omits phone.", checkSummary: "the regression test check.sh, run as `sh check.sh`" });
-    expect(run("judge-input", "c1").stderr).toContain("was already built");
-  });
-
-  it("refuses a candidate whose run failed", () => {
-    investigated();
-    const baseline = out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh"));
-    out(run("advance", "reproduce", "--evidence", baseline.evidence, "--check", "check.sh", "--cwd", repo));
-    out(run("start-attempt", "--mode", "A"));
-    commitFile(repo, "wrong.txt", "x\n");
-    out(run("record-candidate", "--branch", "main", "--cwd", repo));
-    expect(out(run("record-run", "c1", "--evidence", passingRun()))).toMatchObject({ passed: false });
-    expect(run("judge-input", "c1").stderr).toContain("no passing run");
+    out(run("judge", "c1"));
+    const text = fs.readFileSync(path.join(state, "judge-c1.json"), "utf8");
+    const input = JSON.parse(text) as Record<string, unknown>;
+    expect(Object.keys(input)).toEqual(["brief", "expected", "actual", "rootCause", "checkKind", "checkSummary", "beforePassed", "afterPassed", "diffStat"]);
+    expect(input).toMatchObject({
+      brief: TICKET.brief, rootCause: "updateProfile() omits phone.", checkKind: "test",
+      checkSummary: "the regression test check.sh, run as `sh check.sh`", beforePassed: false, afterPassed: true,
+      diffStat: git(repo, "diff", "--stat", base, commit),
+    });
+    const candidate = readState().candidates[0];
+    expect(candidate.judgeInputDigest).toBe(createHash("sha256").update(text).digest("hex").slice(0, 16));
+    expect(candidate.judge).toMatchObject({ decisionId: "d1", decision: "resolved" });
   });
 });

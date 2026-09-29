@@ -8,7 +8,7 @@ import { nextAction } from "../src/commands.js";
 import type { Deps } from "../src/deps.js";
 import type { Candidate, State } from "../src/schema.js";
 import { loadState, runsDir, saveState } from "../src/store.js";
-import { HANDOFF, TICKET, commitFile, git, judgeRow, makeRepo, testDeps, tmpDir, writeJson } from "./helpers.js";
+import { HANDOFF, TICKET, commitFile, fakeJudge, git, judgeRow, makeRepo, testDeps, tmpDir, writeJson, type FakeJudge } from "./helpers.js";
 
 let repo: string;
 let dir: string;
@@ -16,6 +16,7 @@ let scratch: string;
 let deps: Deps;
 let head: string;
 let checkSha: string;
+let judge: FakeJudge;
 
 const run = (...argv: string[]) => main(["--state", dir, ...argv], deps);
 const refused = (res: { exitCode: number; stderr?: string }, text: string) => {
@@ -73,15 +74,8 @@ beforeEach(() => {
   head = git(repo, "rev-parse", "HEAD");
   scratch = tmpDir();
   dir = path.join(tmpDir(), "state");
-  deps = testDeps({
-    wrongq: judgeRow("ready", "dg", { question: "brief-scope" }),
-    undone: judgeRow("resolved", "dg", { undone_at: "2026-09-29" }),
-    nodecision: judgeRow(null, "dg"),
-    stale: judgeRow("resolved", "dg", { ts: "2000-01-01T00:00:00Z" }),
-    badts: judgeRow("resolved", "dg", { ts: "not a date" }),
-    otherinput: judgeRow("resolved", "zz"),
-    partial: judgeRow("partial", "dg"),
-  });
+  judge = fakeJudge();
+  deps = testDeps(judge);
   checkSha = deps.sha256(path.join(repo, "check.sh"));
   fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF);
 });
@@ -262,33 +256,70 @@ describe("record-run", () => {
   });
 });
 
-describe("record-judge", () => {
-  const passed = (judgeInputDigest: string | null = "dg") => candidate({ judgeInputDigest, run: { evidence: "e", passed: true, commit: head, recordedAt: "2026-09-29T00:00:00Z" } });
+describe("judge", () => {
+  const passed = () => candidate({ run: { evidence: "e", passed: true, commit: head, recordedAt: "2026-09-29T00:00:00Z" } });
+  const evaluate = () => saveState(dir, baseState({ phase: "evaluate", candidates: [passed()] }));
 
-  it("needs exactly one of --decision-id / --escalated", () => {
-    expect(run("record-judge", "c1")).toMatchObject({ exitCode: 1 });
-    expect(run("record-judge", "c1", "--decision-id", "a", "--escalated", "b")).toMatchObject({ exitCode: 1 });
-  });
-
-  it("refuses a decision about a different input, or before judge-input ran", () => {
-    saveState(dir, baseState({ phase: "evaluate", candidates: [passed()] }));
-    refused(run("record-judge", "c1", "--decision-id", "otherinput"), "judged a different input");
-    saveState(dir, baseState({ phase: "evaluate", candidates: [passed(null)] }));
-    refused(run("record-judge", "c1", "--decision-id", "partial"), "run bugfix-state judge-input c1 first");
-  });
-
-  it("refuses the wrong phase, unknown, foreign, undone, stale, unparseable-time, outcome-less and reused decisions", () => {
+  it("refuses the wrong phase, an unknown candidate or missing id, and a candidate without a passing run", () => {
     saveState(dir, baseState({ phase: "fix", candidates: [passed()] }));
-    refused(run("record-judge", "c1", "--decision-id", "partial"), "phase is fix");
-    saveState(dir, baseState({ phase: "evaluate", candidates: [passed(), candidate({ id: "c2", commit: "other", judge: { decisionId: "partial", decision: "partial", reasonCode: "m" } })] }));
-    expect(run("record-judge", "c9", "--decision-id", "partial")).toMatchObject({ exitCode: 1 });
-    refused(run("record-judge", "c1", "--decision-id", "partial"), "already recorded for c2");
-    refused(run("record-judge", "c1", "--decision-id", "nope"), "has no decision nope");
-    refused(run("record-judge", "c1", "--decision-id", "wrongq"), "is for brief-scope");
-    refused(run("record-judge", "c1", "--decision-id", "undone"), "was undone");
-    refused(run("record-judge", "c1", "--decision-id", "stale"), "does not postdate c1's run");
-    refused(run("record-judge", "c1", "--decision-id", "badts"), "does not postdate c1's run");
-    refused(run("record-judge", "c1", "--decision-id", "nodecision"), "no usable outcome (null)");
+    refused(run("judge", "c1"), "phase is fix");
+    evaluate();
+    expect(run("judge", "c9")).toMatchObject({ exitCode: 1 });
+    expect(run("judge")).toMatchObject({ exitCode: 1 });
+    saveState(dir, baseState({ phase: "evaluate", candidates: [candidate({ run: { evidence: "e", passed: false, commit: head, recordedAt: "t" } })] }));
+    refused(run("judge", "c1"), "no passing run");
+    expect(judge.calls).toHaveLength(0);
+  });
+
+  it("records nothing when judge fails or prints no id, so asking again is not a re-roll", () => {
+    evaluate();
+    const before = fs.readFileSync(path.join(dir, "state.json"), "utf8");
+    judge.verdicts.push("fail");
+    refused(run("judge", "c1"), "judge failed (exit 1): input is not valid JSON — no verdict recorded");
+    deps = { ...deps, judgeRun: () => ({ status: 7, stdout: "only stdout", stderr: "" }) };
+    refused(run("judge", "c1"), "judge failed (exit 7): only stdout");
+    deps = { ...deps, judgeRun: () => ({ status: 0, stdout: "not json", stderr: "" }) };
+    refused(run("judge", "c1"), "judge printed no decision id");
+    expect(fs.readFileSync(path.join(dir, "state.json"), "utf8")).toBe(before);
+  });
+
+  it("refuses a decision judge doesn't know, one about another input, or one without an outcome", () => {
+    evaluate();
+    deps = { ...deps, judgeRun: () => ({ status: 0, stdout: JSON.stringify({ id: "ghost" }), stderr: "" }) };
+    refused(run("judge", "c1"), "judge has no decision ghost");
+    judge.rows.other = judgeRow("resolved", "0000000000000000");
+    deps = { ...deps, judgeRun: () => ({ status: 0, stdout: JSON.stringify({ id: "other" }), stderr: "" }) };
+    refused(run("judge", "c1"), "not a resolution-check decision on the input the helper built");
+    judge.rows.scope = judgeRow("ready", "0000000000000000", { question: "brief-scope" });
+    deps = { ...deps, judgeRun: () => ({ status: 0, stdout: JSON.stringify({ id: "scope" }), stderr: "" }) };
+    refused(run("judge", "c1"), "not a resolution-check decision");
+    // A row on the right input but with no decision.
+    const real = testDeps(judge);
+    deps = { ...deps, judgeRun: (input) => {
+      const res = real.judgeRun(input);
+      const id = (JSON.parse(res.stdout) as { id: string }).id;
+      judge.rows[id] = { ...judge.rows[id], decision: null };
+      return res;
+    } };
+    refused(run("judge", "c1"), "has no usable outcome (null)");
+  });
+
+  it("records an escalation as needs-human, defaulting the reason when judge gives none", () => {
+    evaluate();
+    deps = { ...deps, judgeRun: () => ({ status: 2, stdout: "{}", stderr: "" }) };
+    expect(JSON.parse(run("judge", "c1").stdout)).toMatchObject({ decision: "escalated", reasonCode: "escalated", status: "needs-human" });
+    expect((loadState(dir) as State).status).toBe("needs-human");
+  });
+
+  it("returns the judge's reasons, or none when it gives none", () => {
+    evaluate();
+    deps = { ...deps, judgeRun: (input) => {
+      const res = testDeps(judge).judgeRun(input);
+      const out = JSON.parse(res.stdout) as Record<string, unknown>;
+      delete out.extra;
+      return { ...res, stdout: JSON.stringify(out) };
+    } };
+    expect(JSON.parse(run("judge", "c1").stdout)).toMatchObject({ decision: "resolved", reasons: [] });
   });
 });
 

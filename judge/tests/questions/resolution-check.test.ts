@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
-import { openDb } from "../../src/db.js";
+import { getDecision, openDb } from "../../src/db.js";
 import { DEFAULT_CONFIG } from "../../src/config.js";
 import { evaluate } from "../../src/evaluate.js";
 import { BRIEF_CAP, FIELD_CAP, ResolutionCheckInputSchema, resolutionCheck, type ResolutionCheckInput } from "../../src/questions/resolution-check.js";
@@ -91,6 +93,15 @@ describe("resolutionCheck", () => {
   it("keeps the key order bugfix-state judge-input relies on", () => {
     expect(Object.keys(ResolutionCheckInputSchema.shape)).toEqual(["brief", "expected", "actual", "rootCause", "checkKind", "checkSummary", "beforePassed", "afterPassed", "diffStat"]);
     expect(JSON.stringify(ResolutionCheckInputSchema.parse(base))).toBe(JSON.stringify(base));
+  });
+
+  it("stores input_digest = first 16 hex of sha256(JSON.stringify(input)) — the value bugfix-state predicts", async () => {
+    const db = openDb(":memory:");
+    const cli = fakeProvider("claude-cli", ["brief"], { status: "decided", decision: "resolved", confidence: 0.9, reason_code: "model" });
+    const result = await evaluate(resolutionCheck, base, { db, config: DEFAULT_CONFIG, providers: [cli] });
+    if (!("id" in result)) throw new Error("expected a decision");
+    const expected = createHash("sha256").update(JSON.stringify(base)).digest("hex").slice(0, 16);
+    expect(getDecision(db, result.id)?.input_digest).toBe(expected);
   });
 
   it("caps the other free-text fields", () => {
