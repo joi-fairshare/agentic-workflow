@@ -4,7 +4,7 @@
 
 Agentic Workflow (repo: `agentic-workflow`) is a portable, provider-agnostic workflow toolkit for AI coding agents. It supports **Claude Code**, **Codex**, and **Cursor** as equal hosts. The canonical core has these parts:
 
-- 44 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
+- 45 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
 - a documentation bootstrapper skill
 - canonical safety hooks
 - a TypeScript MCP bridge server for inter-agent coordination
@@ -144,7 +144,7 @@ agentic-workflow/
 ├── .agents/rules/                       # Glob-scoped rules, the only copy (linked by scripts/sync-rules.sh)
 ├── providers/                           # Per-provider adapters
 │   └── <claude|codex|cursor>/           #   install.sh (skills, MCP, config) + install-hooks.sh
-├── skills/                              # Native skills (44), shared by all providers
+├── skills/                              # Native skills (45), shared by all providers
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -163,6 +163,7 @@ agentic-workflow/
 │   │   └── SKILL.md                     #   3 tiers, atomic commits, regression tests
 │   ├── bugReport/                       # /bugReport — read-only health audit
 │   │   └── SKILL.md                     #   health scores, bug classification, no fixes
+│   ├── testAudit/                       # /testAudit — test authoring gate + low-value test pruning
 │   ├── shipRelease/                     # /shipRelease — sync, test, push, PR
 │   │   └── SKILL.md                     #   pre-flight → sync → test → push → PR → syncDocs
 │   ├── syncDocs/                        # /syncDocs — post-ship doc updater
@@ -294,7 +295,7 @@ agentic-workflow/
 ├── design/           # /design-mockup, /design-verify baselines and diffs
 ├── reviews/          # /review, /postReview, /addressReview state files
 ├── investigations/   # /rootCause investigation reports
-├── qa/               # /bugHunt and /bugReport reports
+├── qa/               # /bugHunt and /bugReport reports; /testAudit ledgers in qa/test-audit/
 ├── plans/            # /officeHours, /productReview, /archReview design docs
 ├── releases/         # /shipRelease and /syncDocs reports
 └── retros/           # /weeklyRetro retrospectives
