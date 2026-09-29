@@ -12,6 +12,7 @@ import {
 import type { QuestionModule } from "./question.js";
 import { askCheck } from "./questions/ask-check.js";
 import { briefScope } from "./questions/brief-scope.js";
+import { resolutionCheck } from "./questions/resolution-check.js";
 import { ruleCheck } from "./questions/rule-check.js";
 import { wakeGate } from "./questions/wake-gate.js";
 import { uiElementRepair } from "./questions/ui-element-repair.js";
@@ -25,6 +26,7 @@ export const QUESTIONS: Record<string, QuestionModule<any, any>> = {
   "brief-scope": briefScope,
   "rule-check": ruleCheck,
   "ask-check": askCheck,
+  "resolution-check": resolutionCheck,
 };
 
 export interface RunDeps extends Omit<EvaluateDeps, "config"> {
