@@ -121,10 +121,12 @@ describe("record-candidate gates", { timeout: 30_000 }, () => {
     fs.mkdirSync(path.join(repo, "src", "__fixtures__"), { recursive: true });
     commitFile(repo, "src/Latest.kt", "class Latest");
     commitFile(repo, "src/ContestTest.kt", "class ContestTest");
+    commitFile(repo, "src/MyAppUITests.swift", "");
+    commitFile(repo, "src/APITest.java", "");
     commitFile(repo, "src/__fixtures__/a.json", "{}");
     commitFile(repo, "tsconfig.test.json", "{}");
     const res = run("record-candidate", "--branch", "main", "--cwd", repo);
-    expect(res.stderr).toContain("(src/ContestTest.kt, src/__fixtures__/a.json, tsconfig.test.json)");
+    expect(res.stderr).toContain("(src/APITest.java, src/ContestTest.kt, src/MyAppUITests.swift, src/__fixtures__/a.json, tsconfig.test.json)");
     expect(res.stderr).not.toContain("Latest.kt,");
   });
 

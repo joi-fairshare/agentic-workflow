@@ -92,6 +92,8 @@ implementer subagents to fix, and decides "resolved" only when:
   user; never fix an unconfirmed cause.
 
 ### 3. REPRODUCE
+- Preflight: the working tree must be clean (every helper step refuses a dirty tree, and the user's
+  unrelated work must not land in the baseline); otherwise ask the user to commit or stash first.
 - **UI bug** (rootCause produced navigate/click/fill repro steps against the web app): dispatch the
   `qa-runner` agent to write a `ui-evidence` script from the repro steps, with each `expectedState`
   taken from the ticket's **expected** behaviour. Commit it, then run it on the unfixed code with
@@ -163,7 +165,8 @@ diff and records why. The losing worktree is removed and its branch kept until t
   decision ID, attempts, and the modes used.
 - Offer to post it to Linear as a comment (ask-first). Artifact upload follows `ui-evidence`'s
   existing rules (approved uploader, `seeded` DB provenance only).
-- The branch is left ready for `/shipRelease`. No PR is opened automatically.
+- The winning worktree is removed (its branch stays) so `/shipRelease` can check the branch out, and
+  the branch is left ready for it. No PR is opened automatically.
 - On 3 failed attempts: `status: unresolved`; every candidate and all evidence are kept, and the
   report is still offered.
 
@@ -208,7 +211,7 @@ Exit codes: `0` allowed, `3` refused (reason on stderr), `1` bad usage or invali
 | `run-test --check <file> [--cwd <dir>] -- <cmd…>` | The command passes the check file as its own argument and is not an inline-code wrapper (`sh -c`, `node -e`, …) or a non-runner (`grep`, `cat`, `test`, …); `--cwd` has no uncommitted or untracked changes; the check is committed and unmodified inside the repo. Runs the command itself (30-min timeout), writes `runs/<ts>-test-result.json` (argv, observed exit code, `HEAD`, check sha256, log) and registers its hash in `state.runs` |
 | `run-ui --check <script.json> [--cwd <dir>]` | Same tree and check rules as `run-test`; runs the ui-evidence CLI itself (`--app-build` = `HEAD`) and registers the resulting `summary.json` |
 | `advance reproduce --evidence <run> --check <file> [--cwd <dir>]` | Phase `investigate`; evidence registered and unmodified; run **failed** (not passed, not broken-only); run commit equals `HEAD` of `--cwd`; check committed, unmodified, inside the repo; the run's recorded check hash equals the file's. Records check path, sha256, test argv, baseline commit |
-| `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out (an unreadable handoff is refused). Increments `attempt`, clears `needs-human` |
+| `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out. Increments `attempt`, clears `needs-human` |
 | `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix` or `evaluate` (mode B may evaluate one candidate before recording the second); one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has no uncommitted or untracked changes, `HEAD` builds on the baseline, changes its tree, and differs from every other candidate; the diff (`git diff --no-renames -z`, so renames show both paths) doesn't touch the check, test/fixture/mock/e2e directories, test-named files, snapshots, runner config or setup files, `package.json`, or the check's directory (case-insensitive) unless `--allow-test-changes` (only after the user approves); mode B candidates name a distinct, not-ruled-out `--hypothesis`. The commit and changed files are read from `--cwd` |
 | `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; evidence registered; same check kind; not broken; same test argv as the baseline; run commit equals the candidate's commit, which is still its `HEAD`; candidate tree clean; check file and executed check hash unchanged |
 | `judge <candidate>` | Phase `evaluate`; the candidate has a passing run and has not been judged. Builds `judge-<candidate>.json` from state (ticket text verbatim, the snapshotted root cause, a description of the frozen check, diff stat) in `ResolutionCheckInputSchema` key order, runs `judge resolution-check` itself, and records that decision after checking it via `judge why` (question and `input_digest`). Exit 2 records an escalation and sets `status: needs-human`; a judge failure records nothing. The agent never handles decision ids, so a verdict can't be re-rolled |
@@ -222,7 +225,8 @@ recorded `appBuild` is the orchestrator's job (it restarts the app from the deta
 Any unexpected error (not a git repo, unreadable file) exits 1 with a one-line message.
 
 The orchestrator must report any refusal and may not work around it. After context loss it runs
-`bugfix-state resume`.
+`bugfix-state resume`. In `fix` or `evaluate` the main checkout may still be detached from an interrupted
+evaluation; `resume`'s next action names the exact commit to detach at.
 
 ## `judge` question: `resolution-check`
 

@@ -108,8 +108,9 @@ const PROTECTED = new RegExp(
   ].join("|"),
   "i",
 );
-// FooTest.swift / BarTests.kt: case-sensitive, so Latest.kt or Contest.cs don't match.
-const JVM_STYLE_TEST = /(^|\/)[^/]*[a-z0-9]Tests?\.(swift|kt|java|cs)$/;
+// FooTest.swift / MyAppUITests.swift / APITest.java: the capital T is
+// case-sensitive, so Latest.kt or Contest.cs don't match.
+const JVM_STYLE_TEST = /(^|\/)[^/]*Tests?\.(swift|kt|java|cs)$/;
 function protectedFiles(files: readonly string[], checkPath: string): string[] {
   const checkDir = path.dirname(checkPath);
   return files.filter((f) => f === checkPath || PROTECTED.test(f) || JVM_STYLE_TEST.test(f) || (checkDir !== "." && f.startsWith(`${checkDir}/`)));
@@ -431,11 +432,15 @@ export function judgeCandidate(dir: string, candidateId: string, deps: Deps): Re
     } catch {
       // handled per exit code below
     }
+    // The judge call can take minutes: record onto the current state, and never
+    // over a verdict another call recorded meanwhile.
+    const fresh = loadState(dir) as State;
+    if ((fresh.candidates.find((c) => c.id === candidateId) as Candidate).judge !== null) return refuse(`${candidateId} was judged by another call meanwhile; that verdict stands`);
     if (r.status === 2) {
       const reasonCode = typeof out.reason_code === "string" ? out.reason_code : "escalated";
       transition(
         dir,
-        { ...updateCandidate(state, { ...candidate, judgeInputDigest, judge: { decisionId: null, decision: "escalated", reasonCode } }), status: "needs-human" },
+        { ...updateCandidate(fresh, { ...candidate, judgeInputDigest, judge: { decisionId: null, decision: "escalated", reasonCode } }), status: "needs-human" },
         deps,
         `judge ${candidateId}`,
         "evaluate",
@@ -453,7 +458,7 @@ export function judgeCandidate(dir: string, candidateId: string, deps: Deps): Re
     if (decision !== "resolved" && decision !== "partial" && decision !== "unresolved") return refuse(`decision ${out.id} has no usable outcome (${String(decision)})`);
     transition(
       dir,
-      updateCandidate(state, { ...candidate, judgeInputDigest, judge: { decisionId: out.id, decision, reasonCode: row.reason_code } }),
+      updateCandidate(fresh, { ...candidate, judgeInputDigest, judge: { decisionId: out.id, decision, reasonCode: row.reason_code } }),
       deps,
       `judge ${candidateId}`,
       "evaluate",

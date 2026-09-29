@@ -304,6 +304,18 @@ describe("judge", () => {
     refused(run("judge", "c1"), "has no usable outcome (null)");
   });
 
+  it("never records over a verdict another judge call recorded while this one ran", () => {
+    evaluate();
+    deps = { ...deps, judgeRun: (input) => {
+      const res = testDeps(judge).judgeRun(input);
+      const state = loadState(dir) as State;
+      saveState(dir, { ...state, candidates: state.candidates.map((c) => ({ ...c, judge: { decisionId: "other", decision: "partial", reasonCode: "m" } })) });
+      return res;
+    } };
+    refused(run("judge", "c1"), "was judged by another call meanwhile; that verdict stands");
+    expect((loadState(dir) as State).candidates[0].judge).toMatchObject({ decisionId: "other", decision: "partial" });
+  });
+
   it("records an escalation as needs-human, defaulting the reason when judge gives none", () => {
     evaluate();
     deps = { ...deps, judgeRun: () => ({ status: 2, stdout: "{}", stderr: "" }) };

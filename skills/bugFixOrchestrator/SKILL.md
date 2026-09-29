@@ -212,7 +212,10 @@ Outcome:
 3. **Ask the user** before posting anything: offer to post `resolution.md` to the Linear issue with
    `mcp: linear/save_comment`. Screenshots and traces follow `ui-evidence`'s publish rules (approved
    uploader and `seeded` DB provenance only; otherwise local paths).
-4. Do not open a PR. Leave the winning branch ready and suggest `/shipRelease`.
+4. Remove the winning candidate's worktree (`git worktree remove <path>`; the branch and commit
+   stay) — git won't check out a branch that another worktree holds, so `/shipRelease` could not use
+   it. Then `git -C "$REPO" checkout bugfix/<ticket-slug>`.
+5. Do not open a PR. Leave the winning branch ready and suggest `/shipRelease`.
 
 Report to the user:
 
