@@ -2,7 +2,7 @@
 name: bugFixOrchestrator
 description: Drive a bug ticket (Linear ID/URL or pasted text) to a proven resolution — investigate with /rootCause, have implementer subagents fix it, and call it resolved only when the same check that failed before the fix passes after it AND judge resolution-check agrees the reported problem is solved.
 argument-hint: "<linear-issue-id-or-url | pasted ticket text>"
-allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(jq *), Bash(judge *), Bash(bash *), Bash(source *), Bash(locked *), Bash(SHARED_DIR=*), Bash(TK=*), Bash(BFS_JS=*), Bash(REPO=*), Bash(STATE=*), Bash(echo *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
+allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(bash *), Bash(source *), Bash(locked *), Bash(SHARED_DIR=*), Bash(TK=*), Bash(BFS_JS=*), Bash(REPO=*), Bash(STATE=*), Bash(echo *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
 ---
 
 <!-- preamble -->
@@ -19,8 +19,8 @@ decide. "Tests pass" is never enough — a ticket is resolved only when:
 Every phase change goes through the `bugfix-state` helper, which owns the state file and **refuses**
 (exit 3) any step the rules don't allow. On a refusal, report the reason to the user and follow it —
 never work around the helper, edit `state.json`, or write or edit evidence files (`summary.json`,
-test results, judge input) yourself. Evidence comes only from `bugfix-state run-ui` and `run-test`,
-and the judge input only from `bugfix-state judge-input` — the helper refuses anything else.
+test results) yourself. Evidence comes only from `bugfix-state run-ui` and `run-test`, and the judge
+is asked only through `bugfix-state judge` — never run `judge resolution-check` yourself.
 
 Design: `$HOME/.agentic-workflow/toolkit/docs/superpowers/specs/2026-09-29-bug-fix-orchestrator-design.md`.
 
@@ -45,9 +45,9 @@ Call the helper as `node "$BFS_JS" <command> --state "$STATE" …`. If `dist/bin
 
 **Resume first:** if `$STATE/state.json` exists, run `node "$BFS_JS" resume --state "$STATE"` and
 continue from the `next` action it prints. Its answer overrides your memory of where you were. If the
-phase is `evaluate`, the main checkout may still be detached at a candidate from an interrupted
-evaluation: check `git -C "$REPO" status -sb`, and re-detach at the candidate `next` names (or
-`git -C "$REPO" checkout bugfix/<ticket-slug>`) before running anything.
+phase is `fix` or `evaluate` and candidates are recorded, the main checkout may still be detached from
+an interrupted evaluation: check `git -C "$REPO" status -sb`, and detach at the commit `next` names
+(or `git -C "$REPO" checkout bugfix/<ticket-slug>`) before running anything.
 
 **One heavy job at a time:** every test run, `ui-evidence` run, or dependency install goes through
 `locked <command…>` — never two at once.
@@ -79,6 +79,11 @@ contain explicit `Goal:`, `Acceptance criteria:` and `Proof command:` lines.
    snapshot of the hypotheses and root cause; editing the handoff changes nothing.
 
 ## Phase 3 — Reproduce (the check must FAIL first)
+
+**Preflight:** `git -C "$REPO" status --porcelain` must be empty — every helper step refuses a dirty
+tree, and committing the user's unrelated work into the baseline would pollute every diff the judge
+sees. If it isn't empty, **Ask the user** to commit or stash first. Confirm the current branch is the
+base they want the fix built on.
 
 Create the working branch — **never commit to the base branch**: `git checkout -b bugfix/<ticket-slug>`.
 The check is committed here; that commit is the **baseline**, and every candidate starts from it.
@@ -178,20 +183,15 @@ already are. The candidate's branch stays checked out in its worktree, so detach
    - Test: the exact baseline `run-test` command, with `--cwd "$REPO"`.
 3. `node "$BFS_JS" record-run <candidate> --state "$STATE" --evidence <evidence>`
    (refused for a broken run: repair the selector and re-run — it doesn't cost an attempt).
-4. If the run **passed**, ask the judge. The helper builds the input from state (ticket text
-   verbatim, the snapshotted root cause, a description of the frozen check, the diff stat) and records
-   its digest. It builds it **once** per candidate, so the verdict it gets is the verdict you record:
-   ```bash
-   node "$BFS_JS" judge-input <candidate> --state "$STATE"   # prints {input, digest}
-   judge resolution-check < "$STATE/judge-<candidate>.json" > "$STATE/judge-<candidate>.out"; echo "exit $?"
-   ```
-   - Exit 0 → `node "$BFS_JS" record-judge <candidate> --state "$STATE" --decision-id "$(jq -r .id "$STATE/judge-<candidate>.out")"`
-     (refused if the decision is about any other input).
-   - Exit 2 (escalated; the output has `reason_code` and no `id`) →
-     `node "$BFS_JS" record-judge <candidate> --state "$STATE" --escalated "$(jq -r .reason_code "$STATE/judge-<candidate>.out")"`,
-     then **Ask the user**: start another attempt (add any context they give to the implementer brief),
-     or stop as unresolved. The helper never records "resolved" without a `resolved` judge decision.
-   - Exit 1 → report the error; the input file is the helper's, never edit it.
+4. If the run **passed**: `node "$BFS_JS" judge <candidate> --state "$STATE"`. The helper builds the
+   input from state (ticket text verbatim, the snapshotted root cause, a description of the frozen
+   check, the diff stat), runs `judge resolution-check` itself, and records that decision — once per
+   candidate, so the verdict it gets is the verdict that counts.
+   - `decision` `resolved` / `partial` / `unresolved`, with the judge's `reasons` → use them below.
+   - `status: needs-human` (judge escalated) → **Ask the user**: start another attempt (add any
+     context they give to the implementer brief), or stop as unresolved. The helper never records
+     "resolved" without a `resolved` judge decision.
+   - Refused "judge failed" → nothing was recorded; fix the judge problem (`judge health`) and re-run.
 5. `git -C "$REPO" checkout bugfix/<ticket-slug>` before the next candidate or phase.
 
 Outcome:

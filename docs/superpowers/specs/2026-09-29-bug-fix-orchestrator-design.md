@@ -145,16 +145,13 @@ For each candidate:
    (on disk and as executed) to match the baseline, the test argv to match, the run's commit to be
    the candidate's head, and the candidate tree to be clean. A broken ui-evidence run is refused
    rather than counted as a failed attempt.
-3. If the run passed: `bugfix-state judge-input <candidate>` builds the judge input once, from
-   state, then `judge resolution-check` on that file, then
-   `bugfix-state record-judge <candidate> --decision-id <id>` (the helper fetches the decision
-   through `judge why` and requires its `input_digest` to match), or `--escalated <reason_code>` when
-   the judge escalated (exit 2, no decision id).
+3. If the run passed: `bugfix-state judge <candidate>` builds the judge input from state, runs
+   `judge resolution-check` itself, and records that decision (verified via `judge why` and its
+   `input_digest`); an escalation (exit 2) sets `status: needs-human`.
 4. Outcome:
    - check passed **and** judge `resolved` → candidate eligible.
    - judge `partial | unresolved`, or check failed → back to Phase 4 with the reasons.
-   - judge escalated (below threshold or timeout) → `record-judge --escalated` sets
-     `status: needs-human`; the user decides.
+   - judge escalated (below threshold or timeout) → `status: needs-human`; the user decides.
 
 With B, the first eligible candidate wins; if both are eligible, the orchestrator picks the smaller
 diff and records why. The losing worktree is removed and its branch kept until the ticket closes.
@@ -214,8 +211,7 @@ Exit codes: `0` allowed, `3` refused (reason on stderr), `1` bad usage or invali
 | `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out (an unreadable handoff is refused). Increments `attempt`, clears `needs-human` |
 | `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix` or `evaluate` (mode B may evaluate one candidate before recording the second); one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has no uncommitted or untracked changes, `HEAD` builds on the baseline, changes its tree, and differs from every other candidate; the diff (`git diff --no-renames -z`, so renames show both paths) doesn't touch the check, test/fixture/mock/e2e directories, test-named files, snapshots, runner config or setup files, `package.json`, or the check's directory (case-insensitive) unless `--allow-test-changes` (only after the user approves); mode B candidates name a distinct, not-ruled-out `--hypothesis`. The commit and changed files are read from `--cwd` |
 | `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; evidence registered; same check kind; not broken; same test argv as the baseline; run commit equals the candidate's commit, which is still its `HEAD`; candidate tree clean; check file and executed check hash unchanged |
-| `judge-input <candidate>` | Phase `evaluate`; the candidate has a passing run; only once per candidate. Writes `judge-<candidate>.json` from state (ticket text verbatim, the snapshotted root cause, a description of the frozen check, diff stat) in `ResolutionCheckInputSchema` key order, and records the 16-hex sha256 digest judge stores for it |
-| `record-judge <candidate> (--decision-id <id> \| --escalated <reason_code>)` | Phase `evaluate`; the candidate has a passing run and no judge decision; the decision is not used by another candidate, exists (`judge why`, zod-validated), is for `resolution-check`, is not undone, postdates the run (an unparseable time is refused), was made on exactly the `judge-input` input (`input_digest`), and has an outcome. `--escalated` sets `status: needs-human` |
+| `judge <candidate>` | Phase `evaluate`; the candidate has a passing run and has not been judged. Builds `judge-<candidate>.json` from state (ticket text verbatim, the snapshotted root cause, a description of the frozen check, diff stat) in `ResolutionCheckInputSchema` key order, runs `judge resolution-check` itself, and records that decision after checking it via `judge why` (question and `input_digest`). Exit 2 records an escalation and sets `status: needs-human`; a judge failure records nothing. The agent never handles decision ids, so a verdict can't be re-rolled |
 | `advance report (--candidate <id> \| --unresolved)` | Not already reported; `--candidate` needs a passing run and a `resolved` judge decision |
 | `status` / `resume` | — (print the state / the current phase and the next action) |
 
