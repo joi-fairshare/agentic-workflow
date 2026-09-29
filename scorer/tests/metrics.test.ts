@@ -81,16 +81,17 @@ describe("computeMetrics", () => {
 
   it("counts ui-evidence runs, broken steps, and unchecked-visual runs within the window, ignoring ones outside it", () => {
     const m = computeMetrics(db, SINCE, UNTIL, [], [
-      { ts: "2026-09-26T05:00:00.000Z", brokenSteps: 1, visual: "unchecked" },
-      { ts: "2026-09-26T06:00:00.000Z", brokenSteps: 2, visual: "looks-right" },
-      { ts: "2026-09-25T05:00:00.000Z", brokenSteps: 9, visual: "unchecked" }, // before SINCE
+      { ts: "2026-09-26T05:00:00.000Z", brokenSteps: 1, visual: "unchecked", pr: null, route: null, invocations: [] },
+      { ts: "2026-09-26T06:00:00.000Z", brokenSteps: 2, visual: "looks-right", pr: null, route: null, invocations: [] },
+      { ts: "2026-09-25T05:00:00.000Z", brokenSteps: 9, visual: "unchecked", pr: null, route: null, invocations: [] }, // before SINCE
     ]);
-    expect(m.cost.uiEvidence).toEqual({ runs: 2, brokenSteps: 3, visualUnchecked: 1 });
+    expect(m.cost.uiEvidence).toMatchObject({ runs: 2, brokenSteps: 3, visualUnchecked: 1, visualUnchanged: 0 });
   });
 
   it("defaults ui-evidence to zeros when no runs are passed", () => {
     const m = computeMetrics(db, SINCE, UNTIL);
-    expect(m.cost.uiEvidence).toEqual({ runs: 0, brokenSteps: 0, visualUnchecked: 0 });
+    expect(m.cost.uiEvidence).toMatchObject({ runs: 0, brokenSteps: 0, visualUnchecked: 0, visualUnchanged: 0 });
+    expect(m.cost.uiEvidence.cost.byPrRoute).toEqual([]);
   });
 
   it("computes context shares and the startup prefix share", () => {

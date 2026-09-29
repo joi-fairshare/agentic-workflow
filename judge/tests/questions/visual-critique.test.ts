@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { openDb } from "../../src/db.js";
 import { DEFAULT_CONFIG } from "../../src/config.js";
+import { buildChain } from "../../src/chain.js";
 import { evaluate } from "../../src/evaluate.js";
+import { makeJevProvider } from "../../src/providers/jev.js";
 import { visualCritique } from "../../src/questions/visual-critique.js";
 import { fakeProvider } from "../helpers.js";
 
@@ -43,5 +45,33 @@ describe("visualCritique — provider-neutral contract", () => {
     expect(visualCritique.extraProperties).toEqual({ reasons: { type: "array", items: { type: "string" } } });
     const prompt = visualCritique.prompt({ afterScreenshot: "after.png", baselineScreenshot: null, evidenceDir: "/tmp/run1" });
     expect(prompt).not.toContain("Read tool");
+  });
+
+  it("never sends an image-class question (or anything derived from it) to Jev, even with Jev enabled and first in the text chain", async () => {
+    const db = openDb(":memory:");
+    const fetch = vi.fn();
+    const jev = makeJevProvider({ fetch, apiKey: async () => "key" });
+    const cli = fakeProvider("claude-cli", ["image"], { status: "decided", decision: "looks-off", confidence: 0.9, reason_code: "model" });
+    const result = await evaluate(
+      visualCritique,
+      { afterScreenshot: "after.png", baselineScreenshot: "main.png", evidenceDir: "/tmp/run1" },
+      { db, config: DEFAULT_CONFIG, providers: [jev, cli], chain: buildChain({ agentClis: ["claude-cli"], jev: true }) },
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(jev.classes.has("image")).toBe(false);
+    expect(result).toMatchObject({ decision: "looks-off" });
+  });
+
+  it("escalates (fail closed) instead of falling back to Jev when no image-capable provider is available", async () => {
+    const db = openDb(":memory:");
+    const fetch = vi.fn();
+    const jev = makeJevProvider({ fetch, apiKey: async () => "key" });
+    const result = await evaluate(
+      visualCritique,
+      { afterScreenshot: "after.png", baselineScreenshot: null, evidenceDir: "/tmp/run1" },
+      { db, config: DEFAULT_CONFIG, providers: [jev], chain: buildChain({ agentClis: [], jev: true }) },
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty("decision");
   });
 });

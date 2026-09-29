@@ -73,4 +73,33 @@ describe("readUiEvidenceRuns", () => {
     expect(run.brokenSteps).toBe(1);
     expect(run.visual).toBe("unchecked");
   });
+
+  it("reads pr, route and invocations (usage left unknown as null) from a new-format summary", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ui-evidence-"));
+    mkRunDir(base, "r3", {
+      ts: "2026-09-27T02:00:00.000Z",
+      steps: [],
+      visual: "unchanged",
+      visualReasons: [],
+      lintFindings: [],
+      pr: "42",
+      route: "/schedule",
+      invocations: [
+        { phase: "planning", ok: true, elapsedMs: 1200, inputTokens: null, outputTokens: null },
+        { phase: "visual-critique", ok: true, elapsedMs: 0, inputTokens: null, outputTokens: null, cacheHit: true },
+      ],
+    });
+    const [run] = readUiEvidenceRuns(base);
+    expect(run).toMatchObject({ pr: "42", route: "/schedule", visual: "unchanged" });
+    expect(run.invocations).toEqual([
+      { phase: "planning", ok: true, elapsedMs: 1200, inputTokens: null, outputTokens: null, cacheHit: false },
+      { phase: "visual-critique", ok: true, elapsedMs: 0, inputTokens: null, outputTokens: null, cacheHit: true },
+    ]);
+  });
+
+  it("defaults pr, route and invocations for an old-format summary", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ui-evidence-"));
+    mkRunDir(base, "r4", { ts: "2026-09-27T03:00:00.000Z", steps: [], visual: "looks-right", visualReasons: [], lintFindings: [] });
+    expect(readUiEvidenceRuns(base)[0]).toMatchObject({ pr: null, route: null, invocations: [] });
+  });
 });
