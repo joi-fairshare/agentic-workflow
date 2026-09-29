@@ -217,7 +217,7 @@ fi
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS. It is not
 # linked into any provider's skills dir — skills read it through the stable path
 # $HOME/.agentic-workflow/toolkit/skills/_shared (toolkit symlink created below).
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR testAudit)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR testAudit judge ui-evidence)
 
 # Stale standalone copies of impeccable skills from an older setup.sh that
 # copied (cp -r) individual skills. Canonical pbakaus/impeccable v3.1.1+ is a
@@ -611,7 +611,7 @@ echo ""
 echo "Skills installed ($((${#MANAGED_SKILLS[@]} + 1)) native = ${#MANAGED_SKILLS[@]} managed + bootstrap):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
-echo "  QA:               bugHunt, bugReport"
+echo "  QA:               bugHunt, bugReport, testAudit"
 echo "  Release:          shipRelease, landAndDeploy, canary, syncDocs"
 echo "  Retrospective:    weeklyRetro"
 echo "  Planning:         officeHours, productReview, archReview, withInterview,"
@@ -620,9 +620,9 @@ echo "  Security:         cso"
 echo "  Design:           design-analyze [web|ios], design-language, design-evolve [web|ios],"
 echo "                    design-mockup [web|ios], design-shotgun, design-implement [web|ios],"
 echo "                    design-refine, design-verify [web|ios]"
-echo "  Verification:     verify-app, verify-web, verify-ios"
+echo "  Verification:     verify-app, verify-web, verify-ios, ui-evidence"
 echo "  Memory/Status:    prismStatus"
-echo "  Utilities:        enhancePrompt, bootstrap"
+echo "  Utilities:        enhancePrompt, judge, bootstrap"
 echo ""
 echo "Providers:          $PROVIDERS"
 for _entry in "${REGISTRY_ENTRIES[@]}"; do
