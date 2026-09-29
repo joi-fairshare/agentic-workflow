@@ -520,15 +520,17 @@ fi
 echo ""
 echo "=== Installing headroom ==="
 
-# headroom-ai requires Python >= 3.10; find the best available Python
+# headroom-ai requires Python >= 3.10; pick the newest one on PATH, including
+# unversioned `python3` (e.g. a Homebrew or pyenv 3.14 install).
 HEADROOM_PYTHON=""
-for _py in python3.13 python3.12 python3.11 python3.10; do
-  if command -v "$_py" &>/dev/null; then
-    _minor=$("$_py" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
-    if [ "${_minor:-0}" -ge 10 ]; then
-      HEADROOM_PYTHON="$_py"
-      break
-    fi
+_best_minor=-1
+for _py in python3.14 python3.13 python3.12 python3.11 python3.10 python3 python; do
+  command -v "$_py" &>/dev/null || continue
+  _minor=$("$_py" -c "import sys; print(sys.version_info.minor if sys.version_info.major == 3 else -1)" 2>/dev/null)
+  case "$_minor" in ''|*[!0-9-]*) continue ;; esac
+  if [ "$_minor" -ge 10 ] && [ "$_minor" -gt "$_best_minor" ]; then
+    HEADROOM_PYTHON="$_py"
+    _best_minor="$_minor"
   fi
 done
 
