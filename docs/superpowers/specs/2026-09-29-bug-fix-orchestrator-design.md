@@ -172,7 +172,7 @@ diff and records why. The losing worktree is removed and its branch kept until t
   "check": { "kind": "ui-evidence|test", "path": "<script.json|test file>", "sha256": "..." },
   "baseline": { "evidence": "<path>", "failed": true, "commit": "<sha>" },
   "candidates": [
-    { "id": "c1", "attempt": 1, "mode": "A|B|C", "branch": "...", "worktree": null,
+    { "id": "c1", "attempt": 1, "mode": "A|B|C", "branch": "...", "cwd": "<worktree or repo>",
       "commit": "<sha>", "run": { "evidence": "...", "passed": true },
       "judge": { "decisionId": "...", "decision": "resolved|partial|unresolved|escalated" } }
   ],
