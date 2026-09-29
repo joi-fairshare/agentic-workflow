@@ -45,7 +45,7 @@ const judgeCalls = (): string[] => (fs.existsSync(calls) ? fs.readFileSync(calls
 describe("runScript", () => {
   it("run 1 (no baseline): critiques once, records every invocation, writes summary + evidence", async () => {
     const dir = path.join(tmp, "run1");
-    const s = await runScript(script, dir, undefined, { host: fixture.host, appBuild: "b1" });
+    const s = await runScript(script, dir, undefined, { host: fixture.host, appBuild: "b1", scriptSha256: "h1" });
     expect(s.steps.map((x) => x.status)).toEqual(["passed", "passed"]);
     expect(s.visual).toBe("looks-right");
     expect(judgeCalls()).toEqual(["visual-critique"]);
@@ -56,6 +56,7 @@ describe("runScript", () => {
     expect(fs.existsSync(path.join(dir, "summary.json"))).toBe(true);
     // bugfix-state ties a run to a commit through this field.
     expect(JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")).appBuild).toBe("b1");
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")).scriptSha256).toBe("h1");
   }, 60_000);
 
   it("run 2 (identical baseline): visual is 'unchanged' with no further image-model call", async () => {

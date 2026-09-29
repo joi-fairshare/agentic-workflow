@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { main, realDeps, type CliDeps } from "../src/cli.js";
@@ -17,7 +19,7 @@ describe("cli main", () => {
     const run = vi.fn().mockResolvedValue(summary("passed"));
     const { d, out } = deps({ run });
     expect(await main(["s.json", "/runs/r1", "--baseline", "b.png", "--app-build", "abc", "--fixtures", "seed1", "--cache", "m.json"], d)).toBe(0);
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ route: "/" }), "/runs/r1", "b.png", { appBuild: "abc", fixtures: "seed1", cacheManifest: "m.json" });
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ route: "/" }), "/runs/r1", "b.png", { appBuild: "abc", fixtures: "seed1", cacheManifest: "m.json", scriptSha256: createHash("sha256").update(scriptJson).digest("hex") });
     expect(JSON.parse(out[0]!).visual).toBe("unchanged");
   });
 
