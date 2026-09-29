@@ -217,7 +217,7 @@ fi
 # Note: skills/_shared/ is intentionally excluded from MANAGED_SKILLS. It is not
 # linked into any provider's skills dir — skills read it through the stable path
 # $HOME/.agentic-workflow/toolkit/skills/_shared (toolkit symlink created below).
-MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR testAudit judge ui-evidence)
+MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR testAudit judge ui-evidence bugFixOrchestrator)
 
 # Stale standalone copies of impeccable skills from an older setup.sh that
 # copied (cp -r) individual skills. Canonical pbakaus/impeccable v3.1.1+ is a
@@ -264,6 +264,11 @@ else
   "$SCRIPT_DIR/scripts/install-scorer.sh"
   bash "$SCRIPT_DIR/scripts/install-judge.sh" --build-only
 fi
+
+# --- Skill packages (TypeScript helpers run by SKILL.md) ---
+echo ""
+echo "Building skill packages..."
+aw_build_skill_packages "$SCRIPT_DIR"
 
 # --- Serena MCP (Docker image + wrapper) ---
 echo ""
@@ -611,6 +616,7 @@ echo ""
 echo "Skills installed ($((${#MANAGED_SKILLS[@]} + 1)) native = ${#MANAGED_SKILLS[@]} managed + bootstrap):"
 echo "  Review pipeline:  review, postReview, addressReview"
 echo "  Investigation:    rootCause"
+echo "  Bug fixing:       bugFixOrchestrator"
 echo "  QA:               bugHunt, bugReport, testAudit"
 echo "  Release:          shipRelease, landAndDeploy, canary, syncDocs"
 echo "  Retrospective:    weeklyRetro"

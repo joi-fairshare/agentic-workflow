@@ -234,6 +234,33 @@ aw_install_skills_into() {
 
 # $HOME/.agentic-workflow/toolkit -> repo root. Skills resolve shared fragments
 # via $HOME/.agentic-workflow/toolkit/skills/_shared regardless of provider.
+# Skills that ship a TypeScript helper need dist/ built before their SKILL.md
+# can run it (skills/<name>/dist/bin.js). Override in tests.
+AW_SKILL_PACKAGES=(${AW_SKILL_PACKAGES[@]+"${AW_SKILL_PACKAGES[@]}"})
+[ ${#AW_SKILL_PACKAGES[@]} -gt 0 ] || AW_SKILL_PACKAGES=(ui-evidence bugFixOrchestrator)
+
+# Build every skill package: aw_build_skill_packages <toolkit-root>
+# A failed build warns and continues — the rest of setup must not abort.
+aw_build_skill_packages() {
+  local root="$1" name dir
+  for name in "${AW_SKILL_PACKAGES[@]}"; do
+    dir="$root/skills/$name"
+    if [ ! -f "$dir/package.json" ]; then
+      echo "  $name: no package.json, skipping"
+      continue
+    fi
+    if aw_dry; then
+      echo "  [dry-run] would run: npm ci && npm run build (in $dir)"
+      continue
+    fi
+    if (cd "$dir" && npm ci --no-audit --no-fund >/dev/null && npm run build >/dev/null); then
+      echo "  $name: built"
+    else
+      echo "  WARN: $name build failed — run: (cd $dir && npm ci && npm run build)"
+    fi
+  done
+}
+
 aw_link_toolkit() {
   local link="$AW_STATE_ROOT/toolkit"
   aw_run mkdir -p "$AW_STATE_ROOT"
