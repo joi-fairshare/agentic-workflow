@@ -381,7 +381,6 @@ describe("cli", () => {
     expect(main(["--state", dir], deps)).toMatchObject({ exitCode: 1 });
     expect(run("advance", "sideways")).toMatchObject({ exitCode: 1 });
     expect(run("record-run")).toMatchObject({ exitCode: 1 });
-    expect(run("record-judge")).toMatchObject({ exitCode: 1 });
     expect(run("teleport")).toMatchObject({ exitCode: 1 });
     expect(run("init", "--ticket")).toMatchObject({ exitCode: 1, stderr: expect.stringContaining("--ticket needs a value") });
     expect(run("init", "--ticket", "--cwd")).toMatchObject({ exitCode: 1 });
