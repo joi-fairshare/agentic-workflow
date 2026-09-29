@@ -36,6 +36,12 @@ const CandidateSchema = z.object({
   branch: z.string(),
   cwd: z.string(),
   commit: z.string(),
+  /** Handoff hypothesis number this candidate pursues (required in mode B). */
+  hypothesis: z.number().int().nullable(),
+  /** Files changed since the baseline, as recorded at record-candidate. */
+  changedFiles: z.array(z.string()),
+  /** input_digest judge must report for this candidate's decision (set by judge-input). */
+  judgeInputDigest: z.string().nullable(),
   run: RunSchema.nullable(),
   judge: JudgeSchema.nullable(),
 });
@@ -60,7 +66,7 @@ export const StateSchema = z.object({
     .nullable(),
   baseline: z.object({ evidence: z.string(), commit: z.string() }).nullable(),
   candidates: z.array(CandidateSchema),
-  // Every result run-test wrote (path + sha256): test evidence only counts when registered here.
+  // Every result run-test / run-ui wrote (path + sha256): evidence only counts when registered here.
   runs: z.array(z.object({ evidence: z.string(), sha256: z.string() })),
   resolvedBy: z.string().nullable(),
   history: z.array(

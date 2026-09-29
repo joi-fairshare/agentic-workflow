@@ -8,7 +8,7 @@ import { nextAction } from "../src/commands.js";
 import type { Deps } from "../src/deps.js";
 import type { Candidate, State } from "../src/schema.js";
 import { loadState, runsDir, saveState } from "../src/store.js";
-import { HANDOFF, TICKET, commitFile, git, makeRepo, testDeps, tmpDir, writeJson } from "./helpers.js";
+import { HANDOFF, TICKET, commitFile, git, judgeRow, makeRepo, testDeps, tmpDir, writeJson } from "./helpers.js";
 
 let repo: string;
 let dir: string;
@@ -42,10 +42,14 @@ function baseState(overrides: Partial<State> = {}): State {
   };
 }
 
-const candidate = (overrides: Partial<Candidate> = {}): Candidate => ({ id: "c1", attempt: 1, mode: "A", branch: "main", cwd: repo, commit: head, run: null, judge: null, ...overrides });
+const candidate = (overrides: Partial<Candidate> = {}): Candidate => ({ id: "c1", attempt: 1, mode: "A", branch: "main", cwd: repo, commit: head, hypothesis: null, changedFiles: [], judgeInputDigest: null, run: null, judge: null, ...overrides });
 
+/** A ui-evidence summary registered in the current state's run registry, as run-ui would leave it. */
 function uiSummary(appBuild: string | null | undefined, status = "failed", scriptSha256: string | null = checkSha): string {
-  return writeJson(scratch, `ui-${String(appBuild)}-${status}-${String(scriptSha256)}.json`, { steps: [{ status }], scriptSha256, ...(appBuild === undefined ? {} : { appBuild }) });
+  const file = writeJson(scratch, `ui-${String(appBuild)}-${status}-${String(scriptSha256)}.json`, { steps: [{ status }], scriptSha256, ...(appBuild === undefined ? {} : { appBuild }) });
+  const state = loadState(dir) as State;
+  saveState(dir, { ...state, runs: [...state.runs, { evidence: file, sha256: deps.sha256(file) }] });
+  return file;
 }
 
 /** A test result registered in the current state's run registry, as run-test would leave it. */
@@ -63,11 +67,13 @@ beforeEach(() => {
   scratch = tmpDir();
   dir = path.join(tmpDir(), "state");
   deps = testDeps({
-    wrongq: { question: "brief-scope", decision: "ready", reason_code: "model", undone_at: null, ts: "2099-01-01T00:00:00Z" },
-    undone: { question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: "2026-09-29", ts: "2099-01-01T00:00:00Z" },
-    nodecision: { question: "resolution-check", decision: null, reason_code: "below-threshold", undone_at: null, ts: "2099-01-01T00:00:00Z" },
-    stale: { question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: null, ts: "2000-01-01T00:00:00Z" },
-    partial: { question: "resolution-check", decision: "partial", reason_code: "model", undone_at: null, ts: "2099-01-01T00:00:00Z" },
+    wrongq: judgeRow("ready", "dg", { question: "brief-scope" }),
+    undone: judgeRow("resolved", "dg", { undone_at: "2026-09-29" }),
+    nodecision: judgeRow(null, "dg"),
+    stale: judgeRow("resolved", "dg", { ts: "2000-01-01T00:00:00Z" }),
+    badts: judgeRow("resolved", "dg", { ts: "not a date" }),
+    otherinput: judgeRow("resolved", "zz"),
+    partial: judgeRow("partial", "dg"),
   });
   checkSha = deps.sha256(path.join(repo, "check.sh"));
   fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF);
@@ -144,6 +150,8 @@ describe("advance reproduce", () => {
   it("refuses an unregistered or tampered test result", () => {
     const forged = writeJson(scratch, "forged.json", { kind: "test", command: ["sh", "check.sh"], exitCode: 1, commit: head, checkSha256: checkSha, log: "l" });
     refused(reproduce(forged), "not a registered, unmodified result");
+    const unregisteredUi = writeJson(scratch, "hand-written-summary.json", { steps: [{ status: "failed" }], appBuild: head, scriptSha256: checkSha });
+    refused(reproduce(unregisteredUi), "not a registered, unmodified result");
     const real = registered({});
     fs.writeFileSync(real, fs.readFileSync(real, "utf8").replace('"exitCode":1', '"exitCode":2'));
     refused(reproduce(real), "not a registered, unmodified result");
@@ -194,7 +202,7 @@ describe("record-candidate", () => {
 
   it("refuses a commit that is already a candidate", () => {
     const fixed = commitFile(repo, "fixed.txt", "ok\n");
-    saveState(dir, baseState({ phase: "evaluate", attempt: 2, attemptMode: "B", baseline: { evidence: "b", commit: "base" }, candidates: [candidate({ commit: fixed, run: { evidence: "e", passed: false, commit: fixed, recordedAt: "t" } })] }));
+    saveState(dir, baseState({ phase: "evaluate", attempt: 2, attemptMode: "B", candidates: [candidate({ commit: fixed, run: { evidence: "e", passed: false, commit: fixed, recordedAt: "t" } })] }));
     refused(run("record-candidate", "--branch", "main", "--cwd", repo), "is already candidate c1");
   });
 });
@@ -246,14 +254,21 @@ describe("record-run", () => {
 });
 
 describe("record-judge", () => {
-  const passed = () => candidate({ run: { evidence: "e", passed: true, commit: head, recordedAt: "2026-09-29T00:00:00Z" } });
+  const passed = (judgeInputDigest: string | null = "dg") => candidate({ judgeInputDigest, run: { evidence: "e", passed: true, commit: head, recordedAt: "2026-09-29T00:00:00Z" } });
 
   it("needs exactly one of --decision-id / --escalated", () => {
     expect(run("record-judge", "c1")).toMatchObject({ exitCode: 1 });
     expect(run("record-judge", "c1", "--decision-id", "a", "--escalated", "b")).toMatchObject({ exitCode: 1 });
   });
 
-  it("refuses the wrong phase, unknown, foreign, undone, stale, outcome-less and reused decisions", () => {
+  it("refuses a decision about a different input, or before judge-input ran", () => {
+    saveState(dir, baseState({ phase: "evaluate", candidates: [passed()] }));
+    refused(run("record-judge", "c1", "--decision-id", "otherinput"), "judged a different input");
+    saveState(dir, baseState({ phase: "evaluate", candidates: [passed(null)] }));
+    refused(run("record-judge", "c1", "--decision-id", "partial"), "run bugfix-state judge-input c1 first");
+  });
+
+  it("refuses the wrong phase, unknown, foreign, undone, stale, unparseable-time, outcome-less and reused decisions", () => {
     saveState(dir, baseState({ phase: "fix", candidates: [passed()] }));
     refused(run("record-judge", "c1", "--decision-id", "partial"), "phase is fix");
     saveState(dir, baseState({ phase: "evaluate", candidates: [passed(), candidate({ id: "c2", commit: "other", judge: { decisionId: "partial", decision: "partial", reasonCode: "m" } })] }));
@@ -262,7 +277,8 @@ describe("record-judge", () => {
     refused(run("record-judge", "c1", "--decision-id", "nope"), "has no decision nope");
     refused(run("record-judge", "c1", "--decision-id", "wrongq"), "is for brief-scope");
     refused(run("record-judge", "c1", "--decision-id", "undone"), "was undone");
-    refused(run("record-judge", "c1", "--decision-id", "stale"), "predates c1's run");
+    refused(run("record-judge", "c1", "--decision-id", "stale"), "does not postdate c1's run");
+    refused(run("record-judge", "c1", "--decision-id", "badts"), "does not postdate c1's run");
     refused(run("record-judge", "c1", "--decision-id", "nodecision"), "no usable outcome (null)");
   });
 });
@@ -287,7 +303,9 @@ describe("run-test", () => {
 
   it("needs a command that references the check, a clean tree, and a committed check file", () => {
     expect(run("run-test", "--check", "check.sh", "--cwd", repo)).toMatchObject({ exitCode: 1 });
-    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "true"), "must reference the check file");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "true"), "must pass the check file (check.sh) as an argument");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "-c", "exit 0 # check.sh"), "as an argument");
+    expect(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "./check.sh").exitCode).toBe(0);
     refused(run("run-test", "--check", "missing.sh", "--cwd", repo, "--", "sh", "missing.sh"), "check file not found");
     fs.writeFileSync(path.join(repo, "check.sh"), "dirty\n");
     refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh"), "uncommitted or untracked");
@@ -345,6 +363,13 @@ describe("cli", () => {
     const res = run("record-candidate", "--branch", "main", "--cwd", tmpDir());
     expect(res.exitCode).toBe(1);
     expect(res.stderr).not.toContain("\n");
+    expect(res.stderr).toContain("not a git repository");
+  });
+
+  it("reports an Error without stderr by its first line", () => {
+    const throwing: Deps = { ...deps, git: () => { throw new Error("first\nsecond"); } };
+    saveState(dir, baseState({ phase: "fix", attempt: 1, attemptMode: "A" }));
+    expect(main(["--state", dir, "record-candidate", "--branch", "main", "--cwd", repo], throwing)).toMatchObject({ exitCode: 1, stderr: "first" });
   });
 
   it("reports a non-Error throw as a string", () => {

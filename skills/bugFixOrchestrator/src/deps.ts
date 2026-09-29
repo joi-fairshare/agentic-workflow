@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
@@ -11,6 +13,7 @@ export const JudgeDecisionRowSchema = z.object({
   reason_code: z.string(),
   undone_at: z.string().nullable(),
   ts: z.string(),
+  input_digest: z.string(),
 });
 export type JudgeDecisionRow = z.infer<typeof JudgeDecisionRowSchema>;
 
@@ -26,7 +29,12 @@ export interface Deps {
   run: (argv: string[], cwd: string, logFile: string) => number;
   /** Looks up a stored judge decision; null when judge doesn't know the id or returns something unexpected. */
   judgeWhy: (id: string) => JudgeDecisionRow | null;
+  /** The ui-evidence CLI (dist/bin.js) that run-ui executes. */
+  uiEvidenceBin: string;
 }
+
+// Installed side by side under the toolkit's skills/ directory.
+const siblingUiEvidence = (): string => path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "ui-evidence", "dist", "bin.js");
 
 // judgeBin is fixed to `judge` on PATH in bin.ts (no env override: an agent
 // could otherwise point the lookup at a script that forges decisions).
@@ -46,6 +54,7 @@ export function realDeps(judgeBin = "judge"): Deps {
         fs.closeSync(fd);
       }
     },
+    uiEvidenceBin: siblingUiEvidence(),
     judgeWhy: (id) => {
       const r = spawnSync(judgeBin, ["why", id], { encoding: "utf8" });
       if (r.status !== 0) return null;

@@ -34,6 +34,10 @@ function capped(text: string, cap: number): string {
 // delimiter early and let the rest pose as trusted fields.
 const neutralized = (text: string): string => text.replace(/<(\/?)(brief)/gi, "<$1$2-text");
 
+// The other free-text fields sit on labeled lines; collapsing their newlines
+// stops one from starting a fake "trusted" line of its own.
+const oneLine = (text: string): string => capped(text, FIELD_CAP).replace(/\s*\n\s*/g, " ");
+
 // Second opinion for /bugFixOrchestrator: the hard check (same ui-evidence
 // script or regression test, failing before and passing after) is the gate;
 // this asks whether that check plus the diff cover the problem as reported.
@@ -58,11 +62,11 @@ export const resolutionCheck: QuestionModule<ResolutionCheckInput, "resolved" | 
       "<brief>",
       capped(neutralized(input.brief), BRIEF_CAP),
       "</brief>",
-      `Expected behaviour: ${capped(input.expected, FIELD_CAP)}`,
-      `Actual behaviour before the fix: ${capped(input.actual, FIELD_CAP)}`,
-      `Confirmed root cause: ${capped(input.rootCause, FIELD_CAP)}`,
-      `A ${input.checkKind === "ui-evidence" ? "browser UI check" : "regression test"} failed before the fix and passes after it: ${capped(input.checkSummary, FIELD_CAP)}`,
-      `Diff stat of the fix: ${capped(input.diffStat, FIELD_CAP)}`,
+      `Expected behaviour: ${oneLine(input.expected)}`,
+      `Actual behaviour before the fix: ${oneLine(input.actual)}`,
+      `Confirmed root cause: ${oneLine(input.rootCause)}`,
+      `A ${input.checkKind === "ui-evidence" ? "browser UI check" : "regression test"} failed before the fix and passes after it: ${oneLine(input.checkSummary)}`,
+      `Diff stat of the fix: ${oneLine(input.diffStat)}`,
       "Does the passing check, together with this diff, resolve the problem as reported in the brief?",
       'Reply {"decision":"resolved","reasons":[]} only if every part of the brief is covered.',
       'Reply {"decision":"partial","reasons":["..."]} if any part of the brief is not covered by the check, or if the diff hides the symptom without addressing the root cause.',

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -69,15 +70,28 @@ function committedCheck(deps: Deps, cwd: string, checkPath: string): { rel: stri
 const sameArgv = (a: readonly string[] | null, b: readonly string[] | null): boolean =>
   a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]);
 
+/** Appends to the run registry, re-reading state first: the run may have taken minutes. */
+function registerRun(dir: string, evidence: string, deps: Deps): void {
+  const fresh = loadState(dir) as State;
+  saveState(dir, { ...fresh, runs: [...fresh.runs, { evidence, sha256: deps.sha256(evidence) }] });
+}
+
+// Files a fix must not touch without the user's approval: the check itself,
+// tests, fixtures, mocks, snapshots, test config, and the check's own
+// directory (unless that is the repo root).
+const PROTECTED = /(^|\/)(tests?|__tests__|spec|specs|fixtures?|mocks?|__mocks__|__snapshots__|\.ui-evidence)(\/|$)|\.(test|spec)\.[^/]+$|\.snap$|(^|\/)(vitest|jest|playwright|karma|cypress)\.config\.[^/]+$/;
+function protectedFiles(files: readonly string[], checkPath: string): string[] {
+  const checkDir = path.dirname(checkPath);
+  return files.filter((f) => f === checkPath || PROTECTED.test(f) || (checkDir !== "." && f.startsWith(`${checkDir}/`)));
+}
+
 function readRun(dir: string, state: State, evidencePath: string, deps: Deps): RunEvidence | Result {
   const ev = readRunEvidence(evidencePath);
   if ("error" in ev) return refuse(ev.error);
-  // A test result only counts when run-test wrote it and it is unmodified.
-  if (ev.kind === "test") {
-    const abs = path.resolve(evidencePath);
-    const registered = state.runs.find((r) => r.evidence === abs);
-    if (registered === undefined || registered.sha256 !== deps.sha256(abs)) return refuse(`test evidence must come from bugfix-state run-test for this bugfix (${abs} is not a registered, unmodified result)`);
-  }
+  // Evidence only counts when run-test / run-ui wrote it and it is unmodified.
+  const abs = path.resolve(evidencePath);
+  const registered = state.runs.find((r) => r.evidence === abs);
+  if (registered === undefined || registered.sha256 !== deps.sha256(abs)) return refuse(`evidence must come from bugfix-state run-test / run-ui for this bugfix (${abs} is not a registered, unmodified result)`);
   if (ev.checkSha256 === null) return refuse("the evidence records no check hash — update ui-evidence (summary.json needs scriptSha256)");
   return ev;
 }
@@ -199,7 +213,9 @@ export function startAttempt(dir: string, mode: string, deps: Deps): Result {
   });
 }
 
-export function recordCandidate(dir: string, branch: string, cwd: string, deps: Deps): Result {
+export function recordCandidate(dir: string, branch: string, cwd: string, hypothesis: string | undefined, allowTestChanges: boolean, deps: Deps): Result {
+  const hypothesisN = hypothesis === undefined ? null : Number(hypothesis);
+  if (hypothesisN !== null && !Number.isInteger(hypothesisN)) return bad(`--hypothesis must be a number (got "${hypothesis}")`);
   return withState(dir, (state) => {
     // evaluate too: in mode B the first candidate may be evaluated before the second is recorded.
     const wrongPhase = requirePhase(state, ["fix", "evaluate"]);
@@ -212,10 +228,36 @@ export function recordCandidate(dir: string, branch: string, cwd: string, deps: 
     if (actualBranch !== branch) return refuse(`${cwd} is on branch ${actualBranch}, not ${branch}`);
     if (dirty(deps, cwd)) return refuse(`${cwd} has uncommitted or untracked changes; commit the fix first`);
     const commit = deps.git(cwd, ["rev-parse", "HEAD"]);
-    if (commit === (state.baseline as { commit: string }).commit) return refuse("no commits since the baseline — nothing to evaluate");
+    const base = (state.baseline as { commit: string }).commit;
+    if (commit === base) return refuse("no commits since the baseline — nothing to evaluate");
+    try {
+      deps.git(cwd, ["merge-base", "--is-ancestor", base, commit]);
+    } catch {
+      return refuse(`${commit} does not build on the baseline ${base} — start the worktree from the baseline commit`);
+    }
+    if (deps.git(cwd, ["rev-parse", `${commit}^{tree}`]) === deps.git(cwd, ["rev-parse", `${base}^{tree}`])) return refuse("the candidate's tree is identical to the baseline's — nothing was fixed");
     const duplicate = state.candidates.find((c) => c.commit === commit);
     if (duplicate) return refuse(`commit ${commit} is already candidate ${duplicate.id}`);
-    const candidate: Candidate = { id: `c${state.candidates.length + 1}`, attempt: state.attempt, mode, branch, cwd: path.resolve(cwd), commit, run: null, judge: null };
+    if (mode === "B") {
+      if (hypothesisN === null) return refuse("mode B candidates must name their hypothesis (--hypothesis <n>)");
+      const taken = state.candidates.find((c) => c.attempt === state.attempt && c.hypothesis === hypothesisN);
+      if (taken) return refuse(`hypothesis ${hypothesisN} is already pursued by ${taken.id} in this attempt`);
+    }
+    if (hypothesisN !== null) {
+      const handoff = parseHandoff(fs.readFileSync(state.handoff as string, "utf8"));
+      const h = "error" in handoff ? undefined : handoff.hypotheses.find((x) => x.n === hypothesisN);
+      if (h === undefined) return refuse(`the handoff has no hypothesis ${hypothesisN}`);
+      if (h.result === "ruled-out") return refuse(`hypothesis ${hypothesisN} was ruled out`);
+    }
+    const changedFiles = deps.git(cwd, ["diff", "--name-only", base, commit]).split("\n").filter((f) => f !== "");
+    const touched = protectedFiles(changedFiles, (state.check as NonNullable<State["check"]>).path);
+    // Weakening what the check exercises (fixtures, helpers, config) is as
+    // bad as editing the check itself.
+    if (touched.length > 0 && !allowTestChanges) return refuse(`the fix touches test/fixture/config files (${touched.join(", ")}); ask the user, and pass --allow-test-changes only if they approve`);
+    const candidate: Candidate = {
+      id: `c${state.candidates.length + 1}`, attempt: state.attempt, mode, branch, cwd: path.resolve(cwd), commit,
+      hypothesis: hypothesisN, changedFiles, judgeInputDigest: null, run: null, judge: null,
+    };
     transition(dir, { ...state, candidates: [...state.candidates, candidate] }, deps, `record-candidate ${candidate.id}`, state.phase, null);
     return ok({ candidate: candidate.id, commit });
   });
@@ -281,7 +323,11 @@ export function recordJudge(dir: string, candidateId: string, decisionId: string
     if (row === null) return refuse(`judge has no decision ${id}`);
     if (row.question !== "resolution-check") return refuse(`decision ${id} is for ${row.question}, not resolution-check`);
     if (row.undone_at !== null) return refuse(`decision ${id} was undone`);
-    if (Date.parse(row.ts) < Date.parse(run.recordedAt)) return refuse(`decision ${id} (${row.ts}) predates ${candidateId}'s run (${run.recordedAt})`);
+    const decidedAt = Date.parse(row.ts);
+    if (Number.isNaN(decidedAt) || decidedAt < Date.parse(run.recordedAt)) return refuse(`decision ${id} (${row.ts}) does not postdate ${candidateId}'s run (${run.recordedAt})`);
+    // The decision must be about exactly the input judge-input built from state.
+    if (candidate.judgeInputDigest === null) return refuse(`run bugfix-state judge-input ${candidateId} first`);
+    if (row.input_digest !== candidate.judgeInputDigest) return refuse(`decision ${id} judged a different input than judge-input built for ${candidateId}`);
     const decision = row.decision;
     if (decision !== "resolved" && decision !== "partial" && decision !== "unresolved") return refuse(`decision ${id} has no usable outcome (${String(decision)})`);
     transition(dir, updateCandidate(state, { ...candidate, judge: { decisionId: id, decision, reasonCode: row.reason_code } }), deps, `record-judge ${candidateId}`, "evaluate", null);
@@ -308,13 +354,16 @@ export function advanceReport(dir: string, candidateId: string | undefined, unre
 export function runTest(dir: string, checkPath: string, cwd: string, argv: string[], deps: Deps): Result {
   if (argv.length === 0) return bad("usage: bugfix-state run-test --state <dir> --check <file> [--cwd <dir>] -- <command...>");
   return withState(dir, (state) => {
-    // The command must run the check itself, so a baseline of `false` and a
-    // candidate run of `true` can't stand in for it.
-    const base = path.basename(checkPath);
-    if (!argv.some((a) => a.includes(base))) return refuse(`the command must reference the check file (${base})`);
     if (dirty(deps, cwd)) return refuse(`${cwd} has uncommitted or untracked changes; commit before running the check so the result maps to a commit`);
     const check = committedCheck(deps, cwd, checkPath);
     if ("exitCode" in check) return check;
+    // The command must name the check file itself as an argument (not inside a
+    // shell string), so a baseline of `false` and a run of `true` can't stand in.
+    const namesCheck = (a: string): boolean => {
+      const p = path.resolve(cwd, a);
+      return a === check.rel || (fs.existsSync(p) && fs.realpathSync(p) === check.abs);
+    };
+    if (!argv.some(namesCheck)) return refuse(`the command must pass the check file (${check.rel}) as an argument`);
     const checkSha256 = deps.sha256(check.abs);
     const commit = deps.git(cwd, ["rev-parse", "HEAD"]);
     fs.mkdirSync(runsDir(dir), { recursive: true });
@@ -323,8 +372,66 @@ export function runTest(dir: string, checkPath: string, cwd: string, argv: strin
     const exitCode = deps.run(argv, cwd, log);
     const evidence = path.join(runsDir(dir), `${stamp}-test-result.json`);
     fs.writeFileSync(evidence, JSON.stringify({ kind: "test", command: argv, exitCode, commit, checkSha256, log }, null, 2) + "\n");
-    saveState(dir, { ...state, runs: [...state.runs, { evidence, sha256: deps.sha256(evidence) }] });
+    registerRun(dir, evidence, deps);
     return ok({ evidence, exitCode, commit });
+  });
+}
+
+/** Runs the ui-evidence CLI on the committed script and registers its summary.json. */
+export function runUi(dir: string, checkPath: string, cwd: string, deps: Deps): Result {
+  return withState(dir, () => {
+    if (dirty(deps, cwd)) return refuse(`${cwd} has uncommitted or untracked changes; commit before running the check so the result maps to a commit`);
+    const check = committedCheck(deps, cwd, checkPath);
+    if ("exitCode" in check) return check;
+    const commit = deps.git(cwd, ["rev-parse", "HEAD"]);
+    fs.mkdirSync(runsDir(dir), { recursive: true });
+    const stamp = deps.now().toISOString().replace(/[:.]/g, "-");
+    const runDir = path.join(runsDir(dir), `${stamp}-ui`);
+    const log = path.join(runsDir(dir), `${stamp}-ui.log`);
+    const exitCode = deps.run([process.execPath, deps.uiEvidenceBin, check.abs, runDir, "--app-build", commit], cwd, log);
+    const evidence = path.join(runDir, "summary.json");
+    if (!fs.existsSync(evidence)) return refuse(`ui-evidence wrote no summary (exit ${exitCode}); see ${log}`);
+    registerRun(dir, evidence, deps);
+    return ok({ evidence, exitCode, commit });
+  });
+}
+
+function rootCauseOf(handoffPath: string): string {
+  const md = fs.readFileSync(handoffPath, "utf8");
+  const m = /^## Root Cause\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(md);
+  return m === null ? "" : m[1].trim();
+}
+
+/**
+ * Builds the judge resolution-check input from state (ticket text, root
+ * cause, run outcome, diff) and records the digest judge will store for it,
+ * so record-judge can bind the decision to exactly this input.
+ */
+export function judgeInput(dir: string, candidateId: string, checkSummary: string, deps: Deps): Result {
+  return withState(dir, (state) => {
+    const wrongPhase = requirePhase(state, ["evaluate"]);
+    if (wrongPhase) return wrongPhase;
+    const candidate = state.candidates.find((c) => c.id === candidateId);
+    if (candidate === undefined) return bad(`unknown candidate: ${candidateId}`);
+    if (candidate.run?.passed !== true) return refuse(`${candidateId} has no passing run; judge only runs after the check passes`);
+    const base = (state.baseline as { commit: string }).commit;
+    // Key order must match ResolutionCheckInputSchema: judge digests the parsed input.
+    const input = {
+      brief: state.ticket.brief,
+      expected: state.ticket.expected,
+      actual: state.ticket.actual,
+      rootCause: rootCauseOf(state.handoff as string),
+      checkKind: (state.check as NonNullable<State["check"]>).kind,
+      checkSummary,
+      beforePassed: false,
+      afterPassed: true,
+      diffStat: deps.git(candidate.cwd, ["diff", "--stat", base, candidate.commit]),
+    };
+    const file = path.join(dir, `judge-${candidateId}.json`);
+    fs.writeFileSync(file, JSON.stringify(input));
+    const judgeInputDigest = createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 16);
+    saveState(dir, updateCandidate(state, { ...candidate, judgeInputDigest }));
+    return ok({ input: file, digest: judgeInputDigest });
   });
 }
 

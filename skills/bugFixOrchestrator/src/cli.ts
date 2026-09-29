@@ -1,23 +1,25 @@
 import path from "node:path";
 
 import {
-  advanceInvestigate, advanceReport, advanceReproduce, init, recordCandidate, recordJudge, recordRun, resume, runTest, startAttempt, status,
+  advanceInvestigate, advanceReport, advanceReproduce, init, judgeInput, recordCandidate, recordJudge, recordRun, resume, runTest, runUi, startAttempt, status,
   type Result,
 } from "./commands.js";
 import type { Deps } from "./deps.js";
 
-const BOOLEAN_FLAGS = new Set(["unresolved"]);
+const BOOLEAN_FLAGS = new Set(["unresolved", "allow-test-changes"]);
 
 const USAGE = `usage: bugfix-state <command> --state <dir> [options]
   init --ticket <ticket.json>
   advance investigate --evidence <handoff.md>
   advance reproduce --evidence <run> --check <file> [--cwd <dir>]
   start-attempt --mode <A|B|C>
-  record-candidate --branch <branch> [--cwd <dir>]
+  record-candidate --branch <branch> [--cwd <dir>] [--hypothesis <n>] [--allow-test-changes]
   record-run <candidate> --evidence <run>
+  judge-input <candidate> --summary <what the check asserts>
   record-judge <candidate> (--decision-id <id> | --escalated <reason_code>)
   advance report (--candidate <id> | --unresolved)
   run-test --check <file> [--cwd <dir>] -- <command...>
+  run-ui --check <script.json> [--cwd <dir>]
   status | resume`;
 
 interface Parsed {
@@ -57,8 +59,17 @@ export function main(argv: string[], deps: Deps): Result {
   try {
     return dispatch(argv, deps);
   } catch (e) {
-    return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message.split("\n")[0] : String(e) };
+    return { exitCode: 1, stdout: "", stderr: describe(e) };
   }
+}
+
+// git's reason ("fatal: not a git repository") is in the child's stderr; the
+// message's first line is only the command that failed.
+function describe(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const stderr = String((e as { stderr?: unknown }).stderr ?? "").trim();
+  const firstLine = e.message.split("\n")[0];
+  return stderr === "" ? firstLine : `${firstLine}: ${stderr.split("\n")[0]}`;
 }
 
 function dispatch(argv: string[], deps: Deps): Result {
@@ -90,13 +101,18 @@ function dispatch(argv: string[], deps: Deps): Result {
     case "start-attempt":
       return missing("mode") ?? startAttempt(dir, flag("mode") as string, deps);
     case "record-candidate":
-      return missing("branch") ?? recordCandidate(dir, flag("branch") as string, cwd, deps);
+      return missing("branch") ?? recordCandidate(dir, flag("branch") as string, cwd, flag("hypothesis"), parsed.flags["allow-test-changes"] === true, deps);
     case "record-run":
       if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
       return missing("evidence") ?? recordRun(dir, sub, flag("evidence") as string, deps);
     case "record-judge":
       if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
       return recordJudge(dir, sub, flag("decision-id"), flag("escalated"), deps);
+    case "judge-input":
+      if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
+      return missing("summary") ?? judgeInput(dir, sub, flag("summary") as string, deps);
+    case "run-ui":
+      return missing("check") ?? runUi(dir, flag("check") as string, cwd, deps);
     case "run-test":
       return missing("check") ?? runTest(dir, flag("check") as string, cwd, parsed.rest, deps);
     case "status":
