@@ -25,6 +25,14 @@ way to tune it without leaving the conversation.
 - `judge config set <question> threshold <0-1>` — raise or lower the confidence bar below
   which `judge` escalates instead of deciding.
 
+## Questions
+
+`wake-gate`, `ui-element-repair`, `visual-critique` (used by `/ui-evidence`), `brief-scope`,
+`rule-check`, `ask-check`, and `resolution-check` — `/bugFixOrchestrator`'s second opinion: given the
+ticket brief verbatim, the root cause, and a check that failed before and passes after the fix, is the
+reported problem resolved (`resolved | partial | unresolved`, threshold 0.8)? A failed after-run or a
+check that never reproduced the bug is `unresolved` without a model call; an empty brief escalates.
+
 ## When to reach for this
 
 - the user sees a `judge` fallback notice (`systemMessage` text starting `judge: "<question>"

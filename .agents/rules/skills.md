@@ -60,7 +60,7 @@ Design skills add a second reference to `skills/_design-preamble.md` (`<!-- desi
 
 The preamble points the agent at `$HOME/.agentic-workflow/toolkit/skills/_shared/capabilities.md` for the capability → tool map, then verifies:
 1. `$HOME/.agentic-workflow/toolkit` exists and the provider registry `$HOME/.agentic-workflow/providers` is non-empty
-2. All 47 native skills are present in every registered provider's skills dir (plus 14 skills from the 3 fetched external packs)
+2. All 48 native skills are present in every registered provider's skills dir (plus 14 skills from the 3 fetched external packs)
 3. The MCP bridge is running (port 3100 listening)
 4. Domain rules exist: `AGENTS.md` + `.agents/rules/` (or legacy `.claude/rules/`)
 5. The repo-slug output directory `~/.agentic-workflow/$REPO_SLUG/` is created
@@ -88,6 +88,7 @@ Result: `org-repo` (e.g., `myorg-myrepo`). All output paths use `~/.agentic-work
 |--------|--------|------|
 | Reviews | `/review`, `/postReview`, `/addressReview` | `reviews/` |
 | Investigations | `/rootCause` | `investigations/` |
+| Bug fixing | `/bugFixOrchestrator` | `bugfix/<ticket-slug>/` |
 | QA | `/bugHunt`, `/bugReport`, `/testAudit` | `qa/` (`testAudit` writes to `qa/test-audit/`) |
 | Releases | `/shipRelease`, `/landAndDeploy`, `/canary`, `/syncDocs` | `releases/` |
 | Retrospectives | `/weeklyRetro` | `retros/` |

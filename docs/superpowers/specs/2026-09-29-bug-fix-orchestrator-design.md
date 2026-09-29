@@ -1,7 +1,7 @@
 # Bug Fix Orchestrator — Design
 
 **Date:** 2026-09-29
-**Status:** Draft — awaiting review
+**Status:** Approved 2026-09-29; implemented on `feat/bug-fix-orchestrator`
 
 ## Goal
 
@@ -114,15 +114,17 @@ Mode selection, in order:
 | C — split | The confirmed hypothesis's cause-site files span > 1 area (distinct top-level packages or app layers, e.g. API route and UI component) | One implementer per area, in sequence; each gets the previous one's diff. One evaluation at the end |
 | A — single | Otherwise | One implementer |
 
-- The orchestrator creates the fix branch (`bugfix/<ticket-slug>`, plus `-c<n>` per B candidate).
 - Each implementer brief contains: the ticket brief, the handoff, the failing check, its assigned
   area or hypothesis, and on a retry the previous diff plus the exact failure reasons (failed
   steps/assertions and the judge's reasoning). Implementers may not modify the check file.
 - Dispatches set `skillInternal: true` so the `brief-scope` gate treats them as the skill's own
   approved steps.
 - Implementers run heavy checks once per commit, not per edit.
-- `bugfix-state record-candidate --mode <A|B|C> --branch <b> [--worktree <p>]` per candidate. The
-  helper increments `attempt` and refuses a 4th attempt.
+- `bugfix-state start-attempt --mode <A|B|C>` opens the attempt (the helper increments `attempt` and
+  refuses a 4th); `bugfix-state record-candidate --branch <b> --cwd <worktree>` records each candidate.
+- Every candidate branch starts from the baseline commit (`bugfix/<ticket-slug>-a<attempt>[-c<n>]`),
+  never from a failed attempt. The check itself is committed on `bugfix/<ticket-slug>` — never on the
+  base branch.
 
 ### 5. EVALUATE
 For each candidate:
@@ -132,7 +134,8 @@ For each candidate:
    sha256 still matches the baseline, and that the run's commit equals the candidate's head commit.
 3. If the run passed: `judge resolution-check`, then
    `bugfix-state record-judge <candidate> --decision-id <id>` (the helper fetches the decision
-   through `judge why --json` instead of trusting the agent's copy).
+   through `judge why` instead of trusting the agent's copy), or `--escalated <reason_code>` when the
+   judge escalated (exit 2, no decision id).
 4. Outcome:
    - check passed **and** judge `resolved` → candidate eligible.
    - judge `partial | unresolved`, or check failed → back to Phase 4 with the reasons.
@@ -183,16 +186,19 @@ Exit codes: `0` allowed, `3` refused (reason on stderr), `1` bad usage or invali
 
 | Command | Enforces |
 |---------|----------|
-| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | Runs the command itself; writes `test-result.json` with the observed exit code, `git rev-parse HEAD` of `--cwd`, and the check's sha256 |
-| `init --ticket <json>` | Ticket has a non-empty `brief` and `expected`; no existing active state for the slug |
-| `status` | — (prints the state) |
-| `resume` | — (prints the current phase and the next action the orchestrator must take) |
-| `advance investigate --evidence <handoff>` | Handoff parses, has status `diagnosed`, has ≥ 1 hypothesis |
-| `advance reproduce --evidence <run>` | Run **failed** (not merely broken); records the check path, sha256, and baseline commit |
-| `record-candidate --mode --branch [--worktree]` | Phase is `fix`; `attempt` < 3; increments `attempt` |
-| `record-run <candidate> --evidence <run>` | Check sha256 unchanged; run commit equals the candidate's head commit |
-| `record-judge <candidate> --decision-id <id>` | The decision exists (via `judge why --json`) and belongs to `resolution-check` |
-| `advance report --evidence <candidate>` | For `resolved`: a passed run and a judge decision of `resolved`. Otherwise sets `unresolved` |
+| `init --ticket <json>` | Ticket has a non-empty `brief` and `expected`; no unfinished (`active` / `needs-human`) state for the slug |
+| `advance investigate --evidence <handoff>` | Phase `intake`; handoff parses, has status `diagnosed`, has ≥ 1 hypothesis |
+| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | Clean tracked tree in `--cwd`; runs the command itself and writes `runs/<ts>-test-result.json` (observed exit code, `HEAD`, check sha256) plus a log |
+| `advance reproduce --evidence <run> --check <file> [--cwd <dir>]` | Phase `investigate`; run **failed** (not passed, not broken-only); run commit equals `HEAD` of `--cwd`; records the check path, sha256, and baseline commit |
+| `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out. Increments `attempt`, clears `needs-human` |
+| `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix`; one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has a clean tracked tree, and `HEAD` differs from the baseline. The commit is read from `--cwd`, not passed in |
+| `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; same check kind as the baseline; run commit equals the candidate's commit, which is still the candidate's `HEAD`; check sha256 unchanged |
+| `record-judge <candidate> (--decision-id <id> \| --escalated <reason_code>)` | Phase `evaluate`; the candidate has a passing run and no judge decision; the decision exists (`judge why`), is for `resolution-check`, is not undone, and has an outcome. `--escalated` sets `status: needs-human` |
+| `advance report (--candidate <id> \| --unresolved)` | Not already reported; `--candidate` needs a passing run and a `resolved` judge decision |
+| `status` / `resume` | — (print the state / the current phase and the next action) |
+
+Test evidence only counts when it lives under `<state>/runs/`, i.e. when `run-test` produced it.
+ui-evidence runs are tied to a commit through `summary.json`'s `appBuild`.
 
 The orchestrator must report any refusal and may not work around it. After context loss it runs
 `bugfix-state resume`.
