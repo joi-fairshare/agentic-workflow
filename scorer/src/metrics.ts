@@ -2,6 +2,7 @@ import type { ContextGuardFire } from "./context-guard-fires.js";
 import type { Db } from "./db.js";
 import type { OutboxState } from "./outbox.js";
 import type { ProviderName } from "./transcript/source.js";
+import { aggregateUiEvidenceCost, type UiEvidenceCost } from "./ui-evidence-cost.js";
 import type { UiEvidenceRunRecord } from "./ui-evidence-runs.js";
 import { PROVIDER_HAS_USAGE, PROVIDERS } from "./transcript/source.js";
 
@@ -41,7 +42,7 @@ export interface Metrics {
     prsMerged: number;
     tokensPerMergedPr: number | null;
     contextGuard: { fires: number };
-    uiEvidence: { runs: number; brokenSteps: number; visualUnchecked: number };
+    uiEvidence: { runs: number; brokenSteps: number; visualUnchecked: number; visualUnchanged: number; cost: UiEvidenceCost };
   };
   wakes: { idle: number; text: number; terminate: number };
   involvement: { prompts: number; continues: number; corrections: number; interrupts: number; promptsPerMergedPr: number | null };
@@ -188,6 +189,8 @@ export function computeMetrics(db: Db, since: Date, until: Date, firesLog: Conte
         runs: uiRunsInWindow.length,
         brokenSteps: uiRunsInWindow.reduce((sum, r) => sum + r.brokenSteps, 0),
         visualUnchecked: uiRunsInWindow.filter((r) => r.visual === "unchecked").length,
+        visualUnchanged: uiRunsInWindow.filter((r) => r.visual === "unchanged").length,
+        cost: aggregateUiEvidenceCost(uiRunsInWindow),
       },
     },
     wakes: { idle: k("wake_idle"), text: k("wake_text"), terminate: k("wake_terminate") },

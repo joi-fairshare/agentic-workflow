@@ -10,15 +10,11 @@ export interface VisualCritiqueResult {
   reasons: string[];
 }
 
+import { runJudge } from "./judge-exec.js";
+
 type Exec = (args: string[], input: string) => Promise<{ stdout: string; code: number | null }>;
 
-const defaultExec: Exec = async (args, input) => {
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const exec = promisify(execFile);
-  const { stdout } = await exec("judge", args, { input, timeout: 21_000, encoding: "utf8" } as never);
-  return { stdout: String(stdout), code: 0 };
-};
+const defaultExec: Exec = (args, input) => runJudge(args, input, 21_000);
 
 export async function runVisualCritique(
   afterScreenshot: string,
