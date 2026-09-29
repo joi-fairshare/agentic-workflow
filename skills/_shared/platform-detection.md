@@ -5,10 +5,10 @@ Referenced via: SHARED_DIR pattern (CD2).
 
 ## Detection
 
-**iOS** — any hit from these Globs, ignoring `node_modules/`, `.build/`, `Pods/`, `vendor/`, `external-skills/`:
-- `Glob("**/Package.swift")`
-- `Glob("**/*.xcodeproj")`
-- `Glob("**/*.xcworkspace")`
+**iOS** — any hit from these glob patterns, ignoring `node_modules/`, `.build/`, `Pods/`, `vendor/`, `external-skills/`:
+- `**/Package.swift`
+- `**/*.xcodeproj`
+- `**/*.xcworkspace`
 
 **Web** — a `package.json` whose dependencies (or devDependencies) include any of: `next`, `react`, `vite`, `vue`, `@angular/core`.
 
@@ -18,13 +18,13 @@ Referenced via: SHARED_DIR pattern (CD2).
 |----------|--------|
 | iOS only | Invoke the iOS sub-skill with original arguments |
 | Web only | Invoke the web sub-skill with original arguments |
-| Both present | `AskUserQuestion`: "Both iOS and web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
-| Neither present | `AskUserQuestion`: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
+| Both present | **Ask the user**: "Both iOS and web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
+| Neither present | **Ask the user**: "No iOS or web project files detected. Which platform should I verify? (web / ios)" → invoke chosen |
 
 All user-supplied arguments are passed through to the sub-skill unchanged.
 
 ## Dispatch contract
 
 1. Echo before dispatching: `dispatch: <sub-skill> args=<args>`
-2. Dispatch literally: `Skill(skill="<sub-skill>", args="<original args verbatim>")`
+2. Dispatch literally: **Invoke skill `<sub-skill>`** with args `"<original args verbatim>"`
 3. If a required argument is empty, **stop** and ask — never dispatch with a blank required arg.

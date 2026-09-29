@@ -2,7 +2,7 @@
 
 ## Deployment Model
 
-This project runs **locally only**. There is no cloud deployment, no containerization, and no remote hosting. The MCP bridge runs on the developer's machine alongside Claude Code and Codex CLI.
+This project runs **locally only**. There is no cloud deployment, no containerization, and no remote hosting. The MCP bridge runs on the developer's machine alongside whichever agent CLIs are installed (Claude Code, Codex, Cursor).
 
 ## Building for Production
 
@@ -17,20 +17,11 @@ This compiles TypeScript from `src/` to `dist/` using `tsc`. The production entr
 | Entry Point | File | Purpose |
 |-------------|------|---------|
 | REST API | `dist/index.js` | Fastify server on port 3100 |
-| MCP Server | `dist/mcp.js` | Stdio-based MCP server for Claude Code / Codex |
-
-### UI Dashboard
-
-```bash
-cd ~/repos/agentic-workflow/ui
-npm install
-npm run build
-npm start       # Next.js on http://localhost:3000
-```
-
-The UI reverse-proxies `/api/*` to `http://localhost:3100/*` (configured in `next.config.ts`). The bridge REST API must be running before starting the UI in production.
+| MCP Server | `dist/mcp.js` | Stdio-based MCP server for Claude Code / Codex / Cursor |
 
 ## Registering the MCP Server
+
+`./setup.sh` registers `agentic-bridge` (and the other MCP servers) with every selected provider. Manual equivalents:
 
 ### Claude Code
 
@@ -52,11 +43,28 @@ This registers `agentic-bridge` as a stdio MCP server. Claude Code will spawn th
 codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
 ```
 
-Same registration pattern. Both Claude Code and Codex share the same SQLite database file, enabling bidirectional communication between the two agents.
+Same registration pattern.
+
+### Cursor
+
+Add an entry under `mcpServers` in `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentic-bridge": {
+      "command": "node",
+      "args": ["/absolute/path/to/agentic-workflow/mcp-bridge/dist/mcp.js"]
+    }
+  }
+}
+```
+
+All providers share the same SQLite database file, enabling bidirectional communication between agents on any mix of providers.
 
 ### MCP Config File
 
-The setup script copies `config/mcp.json` to `~/.claude/mcp.json` if one does not already exist. This file can also contain the MCP server registration. To check or update the config manually:
+When Claude Code is a selected provider, the setup script copies `config/mcp.json` to `~/.claude/mcp.json` if one does not already exist. This file can also contain the MCP server registration. To check or update the config manually:
 
 ```bash
 diff ~/.claude/mcp.json ~/repos/agentic-workflow/config/mcp.json
@@ -126,15 +134,17 @@ To start fresh, simply delete the database file. It will be recreated with the s
 
 ## Skills Deployment
 
-Skills are deployed via **symlinks** managed by `setup.sh`. The script links directories from the repo into `~/.claude/skills/`:
+Skills are deployed via **symlinks** managed by `setup.sh` (provider-specific logic in `providers/<name>/install.sh`). The script links each skill directory from the repo into every selected provider's skills directory, and records each provider in `~/.agentic-workflow/providers`:
 
 ```
-~/.claude/skills/review        -> ~/repos/agentic-workflow/skills/review
-~/.claude/skills/postReview    -> ~/repos/agentic-workflow/skills/postReview
-~/.claude/skills/addressReview -> ~/repos/agentic-workflow/skills/addressReview
-~/.claude/skills/enhancePrompt -> ~/repos/agentic-workflow/skills/enhancePrompt
-~/.claude/skills/bootstrap     -> ~/repos/agentic-workflow/bootstrap
+~/.agentic-workflow/toolkit            -> ~/repos/agentic-workflow   (stable path; skills resolve _shared/ through it)
+~/.claude/skills/review                -> ~/repos/agentic-workflow/skills/review
+~/.claude/skills/bootstrap             -> ~/repos/agentic-workflow/bootstrap
+<codex skills dir>/review              -> ~/repos/agentic-workflow/skills/review
+<cursor skills dir>/review             -> ~/repos/agentic-workflow/skills/review
 ```
+
+Provider skills directories are listed in `planning/PROVIDERS.md`.
 
 Because these are symlinks, any changes to skill files in the repo are immediately reflected -- no reinstallation needed. The symlink approach means:
 
@@ -145,11 +155,8 @@ Because these are symlinks, any changes to skill files in the repo are immediate
 ### Adding a New Skill
 
 1. Create the skill directory under `skills/` (or at the repo root for standalone skills like `bootstrap`).
-2. Add the skill name to the `for` loop in `setup.sh`:
-   ```bash
-   for skill in review postReview addressReview enhancePrompt newSkillName; do
-   ```
-3. Run `./setup.sh` on each machine to create the symlink.
+2. Add the skill name to the `MANAGED_SKILLS` array in `setup.sh`.
+3. Run `./setup.sh` on each machine to create the symlinks for every installed provider.
 
 ## New Machine Onboarding
 
@@ -157,40 +164,23 @@ Full setup from scratch:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/joi-fairshare/agentic-workflow.git ~/repos/agentic-workflow
+git clone https://github.com/vitalizecare/agentic-workflow.git ~/repos/agentic-workflow
 cd ~/repos/agentic-workflow
 
-# 2. Run the setup script (installs skills, config, npm dependencies for bridge + UI)
-./setup.sh
+# 2. Run the setup script (detects installed provider CLIs; or pass --providers)
+./setup.sh                                  # or: ./setup.sh --providers claude,codex,cursor
 
-# 3. Build the MCP bridge
+# 3. (Optional) Start the REST API server
 cd mcp-bridge
-npm run build
-
-# 4. Register the MCP server with Claude Code
-claude mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
-
-# 5. (Optional) Register with Codex CLI
-codex mcp add agentic-bridge -- node ~/repos/agentic-workflow/mcp-bridge/dist/mcp.js
-
-# 6. (Optional) Start the REST API server
 npm start
-
-# 7. (Optional) Start the UI dashboard
-cd ~/repos/agentic-workflow/ui
-npm run dev    # http://localhost:3000
 ```
 
 The setup script handles:
-- Symlinking all skills to `~/.claude/skills/`
-- Copying `settings.json` and `mcp.json` to `~/.claude/` (non-destructive -- skips if files exist)
-- Running `npm install` in `mcp-bridge/`
-- Running `npm install` in `ui/`
-
-After setup, it prints a reminder for manual plugin installations:
-- claude-plugins-official (Anthropic official)
-- voltagent-subagents (subagent catalog)
-- compound-engineering-plugin (EveryInc/compound-engineering-plugin)
+- Creating `~/.agentic-workflow/toolkit` and the `~/.agentic-workflow/providers` registry
+- Symlinking all skills into each selected provider's skills directory
+- Installing hooks per provider (native for Claude Code; via `config/hooks/adapters/` for Codex and Cursor)
+- Installing and building `mcp-bridge/` and registering MCP servers with each selected provider
+- Claude Code only: copying `settings.json` and `mcp.json` to `~/.claude/` (non-destructive -- skips if files exist), statusline, and plugin marketplaces
 
 ## Environment Variables Reference
 

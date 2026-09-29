@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-09-28 — Provider-agnostic toolkit
+
+The toolkit now supports Claude Code, Codex, and Cursor equally, with one canonical core and a thin adapter per provider.
+
+### Added
+
+- `setup.sh --providers claude,codex,cursor`: installs for the listed providers. With no flag, it installs for every provider CLI it detects. Provider-specific logic lives in `providers/<name>/install.sh` and `providers/<name>/install-hooks.sh`.
+- `~/.agentic-workflow/toolkit`: stable symlink to the repo. Skills now resolve shared fragments through `SHARED_DIR=~/.agentic-workflow/toolkit/skills/_shared` instead of their own provider-specific symlink.
+- `~/.agentic-workflow/providers`: registry of installed providers (`<name> <skills-dir>` per line).
+- `skills/_shared/capabilities.md`: provider-neutral capability vocabulary (**Ask the user**, **Spawn a subagent**, **Dispatch in parallel**, **Invoke skill**, `mcp: server/tool`, …) mapped to each provider's tools.
+- `planning/PROVIDERS.md`: provider reference (CLIs, config paths, skills dirs, hook systems, MCP registration, transcript locations) and the canonical-vs-emitted layout.
+- Hook adapters `config/hooks/adapters/codex.sh` and `config/hooks/adapters/cursor.sh`. They translate each provider's hook input and exit codes to the canonical protocol that `config/hooks/*.sh` already speaks, so the safety logic exists once.
+- MCP servers are registered with all three providers (Cursor via `~/.cursor/mcp.json`).
+- Canonical repo instructions: `AGENTS.md` + `.agents/rules/`. `.agents/rules/` is the only copy of each rule. `scripts/sync-rules.sh` symlinks `.claude/rules` and `.cursor/rules/*.mdc` to it and regenerates a Rules Index table in `AGENTS.md`.
+- Judge: `codex-cli` and `cursor-cli` model providers alongside `claude-cli`.
+- Scorer: pluggable transcript sources for Claude Code, Codex, and Cursor, selected with `--provider`.
+
+### Changed
+
+- All skills now name capabilities instead of Claude Code tool names. `allowed-tools` frontmatter is still read by Claude Code, and the other providers ignore it. Skills are invoked as `/<name>` in Claude Code and Cursor, and as `$<name>` in Codex.
+- Skills are symlinked into each installed provider's skills directory, not just `~/.claude/skills/`.
+- `CLAUDE.md` is now a symlink to `AGENTS.md`. `/bootstrap` generates `AGENTS.md` and `.agents/rules/` in target repos, and links them for each provider.
+- SKILL.md files no longer embed the preamble. They reference `$HOME/.agentic-workflow/toolkit/skills/_preamble.md`, and design skills also reference `_design-preamble.md`.
+- README, `planning/` docs, and package descriptions were rewritten for the new name and provider-neutral wording. The statusline, shell integration, and plugin marketplaces are documented as Claude Code only.
+
+---
+
 ## [Unreleased] - 2026-03-27
 
 ### Removed

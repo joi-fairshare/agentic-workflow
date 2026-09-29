@@ -1,10 +1,14 @@
 # Agentic Workflow
 
-A portable Claude Code workflow toolkit: custom skills, configuration archive, repo bootstrapper, a bidirectional MCP bridge for multi-agent communication, and token-efficiency tools (rtk command rewriter, headroom context compressor).
+A portable, provider-agnostic workflow toolkit for AI coding agents. It works the same way in **Claude Code**, **Codex**, and **Cursor**: 44 native skills plus 3 fetched external design packs (impeccable, emil-design-eng, taste-skill), a repo bootstrapper, safety hooks, a bidirectional MCP bridge for multi-agent communication, a cheap-decision judge, a cost/involvement scorer, and token-efficiency tools (the rtk command rewriter and the headroom context compressor).
+
+There is one canonical core: skills, hook logic, MCP servers, bridge, judge, and scorer. Each provider gets a thin adapter on top. Skills describe *capabilities* ("ask the user", "spawn a subagent", "call an MCP tool"), and each provider maps those to its own tools. See [Providers](#providers) and [`planning/PROVIDERS.md`](planning/PROVIDERS.md).
+
+> **Invoking skills:** the examples below use `/<name>` (Claude Code, Cursor). In Codex, use `$<name>`. For example, `$review` instead of `/review`.
 
 ## Workflow: Product Vision → Ship
 
-This toolkit supports an end-to-end product workflow where **AI sessions replace documents** — the goal is GitHub issues as the single source of truth, not a proliferating collection of local markdown files.
+This toolkit supports an end-to-end product workflow where **AI sessions replace documents**. The goal is to make GitHub issues the single source of truth, instead of piling up local markdown files.
 
 ### Stage 1 — Ideation
 
@@ -12,7 +16,7 @@ This toolkit supports an end-to-end product workflow where **AI sessions replace
 /withInterview
 ```
 
-**Human in the loop:** You're in the hot seat. The agent interviews you — asking questions, challenging assumptions, surfacing contradictions — while you answer in your own words. The output is a coherent problem statement and set of goals distilled from your raw thinking, not polished prose you had to write yourself.
+**Human in the loop:** You're in the hot seat. The agent interviews you. It asks questions, challenges assumptions, and surfaces contradictions while you answer in your own words. The output is a coherent problem statement and set of goals distilled from your raw thinking. You don't have to write polished prose yourself.
 
 ### Stage 2 — Spec & Design Doc
 
@@ -20,22 +24,23 @@ This toolkit supports an end-to-end product workflow where **AI sessions replace
 /officeHours [feature or problem]
 ```
 
-**Human in the loop:** This is a back-and-forth collaboration. The agent proposes requirements, you push back. It drafts the technical design, you redirect priorities and flag constraints it doesn't know about. Think of it as a YC office hours session — you leave with decisions made, not just options listed. It also brings structure to multi-team collaboration: product and engineering can align on vision, scope, and trade-offs in a shared session before anyone writes a line of code. The output lands in `~/.agentic-workflow/<repo>/plans/`:
+**Human in the loop:** This is a back-and-forth collaboration. The agent proposes requirements and you push back. It drafts the technical design, and you redirect priorities and flag constraints it doesn't know about. Think of it as a YC office hours session: you leave with decisions made, not just options listed. It also gives structure to multi-team collaboration. Product and engineering can align on vision, scope, and trade-offs in a shared session before anyone writes a line of code. The output lands in `~/.agentic-workflow/<repo>/plans/<feature>/`: a canonical `plan.md` handoff plus per-owner docs:
 
 | File | Owner | Contents |
 |------|-------|----------|
 | `product.md` | Product | Problem statement, EARS requirements, acceptance criteria, success metrics, MVP scope |
 | `engineering.md` | Engineering | Current state, approach, architecture decisions, open questions |
 | `design-brief.md` | Design | Experience goals, key interactions, UX requirements, design language reference |
-| `TASKS.md` | Engineering | Atomic task breakdown with `domain` tags — cross-team visibility |
+| `TASKS.md` | Engineering | Atomic task breakdown with `domain` tags for cross-team visibility |
 
-Each file is a standalone artifact. Everyone leaves the session with a doc they own, not a monolith no one does.
+Each file is a standalone artifact. Everyone leaves the session with a doc they own, not a monolith that nobody owns.
 
-Optionally pressure-test the outputs before moving on:
+You can optionally pressure-test the outputs before moving on. Run each lens on its own, or use `/autoplan` to run them all in parallel:
 
 ```
 /productReview    # Founder/product lens: is this the right thing to build?
 /archReview       # Engineering lens: is this the right way to build it?
+/autoplan         # productReview + archReview + planDesignReview + planDevexReview + cso(plan), in parallel
 ```
 
 ### Stage 3 — Design System & Mockups
@@ -43,190 +48,116 @@ Optionally pressure-test the outputs before moving on:
 ```
 /design-analyze   # Extract design tokens from reference sites (web or iOS)
 /design-language  # Define brand personality and aesthetic direction
+/design-shotgun   # Optional: 4–6 mockup variants in parallel to pick a direction
 /design-mockup    # Generate HTML or SwiftUI mockup from design language
 /design-refine    # Agents self-critique and iterate against the design language
 ```
 
-**Human in the loop:** After the initial mockup is generated, agents enter a self-critique loop — evaluating whether the mockup faithfully reflects the established design language, identifying deviations, and refining autonomously. You step in at natural breakpoints: reviewing the current state, directing emphasis ("make the data table the focus, not the sidebar"), and deciding when the visual spec is ready to lock. You're the final arbiter of "good enough to build from," not a participant in every pixel decision.
+**Human in the loop:** Once the first mockup exists, agents enter a self-critique loop. They check whether the mockup reflects the design language, find deviations, and refine on their own. You step in at natural breakpoints to review the current state, direct emphasis ("make the data table the focus, not the sidebar"), and decide when the visual spec is ready to lock. You're the final judge of "good enough to build from." You don't take part in every pixel decision.
 
-These produce `design-tokens.json`, `.impeccable.md`, and a `mockup.html` (or SwiftUI file) that serve as the visual specification.
+These produce `design-tokens.json`, `.impeccable.md`, and per-screen mockups (HTML or SwiftUI) with screenshot baselines that serve as the visual specification.
 
 ### Stage 4 — Engineering Roadmap (GitHub Issues)
 
 Create a **multi-phase issue hierarchy** directly from the officeHours output:
 
-1. **Epic issue** — paste the product vision, `product.md`, and the `engineering.md` approach section
-2. **Task issues** — one per entry in `TASKS.md`, each referencing the epic and embedding relevant context
-3. **Attach mockups** — link or embed the mockup screenshot so the visual spec lives in the issue
+1. **Epic issue**: paste the product vision, `product.md`, and the approach section of `engineering.md`
+2. **Task issues**: one per entry in `TASKS.md`, each referencing the epic and embedding relevant context
+3. **Attach mockups**: link or embed the mockup screenshot so the visual spec lives in the issue
 
-The officeHours MD files are **ephemeral** — once context is in GitHub issues, delete or ignore them. The issues become the canonical source of truth: product vision + design language reference + mockups all in one place, no local file sprawl.
+The officeHours MD files are **ephemeral**. Once the context is in GitHub issues, delete or ignore them. The issues become the canonical source of truth: product vision, design language reference, and mockups all in one place, with no local file sprawl.
 
 ### Stage 5 — Ship
 
 ```
+/specToProvenPR   # Turn an approved spec into proven, review-clean PRs
 /review           # Multi-agent PR code review
 /postReview       # Publish findings to GitHub as batched comments
 /addressReview    # Implement fixes with parallel agents
-/shipRelease      # Sync, test, push, open PR
-/syncDocs         # Post-ship doc updater
+/cso              # Pre-ship security check (OWASP Top 10 + STRIDE)
+/shipRelease      # Sync, test, push, open PR → auto-chains /landAndDeploy → /canary → /syncDocs
 /weeklyRetro      # Retrospective with shipping streaks
 ```
 
-**Human in the loop:** Shipping is a loop, not a one-shot. The review agents surface issues and publish them to GitHub. You decide what to address before merge and what can be tracked as follow-ups. `/addressReview` implements the fixes in parallel; you review the diff. `/shipRelease` runs the gate checks — you approve the PR. The retro closes the loop: what shipped, what slipped, what to carry into next week.
+**Human in the loop:** Shipping is a loop, not a one-shot. The review agents surface issues and publish them to GitHub. You decide what to fix before merge and what to track as follow-ups. `/addressReview` implements the fixes in parallel, and you review the diff. `/shipRelease` runs the gate checks, and you approve the PR. The retro closes the loop: what shipped, what slipped, and what to carry into next week.
 
 ---
 
+## Providers
+
+The toolkit treats Claude Code, Codex, and Cursor as equal hosts. `setup.sh` installs for every provider CLI it detects, or for the ones you name with `--providers`.
+
+### Support matrix
+
+| Feature | Claude Code | Codex | Cursor |
+|---------|-------------|-------|--------|
+| Native skills + external design packs | Yes | Yes | Yes |
+| Invocation | `/<name>` | `$<name>` | `/<name>` |
+| Skills installed to | `~/.claude/skills/` | `~/.codex/skills/` | `~/.cursor/skills/` |
+| Repo instructions | `CLAUDE.md` (symlink to `AGENTS.md`) + `.claude/rules` (symlink) | `AGENTS.md` (Rules Index) | `AGENTS.md` + `.cursor/rules/*.mdc` (symlinks) |
+| Safety hooks (`config/hooks/`) | Native | Via adapter (`config/hooks/adapters/codex.sh`); trust with `/hooks` | Via adapter (`config/hooks/adapters/cursor.sh`) |
+| MCP servers (bridge, serena, headroom, prism-mcp, …) | `claude mcp add --scope user` | `codex mcp add` | merged into `~/.cursor/mcp.json` (may need `cursor-agent mcp enable <name>`) |
+| Judge model provider | `claude-cli` | `codex-cli` | `cursor-cli` |
+| Scorer transcript source | Yes | Yes | Involvement only (no token/cost data) |
+| Statusline + shell integration | Yes | — | — |
+| Plugin marketplaces | Yes | — | — |
+
+The per-provider paths, tool names, and hook event names are recorded in [`planning/PROVIDERS.md`](planning/PROVIDERS.md). The capability-to-tool map that skills rely on lives in [`skills/_shared/capabilities.md`](skills/_shared/capabilities.md).
+
+### How it fits together
+
+- **Stable toolkit path.** `setup.sh` creates `~/.agentic-workflow/toolkit` as a symlink to this repo. Skills find shared fragments through `~/.agentic-workflow/toolkit/skills/`, never through a provider's skills directory, so every provider resolves them the same way. That includes the shared preamble (`_preamble.md`, and `_design-preamble.md` for design skills), which each `SKILL.md` references instead of embedding.
+- **Provider registry.** `~/.agentic-workflow/providers` lists each installed provider and its skills directory, one per line.
+- **Per-provider installers.** Provider-specific logic lives in `providers/<name>/install.sh` (skills, MCP registration, config) and `providers/<name>/install-hooks.sh` (hook wiring).
+- **Hooks.** The canonical hook scripts in `config/hooks/` speak the Claude Code hook protocol (JSON on stdin, exit 2 = deny). Claude Code runs them directly. For Codex and Cursor, a small adapter translates each provider's hook input and exit codes to that protocol, so there is only one copy of the safety logic. Lever hooks install with `scripts/install-*.sh --provider <name>`. The event mapping is in [`config/hooks/adapters/README.md`](config/hooks/adapters/README.md).
+- **Repo instructions.** `AGENTS.md` and `.agents/rules/` are the only copies. `scripts/sync-rules.sh` symlinks `CLAUDE.md` → `AGENTS.md`, `.claude/rules` → `.agents/rules`, and each `.cursor/rules/<name>.mdc` → `.agents/rules/<name>.md`. It also regenerates the Rules Index table in `AGENTS.md` for Codex. `/bootstrap` produces this same layout in any target repo.
+
+### Per-provider setup
+
+```bash
+./setup.sh                                  # install for every provider CLI detected on PATH
+./setup.sh --providers claude               # Claude Code only
+./setup.sh --providers codex                # Codex only
+./setup.sh --providers cursor               # Cursor only
+./setup.sh --providers claude,codex,cursor  # explicit list
+```
+
+Setup is idempotent, so you can re-run it with a different `--providers` list to add a provider later. Add `--dry-run` to print every change without writing anything.
+
+After setup, a couple of provider-specific steps remain:
+- **Codex** only runs hooks you trust. Open `codex`, run `/hooks`, and trust the `aw:*` entries. Do this again after a reinstall that changes a hook command.
+- **Cursor** may ask you to approve new MCP servers on first use. Run `cursor-agent mcp enable <name>` for each one.
+
 ## Prerequisites
 
+- At least one agent CLI: [Claude Code](https://claude.com/claude-code) (`claude`), [Codex](https://github.com/openai/codex) (`codex`), or [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)
 - Node.js >= 20
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running (required for Serena LSP)
-- [Claude Code](https://claude.com/claude-code) installed
 - [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (required by review skills)
-- [`jq`](https://jqlang.github.io/jq/) installed (required by the statusline; `brew install jq` on macOS)
-- [`rtk`](https://github.com/rtk-ai/rtk) — token-compressing CLI proxy (`brew install rtk` on macOS; installed automatically by `setup.sh`)
-- Python 3 + pip — required for headroom
-- [`headroom`](https://github.com/chopratejas/headroom) — context optimization layer (`pip install "headroom-ai[all]"`; installed automatically by `setup.sh`)
-
-## Contents
-
-### 1. Skills & Config Archive
-
-Extracted from `~/.claude/` for replication on any machine.
-
-| Skill | Purpose |
-|-------|---------|
-| `/review` | Multi-agent PR code review orchestrator |
-| `/postReview` | Publish review findings to GitHub as batched comments |
-| `/addressReview` | Implement review fixes with parallel agents |
-| `/enhancePrompt` | Context-aware prompt rewriter |
-| `/bootstrap` | Repo documentation generator (see below) |
-| `/rootCause` | 4-phase systematic debugging |
-| `/bugHunt` | Fix-and-verify loop with regression tests |
-| `/bugReport` | Structured bug report with health scores |
-| `/shipRelease` | Sync, test, push, open PR |
-| `/syncDocs` | Post-ship doc updater |
-| `/weeklyRetro` | Weekly retrospective with shipping streaks |
-| `/officeHours` | YC-style brainstorming → design doc |
-| `/productReview` | Founder/product lens plan review |
-| `/archReview` | Engineering architecture plan review |
-| `/design-analyze` | Platform dispatcher: extract design tokens from reference sites |
-| `/design-language` | Define brand personality and aesthetic direction |
-| `/design-evolve` | Platform dispatcher: merge new reference into design language |
-| `/design-mockup` | Platform dispatcher: generate mockup from design language |
-| `/design-implement` | Platform dispatcher: generate production code from mockup |
-| `/design-refine` | Dispatch Impeccable refinement commands |
-| `/design-verify` | Platform dispatcher: screenshot diff implementation vs mockup |
-| `/verify-app` | Platform-detecting Playwright/XcodeBuildMCP app verification |
-| `/verify-web` | Playwright browser verification of running web app |
-| `/verify-ios` | XcodeBuildMCP iOS simulator verification |
-| `/design-analyze-web` | Extract design tokens from web reference sites |
-| `/design-analyze-ios` | Extract design tokens from iOS app references |
-| `/design-evolve-web` | Merge new web reference into design language |
-| `/design-evolve-ios` | Merge new iOS reference into design language |
-| `/design-mockup-web` | Generate HTML mockup from design language |
-| `/design-mockup-ios` | Generate SwiftUI mockup from design language |
-| `/design-implement-web` | Generate production web code from mockup |
-| `/design-implement-ios` | Generate production SwiftUI code from mockup |
-| `/design-verify-web` | Screenshot diff web implementation vs mockup |
-| `/design-verify-ios` | XcodeBuildMCP visual diff iOS implementation vs mockup |
-
-**Config files:** `config/settings.json`, `config/mcp.json`, `config/statusline.sh`, `config/hooks/`
-
-### 2. Statusline
-
-`config/statusline.sh` is an adaptive two-line statusline for Claude Code sessions. It is installed to `~/.claude/statusline.sh` and wired into `settings.json` automatically by `setup.sh`.
-
-**Columns (left → right, highest priority leftmost):**
-
-| Column | Description |
-|--------|-------------|
-| 5h Usage | 5-hour rate-limit percentage + reset time |
-| 7d Usage | 7-day rate-limit percentage + reset day |
-| Context | Color-coded bar + percentage of context window used |
-| Model | Active model name (trimmed) |
-| Branch | Current git branch |
-| Cost | Session cost in USD |
-| Time | Session duration |
-| Cache | Cache read hit rate |
-| API | API wait percentage |
-| Lines | Lines added/removed |
-
-**Adaptive width tiers** — columns drop automatically as the terminal narrows:
-
-| Tier | Min width | Columns shown |
-|------|-----------|---------------|
-| FULL | 116 cols | All columns, branch up to 15 chars |
-| MEDIUM | 101 cols | No Lines; branch up to 12 chars |
-| NARROW | 78 cols | No Lines/Cache/API; 7d % only; narrow context bar |
-| COMPACT | 65 cols | 5h % only; narrow context bar; branch up to 10 chars |
-| COMPACT-S | < 65 cols | Same as COMPACT but drops Time column |
-
-Terminal width is read from `~/.claude/terminal_width` (written by the shell integration on every prompt and on `SIGWINCH`), which is the only reliable source because Claude Code runs the statusline in a subprocess where `/dev/tty` is inaccessible and `$COLUMNS` is 0.
-
-**Shell integration** is installed by `setup.sh` to `~/.claude/shell-integration.sh` and sourced from `~/.zshrc` / `~/.bashrc`. It keeps `~/.claude/terminal_width` current and writes `~/.claude/shell_pid` so resize events propagate mid-session via `SIGWINCH`.
-
-### 3. Bootstrap Skill
-
-Invocable via `/bootstrap` in any repo. Orchestrates documentation generation:
-
-- Detects which of 17 Pivot-pattern docs exist (BUSINESS_PLAN, ARCHITECTURE, ERD, etc.)
-- Generates missing docs adapted to the target repo's tech stack
-- Creates a trimmed CLAUDE.md (navigation doc only, under 80 lines) if none exists
-- Creates a `.claude/rules/` directory with glob-scoped rule files inferred from the repo's structure
-- Handles bare repos, partially documented repos, and well-documented repos
-
-### 4. MCP Bridge (Claude Code / Codex)
-
-A TypeScript MCP server for bidirectional multi-agent communication.
-
-**MCP Tools (messaging):**
-- `send_context` — Send task context + meta-prompt between agents
-- `get_messages` — Retrieve conversation history by UUID
-- `get_unread` — Check for unread messages (marks as read on retrieval)
-- `assign_task` — Assign tasks with domain and implementation details
-- `report_status` — Report back with feedback or completion
-
-**API Endpoints (messaging):**
-- `POST /messages/send` — Send context between agents
-- `GET /messages/conversation/:id` — Retrieve conversation history
-- `GET /messages/unread?recipient=` — Fetch and mark-read unread messages
-- `POST /tasks/assign` — Assign a task with domain classification
-- `GET /tasks/:id` — Get a task by ID
-- `GET /tasks/conversation/:id` — Get all tasks for a conversation
-- `POST /tasks/report` — Report task status
-- `GET /conversations` — Paginated conversation summaries
-
-**Features:**
-- SQLite store-and-forward (messages queue when recipient is offline)
-- Conversation continuity via UUID
-- Fastify REST API (port 3100) + MCP stdio server
-- Full end-to-end type safety with `AppResult<T>` pattern
-- Atomic transactions for multi-step operations
+- [`jq`](https://jqlang.github.io/jq/) installed (required by hooks and the statusline; `brew install jq` on macOS)
+- [`rtk`](https://github.com/rtk-ai/rtk): token-compressing CLI proxy (`brew install rtk` on macOS; installed automatically by `setup.sh`)
+- Python 3 + pip, required for headroom
+- [`headroom`](https://github.com/chopratejas/headroom): context optimization layer (`pip install "headroom-ai[all]"`; installed automatically by `setup.sh`)
 
 ## Setup
 
 ```bash
-git clone https://github.com/joi-fairshare/agentic-workflow.git ~/repos/agentic-workflow
+git clone https://github.com/vitalizecare/agentic-workflow.git ~/repos/agentic-workflow
 cd ~/repos/agentic-workflow
-./setup.sh
+./setup.sh                 # or: ./setup.sh --providers claude,codex,cursor
 ```
 
 The setup script:
-- Checks for `jq` and Docker (hard prerequisites — aborts with install instructions if missing)
-- Symlinks skills into `~/.claude/skills/`
-- Copies config files (settings, MCP)
-- Installs safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`, `git-context.sh`) to `~/.claude/hooks/`
-- Installs the statusline to `~/.claude/statusline.sh` and wires `statusLine` into `settings.json`
-- Installs shell integration to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc` for terminal width sync
+- Checks hard prerequisites (`jq`, Docker) and detects which provider CLIs are installed (or uses `--providers`)
+- Creates the `~/.agentic-workflow/toolkit` symlink and writes the `~/.agentic-workflow/providers` registry
+- Symlinks native skills, `/bootstrap`, and the external design packs (cloned at pinned commits from `EXTERNAL_PINS.env`) into each selected provider's skills directory
+- Installs the safety hooks (`block-destructive.sh`, `block-push-main.sh`, `detect-secrets.sh`, `rtk-rewrite.sh`) and session-context hooks for each provider. Claude Code uses them natively; Codex and Cursor go through their hook adapters.
 - Installs and builds the MCP bridge
-- Builds Serena Docker images (base TS/Python image; opt-in C# extension)
-- Installs the `serena-docker` wrapper script to `~/.local/bin/`
-- Registers `agentic-bridge` and `serena` MCP servers with Claude Code
-- Adds plugin marketplaces and installs plugins (github, superpowers, compound-engineering, playwright)
-- Registers `xcodebuildmcp` MCP server for iOS simulator automation
-- Installs rtk (Homebrew on macOS, install script on Linux) and wires `rtk-rewrite.sh` into the Bash hook chain for token-efficient command output
-- Installs headroom (`pip install "headroom-ai[all]"`) and registers the `headroom` MCP server with Claude Code and Codex
-- Registers `prism-mcp` MCP server with Claude Code and Codex (persistent memory via prism-mcp-server, downloads on first use)
+- Builds the Serena Docker images (base TS/Python image; opt-in C# and Swift extensions) and installs the `serena-docker` wrapper to `~/.local/bin/`
+- Registers the MCP servers (`agentic-bridge`, `serena`, `headroom`, `prism-mcp`, and `xcodebuildmcp` on macOS) with each selected provider
+- Configures `prism-mcp` (persistent memory, downloaded on first use) with its Mind Palace dashboard at `http://localhost:7180` (`PRISM_DASHBOARD_PORT`). The `prism-context.sh` session-start hook warns if the dashboard is unreachable; `/prismStatus` runs a full health check
+- Installs rtk and headroom
+- **Claude Code only:** copies `settings.json`, installs the statusline and shell integration, and adds plugin marketplaces and plugins
 
 ### Start the bridge
 
@@ -243,56 +174,135 @@ cd mcp-bridge && npm start    # Fastify on http://127.0.0.1:3100
 | `DB_PATH` | `./bridge.db` | SQLite database file path |
 | `ALLOW_REMOTE` | unset | Set to `1` to allow non-loopback binding |
 
+## Contents
+
+### 1. Skills
+
+44 native skills, installed as symlinks into each provider's skills directory. Every skill uses the same text for every provider: steps name a capability, and the running agent uses its host's tool for it (see `skills/_shared/capabilities.md`).
+
+| Stage | Skills |
+|-------|--------|
+| Ideation & planning | `withInterview`, `enhancePrompt`, `officeHours`, `autoplan`, `productReview`, `archReview`, `planDesignReview`, `planDevexReview` |
+| Design | `design-analyze`, `design-language`, `design-evolve`, `design-shotgun`, `design-mockup`, `design-implement`, `design-refine`, `design-verify` (dispatchers auto-detect web/iOS and route to their `-web` / `-ios` sub-skills) |
+| Build & verify | `specToProvenPR`, `verify-app` (→ `verify-web`, `verify-ios`) |
+| Review | `review`, `postReview`, `addressReview`, `cso` |
+| Debug & QA | `rootCause`, `bugHunt`, `bugReport` |
+| Ship & operate | `shipRelease`, `landAndDeploy`, `canary`, `syncDocs`, `weeklyRetro`, `prismStatus` |
+| Repo setup | `bootstrap` |
+
+Skills write their artifacts to `~/.agentic-workflow/<repo-slug>/<domain>/`, and downstream skills discover them from there.
+
+### 2. Bootstrap Skill
+
+Run `/bootstrap` (`$bootstrap` in Codex) in any repo to generate its documentation:
+
+- Detects which of 17 Pivot-pattern docs exist (BUSINESS_PLAN, ARCHITECTURE, ERD, etc.)
+- Generates missing docs adapted to the target repo's tech stack
+- Writes a canonical `AGENTS.md` (a navigation doc, not a reference manual), with `CLAUDE.md` as a symlink to it
+- Infers glob-scoped rule files from the repo's structure into `.agents/rules/`, then links them for each provider with `sync-rules.sh` (`.claude/rules`, `.cursor/rules/*.mdc`)
+- Handles bare repos, partially documented repos, and well-documented repos
+
+### 3. MCP Bridge
+
+A TypeScript MCP server for bidirectional multi-agent communication across any mix of Claude Code, Codex, and Cursor sessions. All providers register the same stdio server and share one SQLite database.
+
+**MCP Tools:**
+- `send_context`: send task context + meta-prompt between agents
+- `get_messages`: retrieve conversation history by UUID
+- `get_unread`: check for unread messages (marks them read on retrieval)
+- `assign_task`: assign tasks with domain and implementation details
+- `report_status`: report back with feedback or completion
+
+**API Endpoints:**
+- `POST /messages/send`: send context between agents
+- `GET /messages/conversation/:id`: retrieve conversation history
+- `GET /messages/unread?recipient=`: fetch unread messages and mark them read
+- `POST /tasks/assign`: assign a task with domain classification
+- `GET /tasks/:id`: get a task by ID
+- `GET /tasks/conversation/:id`: get all tasks for a conversation
+- `POST /tasks/report`: report task status
+- `GET /conversations`: paginated conversation summaries
+
+**Features:**
+- SQLite store-and-forward (messages queue while the recipient is offline)
+- Conversation continuity via UUID
+- Fastify REST API (port 3100) + MCP stdio server
+- End-to-end type safety with the `AppResult<T>` pattern
+- Atomic transactions for multi-step operations
+
+### 4. Judge and Scorer
+
+- **`judge/`** makes cheap, typed decisions: a rules fast path, then a per-content-class model chain. Model calls go through a headless provider CLI: `claude-cli` (`claude -p`), `codex-cli` (`codex exec`), or `cursor-cli` (`cursor-agent -p`). Any one of them on `PATH` is enough. The order is `providers.agentClis` in the judge config if set; otherwise claude, codex, cursor, with the current host (`AW_PROVIDER`) first. Cursor is slow (~8–13s per call), so on Cursor-only machines text questions often time out and fall back to rules.
+- **`scorer/`** produces a daily cost and involvement report from agent transcripts. Each provider has its own transcript source: Claude Code (`~/.claude/projects/`), Codex (`~/.codex/sessions/`), and Cursor (`~/.cursor/projects/`). By default it reads every provider whose directory exists. `--provider claude|codex|cursor|all` narrows that, and `--codex-dir` / `--cursor-dir` override the paths. The report includes a "By provider" section. Cursor data is involvement-only because its transcripts carry no token or cost data. Codex rollouts imported from Claude are skipped so they aren't counted twice. Run `scorer --since 7d` to write a report to `~/.agentic-workflow/scorer/reports/`. Install it with `scripts/install-scorer.sh`.
+
+### 5. Statusline (Claude Code only)
+
+`config/statusline.sh` is an adaptive two-line statusline for Claude Code sessions. `setup.sh` installs it to `~/.claude/statusline.sh` and wires it into `settings.json` when Claude Code is a selected provider.
+
+**Columns (left → right, highest priority leftmost):**
+
+| Column | Description |
+|--------|-------------|
+| 5h Usage | 5-hour rate-limit percentage + reset time |
+| 7d Usage | 7-day rate-limit percentage + reset day |
+| Context | Color-coded bar + percentage of context window used |
+| Model | Active model name (trimmed) |
+| Branch | Current git branch |
+| Cost | Session cost in USD |
+| Time | Session duration |
+| Cache | Cache read hit rate |
+| API | API wait percentage |
+| Lines | Lines added/removed |
+
+**Adaptive width tiers:** columns drop out automatically as the terminal narrows.
+
+| Tier | Min width | Columns shown |
+|------|-----------|---------------|
+| FULL | 116 cols | All columns, branch up to 15 chars |
+| MEDIUM | 101 cols | No Lines; branch up to 12 chars |
+| NARROW | 78 cols | No Lines/Cache/API; 7d % only; narrow context bar |
+| COMPACT | 65 cols | 5h % only; narrow context bar; branch up to 10 chars |
+| COMPACT-S | < 65 cols | Same as COMPACT but drops Time column |
+
+The statusline reads the terminal width from `~/.claude/terminal_width`. The shell integration writes that file on every prompt and on `SIGWINCH`. It's the only reliable source, because Claude Code runs the statusline in a subprocess where `/dev/tty` is inaccessible and `$COLUMNS` is 0.
+
+`setup.sh` installs the **shell integration** to `~/.claude/shell-integration.sh` and sources it from `~/.zshrc` / `~/.bashrc`. It keeps `~/.claude/terminal_width` current and writes `~/.claude/shell_pid`, so resize events reach the statusline mid-session via `SIGWINCH`.
+
 ## Testing
 
-Both packages enforce 100% coverage on all thresholds (statements, branches, functions, lines).
-
 ```bash
-# MCP Bridge (Vitest, in-memory SQLite)
-cd mcp-bridge
-npm test                  # Run all tests (99 tests)
-npm run test:watch        # Watch mode
-npm run test:coverage     # Enforce 100% coverage thresholds
+cd mcp-bridge && npm test   # Vitest, in-memory SQLite
+cd scorer && npm test
+cd judge && npm test
+bash providers/tests/install.test.sh
+bash scripts/tests/sync-rules.test.sh
+bash config/hooks/tests/codex-adapter.test.sh
+bash config/hooks/tests/cursor-adapter.test.sh
+bash config/hooks/tests/provider-install-hooks.test.sh
+bash config/lib/tests/merge-hook.test.sh
+bash config/hooks/tests/probe-log.test.sh
+scripts/sync-rules.sh --check
 ```
 
-Test coverage spans unit tests (controllers, services, DB client, schemas, utilities) and integration tests (all REST routes via Fastify inject and MCP tool handlers).
+The full list is under Commands in [`AGENTS.md`](AGENTS.md).
 
-## Architecture
+Tests cover unit tests (controllers, services, DB client, schemas, utilities) and integration tests (all REST routes via Fastify inject, plus the MCP tool handlers). `/* v8 ignore */` annotations are prohibited; write the test instead.
+
+## Repository Layout
 
 ```
 agentic-workflow/
-├── .claude/
-│   └── rules/                 # Glob-scoped domain rules (auto-loaded by Claude Code)
-│       ├── bridge-services.md # AppResult, EventBus, MCP tools
-│       ├── bridge-transport.md # Typed router, controllers, Zod schemas
-│       ├── database.md        # SQLite schema, DbClient
-│       ├── design.md          # Design pipeline, tokens, .impeccable.md
-│       ├── hooks.md           # Hook protocols and installation
-│       ├── mcp-servers.md     # MCP server usage rules (Serena, bridge, context7, etc.)
-│       ├── skills.md          # Skill structure, preamble, pipeline, bootstrap
-│       └── testing.md         # Test patterns, helpers, coverage policy
-├── .serena/
-│   └── project.yml            # Serena LSP per-repo config (TypeScript)
-├── skills/                    # 35 Claude Code custom skills
-│   ├── review/                # Multi-agent PR review
-│   ├── postReview/            # GitHub comment publisher
-│   ├── addressReview/         # Review fix implementer
-│   └── enhancePrompt/         # Context-aware prompt rewriter
-├── bootstrap/                 # Repo documentation generator skill
-├── config/                    # Settings, MCP config, statusline script, and safety hooks
-├── scripts/
-│   └── serena-docker          # Wrapper script: mounts repo into Serena container
-├── mcp-bridge/                # MCP bridge application
-│   ├── src/
-│   │   ├── application/       # AppResult<T>, EventBus, services (never throw)
-│   │   ├── db/                # SQLite schema, client interface, transactions
-│   │   ├── transport/         # Typed router, Zod schemas, controllers
-│   │   ├── routes/            # Route factories (messages, tasks, conversations)
-│   │   ├── server.ts          # Fastify server factory
-│   │   ├── mcp.ts             # MCP stdio server (5 coordination tools)
-│   │   └── index.ts           # REST API entry point
-│   └── tests/                 # Vitest suite — unit + integration, 100% coverage
-├── Dockerfile.serena           # Serena base image (TypeScript + Python LSPs)
-├── Dockerfile.serena-csharp    # Serena C# extension image (opt-in)
-└── setup.sh                   # One-command setup script
+├── AGENTS.md                # Canonical repo instructions (CLAUDE.md is a symlink to it)
+├── .agents/rules/           # Glob-scoped rules, the only copy (.claude/rules, .cursor/rules/*.mdc are symlinks)
+├── skills/                  # 44 native skills (+ _shared/ fragments, incl. capabilities.md)
+├── bootstrap/               # /bootstrap — repo documentation generator
+├── providers/<name>/        # Per-provider installers: install.sh, install-hooks.sh (claude, codex, cursor)
+├── config/                  # Settings, MCP config, statusline, hooks (+ hooks/adapters/ for codex, cursor)
+├── mcp-bridge/              # MCP bridge + REST API (Fastify, SQLite)
+├── judge/                   # Cheap typed decisions (rules → model chain via claude/codex/cursor CLI)
+├── scorer/                  # Cost/involvement report from provider transcripts
+├── scripts/                 # sync-rules.sh, serena-docker, probe.sh, install-*.sh, refresh-external-pins.sh
+├── planning/                # Project documentation (see planning/PROVIDERS.md)
+├── Dockerfile.serena*       # Serena base image + opt-in C# / Swift extensions
+└── setup.sh                 # One-command setup: ./setup.sh [--providers claude,codex,cursor]
 ```

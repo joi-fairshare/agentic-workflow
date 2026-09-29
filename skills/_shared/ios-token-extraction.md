@@ -30,4 +30,4 @@ Examples: `static let padding: CGFloat = N` → spacing token; `static let corne
 
 ## Completeness gate (AI1)
 
-After extraction, count results. If **fewer than 3 colors** or **0 typography tokens** were found, report the shortfall (what was searched, what was found) and ask via AskUserQuestion whether to: point at a different theme file/path, proceed with the partial token set, or abort. Never silently write a near-empty `design-tokens.json`.
+After extraction, count results. If **fewer than 3 colors** or **0 typography tokens** were found, report the shortfall (what was searched, what was found) and **ask the user** whether to: point at a different theme file/path, proceed with the partial token set, or abort. Never silently write a near-empty `design-tokens.json`.

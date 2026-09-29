@@ -9,17 +9,23 @@ import {
   runApprove, runAskCheckCli, runBriefGet, runBriefMapByDispatch, runBriefMapByName, runBriefSave, runBriefSetAgentId,
   runConfigGet, runConfigSet, runHealth, runQuestion, runUiElementRepairCli, runUndo, runVisualCritiqueCli, runWhy,
 } from "./commands.js";
+import { buildChain } from "./chain.js";
 import { judgeConfigPath, judgeDbPath, loadConfig } from "./config.js";
 import { openDb } from "./db.js";
+import { AGENT_CLI_BINARIES, isOnPath, resolveAgentClis } from "./detect.js";
 import { makeClaudeCliProvider } from "./providers/claude-cli.js";
+import { makeCodexCliProvider } from "./providers/codex-cli.js";
+import { makeCursorCliProvider } from "./providers/cursor-cli.js";
+import { makeExecSpawn } from "./providers/exec-spawn.js";
 import { makeJevProvider } from "./providers/jev.js";
 import { makeRulesProvider } from "./providers/rules.js";
 import { readApiKey } from "./keychain.js";
+import type { AgentCliName, Provider } from "./types.js";
 
 const exec = promisify(execFile);
 // AW_STATE_DIR overrides ~/.agentic-workflow wholesale, so a smoke run or a
 // test harness can point at a scratch state dir while still using the real
-// HOME (and its real `claude` login) for everything else.
+// HOME (and its real agent-CLI logins) for everything else.
 const dbPath = judgeDbPath();
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = openDb(dbPath);
@@ -40,21 +46,26 @@ async function readKeychain(service: string, account: string): Promise<string | 
   }
 }
 
-const providers = [
+const tmpDirFactory = (): string => fs.mkdtempSync(path.join(os.tmpdir(), "judge-cli-"));
+
+const agentCliFactories: Record<AgentCliName, () => Provider> = {
+  "claude-cli": () => makeClaudeCliProvider({ tmpDirFactory, spawn: makeExecSpawn(AGENT_CLI_BINARIES["claude-cli"]) }),
+  "codex-cli": () =>
+    makeCodexCliProvider({ tmpDirFactory, spawn: makeExecSpawn(AGENT_CLI_BINARIES["codex-cli"]), writeFile: (file, contents) => fs.writeFileSync(file, contents) }),
+  "cursor-cli": () => makeCursorCliProvider({ tmpDirFactory, spawn: makeExecSpawn(AGENT_CLI_BINARIES["cursor-cli"]) }),
+};
+
+// Agent CLIs: installed ones only, config order > AW_PROVIDER > claude, codex, cursor.
+const agentClis = resolveAgentClis({
+  available: (name) => isOnPath(AGENT_CLI_BINARIES[name], process.env),
+  awProvider: process.env.AW_PROVIDER,
+  configured: config.providers?.agentClis,
+});
+const chain = buildChain({ agentClis, jev: config.providers?.jev ?? true });
+
+const providers: Provider[] = [
   makeRulesProvider(),
-  makeClaudeCliProvider({
-    tmpDirFactory: () => fs.mkdtempSync(path.join(os.tmpdir(), "judge-cli-")),
-    spawn: (args, opts) =>
-      new Promise((resolve) => {
-        const child = execFile("claude", args, { cwd: opts.cwd, env: opts.env, timeout: opts.timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
-          resolve({ stdout: stdout ?? "", code: error && "code" in error ? (error.code as number) : 0, timedOut: Boolean(error?.killed) });
-        });
-        // The CLI waits up to 3s for stdin before proceeding without it; judge
-        // never pipes stdin to the child, so close it immediately instead of
-        // burning 3s of the time budget on every real call.
-        child.stdin?.end();
-      }),
-  }),
+  ...agentClis.map((name) => agentCliFactories[name]()),
   makeJevProvider({ fetch: (...args) => fetch(...args), apiKey: () => readApiKey({ env: process.env, readKeychain }) }),
 ];
 
@@ -106,10 +117,10 @@ async function main(): Promise<{ exitCode: number; stdout: string; stderr?: stri
       // subcommand instead of the generic runQuestion envelope — each carries
       // a field (chosenIndex, reasons) that rides in a provider's `extra`
       // rather than evaluate()'s typed Decision<O> (review fix #2).
-      if (cmd === "ui-element-repair") return runUiElementRepairCli(input, { db, config, providers });
-      if (cmd === "visual-critique") return runVisualCritiqueCli(input, { db, config, providers });
-      if (cmd === "ask-check") return runAskCheckCli(input, { db, config, providers });
-      return runQuestion(cmd, input, { db, config, providers });
+      if (cmd === "ui-element-repair") return runUiElementRepairCli(input, { db, config, providers, chain });
+      if (cmd === "visual-critique") return runVisualCritiqueCli(input, { db, config, providers, chain });
+      if (cmd === "ask-check") return runAskCheckCli(input, { db, config, providers, chain });
+      return runQuestion(cmd, input, { db, config, providers, chain });
     }
   }
 }

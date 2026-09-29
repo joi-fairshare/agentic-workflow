@@ -45,7 +45,7 @@ export async function startMcpServer(dbPath?: string) {
     "Send task context and meta-prompt from one agent to another. Messages are persisted and queued for pickup.",
     {
       conversation: z.string().uuid().describe("Conversation UUID — use crypto.randomUUID() to start a new one"),
-      sender: z.string().min(1).describe("Sender agent identifier (e.g. 'claude-code', 'codex')"),
+      sender: z.string().min(1).describe("Sender agent identifier (e.g. 'claude-code', 'codex', 'cursor')"),
       recipient: z.string().min(1).describe("Recipient agent identifier"),
       payload: z.string().min(1).describe("The context or message content to send"),
       meta_prompt: z.string().optional().describe("Optional meta-prompt guiding how the recipient should process this"),

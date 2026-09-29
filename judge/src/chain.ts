@@ -1,4 +1,4 @@
-import type { ContentClass, Provider, ProviderName } from "./types.js";
+import type { AgentCliName, ContentClass, Provider, ProviderName } from "./types.js";
 
 export interface ChainSpec {
   classes: Partial<Record<ContentClass, readonly ProviderName[]>>;
@@ -22,6 +22,23 @@ export const DEFAULT_CHAIN: ChainSpec = {
     image: ["claude-cli", "rules"],
   },
 };
+
+const TEXT_CLASSES = ["code", "diff", "brief", "transcript", "message-meta"] as const;
+
+/**
+ * The runtime chain (cli.ts): same shape as DEFAULT_CHAIN, with the agent-CLI
+ * slot filled by whichever CLIs are installed, in priority order (detect.ts
+ * resolveAgentClis). Text classes: jev (unless disabled) -> agent CLIs ->
+ * rules. Image: agent CLIs -> rules (jev is text-only). With only claude
+ * installed this is exactly DEFAULT_CHAIN.
+ */
+export function buildChain(opts: { agentClis: readonly AgentCliName[]; jev: boolean }): ChainSpec {
+  const text: ProviderName[] = [...(opts.jev ? (["jev"] as const) : []), ...opts.agentClis, "rules"];
+  const classes: Partial<Record<ContentClass, readonly ProviderName[]>> = {};
+  for (const cls of TEXT_CLASSES) classes[cls] = text;
+  classes.image = [...opts.agentClis, "rules"];
+  return { classes };
+}
 
 export function providersFor(spec: ChainSpec, cls: ContentClass, all: readonly Provider[]): Provider[] {
   const names = spec.classes[cls] ?? [];

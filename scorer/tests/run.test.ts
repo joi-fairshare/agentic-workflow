@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { openDb as openJudgeDb, recordDecision } from "../../judge/src/db.js";
 import type { CliOptions } from "../src/args.js";
-import { resolveJudgeDbPath, runReport } from "../src/run.js";
+import { resolveJudgeDbPath, resolveProviders, runReport, transcriptRoot } from "../src/run.js";
 import { assistant, prLink, tmpDir, user, writeLines } from "./helpers.js";
 
 const NOW = new Date("2026-09-26T12:00:00.000Z");
@@ -13,7 +14,7 @@ const NOW = new Date("2026-09-26T12:00:00.000Z");
 function setup(lines: string[]): CliOptions {
   const root = tmpDir();
   writeLines(path.join(root, "projects", "proj", "s1.jsonl"), lines);
-  return { command: "report", since: new Date("2026-09-25T12:00:00.000Z"), until: NOW, projectsDir: path.join(root, "projects"), stateDir: path.join(root, "state"), prLookup: true };
+  return { command: "report", since: new Date("2026-09-25T12:00:00.000Z"), until: NOW, projectsDir: path.join(root, "projects"), codexSessionsDir: path.join(root, "codex"), cursorProjectsDir: path.join(root, "cursor"), providers: ["claude"], stateDir: path.join(root, "state"), stateDirExplicit: false, prLookup: true, contextTokensPath: null };
 }
 
 describe("runReport", () => {
@@ -32,6 +33,24 @@ describe("runReport", () => {
     expect(json.metrics.cost.prsMerged).toBe(1);
     expect(json.verdict.status).toBe("ok");
     expect(log).toEqual(["scorer: 1 files, 3 new lines, 1 PR states looked up", `scorer: wrote ${result.markdownPath}`]);
+  });
+
+  it("ingests Claude, Codex, and Cursor transcripts into one report with a provider table", async () => {
+    const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+    const options: CliOptions = {
+      ...setup([user("build it", { ts: "2026-09-26T10:00:00.000Z" }), assistant({ id: "m1", ts: "2026-09-26T10:00:01.000Z", input: 1000, output: 10 })]),
+      codexSessionsDir: path.join(fixtures, "codex", "sessions"),
+      cursorProjectsDir: path.join(fixtures, "cursor", "projects"),
+      providers: null,
+    };
+    const result = await runReport(options, { lookup: async () => "MERGED", log: () => undefined });
+    expect(result.status).toBe("ok");
+    const json = JSON.parse(fs.readFileSync(result.jsonPath, "utf8"));
+    expect(json.metrics.providers).toEqual(["claude", "codex", "cursor"]);
+    expect(json.metrics.byProvider.map((p: { provider: string; calls: number; prompts: number }) => [p.provider, p.calls, p.prompts])).toEqual([["claude", 1, 1], ["codex", 3, 3], ["cursor", 0, 3]]);
+    expect(json.health.byProvider).toEqual({ claude: { files: 1, lines: 2 }, codex: expect.objectContaining({ files: 2 }), cursor: expect.objectContaining({ files: 2 }) });
+    const md = fs.readFileSync(result.markdownPath, "utf8");
+    expect(md).toContain("| cursor | 1 | n/a | n/a | n/a | n/a | 3 | 1 | 1 |");
   });
 
   it("is incremental across runs", async () => {
@@ -137,5 +156,23 @@ describe("resolveJudgeDbPath", () => {
       if (original === undefined) delete process.env.AW_STATE_DIR;
       else process.env.AW_STATE_DIR = original;
     }
+  });
+});
+
+describe("resolveProviders", () => {
+  const base: CliOptions = {
+    command: "report", since: NOW, until: NOW, projectsDir: "/claude", codexSessionsDir: "/codex", cursorProjectsDir: "/cursor",
+    providers: null, stateDir: "/s", stateDirExplicit: false, prLookup: true, contextTokensPath: null,
+  };
+
+  it("maps each provider to its transcript root", () => {
+    expect(["claude", "codex", "cursor"].map((p) => transcriptRoot(base, p as "claude" | "codex" | "cursor"))).toEqual(["/claude", "/codex", "/cursor"]);
+  });
+
+  it("uses an explicit list as given, else detects by directory, else falls back to all", () => {
+    expect(resolveProviders({ ...base, providers: ["cursor"] }, () => false)).toEqual(["cursor"]);
+    expect(resolveProviders(base, (p) => p === "/codex")).toEqual(["codex"]);
+    expect(resolveProviders(base, () => false)).toEqual(["claude", "codex", "cursor"]);
+    expect(resolveProviders({ ...base, projectsDir: path.join(tmpDir(), "none"), codexSessionsDir: tmpDir(), cursorProjectsDir: path.join(tmpDir(), "none") })).toEqual(["codex"]);
   });
 });

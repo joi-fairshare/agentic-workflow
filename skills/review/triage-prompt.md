@@ -16,7 +16,7 @@ Diff:
 ---
 
 Output a JSON array of reviewer assignments. Each entry must have:
-- `agent`: the agent type to spawn
+- `agent`: the agent type (persona) to spawn — a custom agent of that name if the host has one installed, otherwise a general-purpose subagent primed with that persona
 - `focus`: the themes and concerns this agent should focus on (not a file list — think about *what kind of problems* they should look for)
 
 ## Agent Selection Guide

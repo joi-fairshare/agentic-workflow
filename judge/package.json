@@ -1,7 +1,7 @@
 {
   "name": "@agentic-workflow/judge",
   "version": "0.1.0",
-  "description": "Typed cheap decisions: rules fast path -> per-content-class model chain",
+  "description": "Typed cheap decisions: rules fast path -> per-content-class model chain (claude, codex, cursor CLI providers)",
   "type": "module",
   "bin": {
     "judge": "dist/cli.js"

@@ -7,7 +7,7 @@ import { makeGhLookup, refreshPrStates } from "../src/pr-state.js";
 
 let db: Db;
 const NOW = new Date("2026-09-26T12:00:00.000Z");
-const link = (n: number) => db.prepare("INSERT INTO pr_links VALUES ('f', 's', 'o/r', ?, '2026-09-26T00:00:00.000Z')").run(n);
+const link = (n: number) => db.prepare("INSERT INTO pr_links VALUES ('f', 's', 'o/r', ?, '2026-09-26T00:00:00.000Z', 'claude')").run(n);
 const state = (n: number, s: PrState, checkedAt: string) => db.prepare("INSERT INTO pr_state VALUES ('o/r', ?, ?, ?)").run(n, s, checkedAt);
 
 beforeEach(() => { db = openDb(":memory:"); });

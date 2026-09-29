@@ -5,12 +5,12 @@ Referenced via: SHARED_DIR pattern (CD2).
 
 ## Canonical sequence
 
-1. `mcp__xcodebuildmcp__session_show_defaults` — verify active project/workspace, scheme, simulator.
-2. If defaults are missing/wrong: `mcp__xcodebuildmcp__discover_projs` → `mcp__xcodebuildmcp__list_schemes`.
-3. `mcp__xcodebuildmcp__list_sims` — pick the target simulator.
-4. `mcp__xcodebuildmcp__boot_sim` if the simulator is not already Booted.
-5. `mcp__xcodebuildmcp__build_run_sim` — or the split path: `mcp__xcodebuildmcp__build_sim` → `mcp__xcodebuildmcp__get_app_bundle_id` → `mcp__xcodebuildmcp__install_app_sim` → `mcp__xcodebuildmcp__launch_app_sim`.
-6. Capture with `mcp__xcodebuildmcp__screenshot` (visual) / `mcp__xcodebuildmcp__snapshot_ui` (structural).
+1. `mcp: xcodebuildmcp/session_show_defaults` — verify active project/workspace, scheme, simulator.
+2. If defaults are missing/wrong: `mcp: xcodebuildmcp/discover_projs` → `mcp: xcodebuildmcp/list_schemes`.
+3. `mcp: xcodebuildmcp/list_sims` — pick the target simulator.
+4. `mcp: xcodebuildmcp/boot_sim` if the simulator is not already Booted.
+5. `mcp: xcodebuildmcp/build_run_sim` — or the split path: `mcp: xcodebuildmcp/build_sim` → `mcp: xcodebuildmcp/get_app_bundle_id` → `mcp: xcodebuildmcp/install_app_sim` → `mcp: xcodebuildmcp/launch_app_sim`.
+6. Capture with `mcp: xcodebuildmcp/screenshot` (visual) / `mcp: xcodebuildmcp/snapshot_ui` (structural).
 
 ## Capability probe (before any gesture step)
 

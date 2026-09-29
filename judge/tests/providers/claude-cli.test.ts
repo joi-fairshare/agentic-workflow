@@ -220,3 +220,49 @@ describe("claude-cli provider — image branch, remaining branches", () => {
     expect(await provider.decide(imageQuestion, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "error", reason_code: "unparseable-result" });
   });
 });
+
+describe("claude-cli provider — shared CLI contract additions", () => {
+  it("is unavailable, not an error, when the claude binary is not installed (text branch)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: false, notFound: true, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    expect(await provider.decide(question, {}, 5000)).toEqual({ status: "unavailable", reason_code: "binary-not-found" });
+  });
+
+  it("is unavailable when the claude binary is not installed (image branch)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: null, timedOut: false, notFound: true, stdout: "" });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const imageQ: QuestionRef<"looks-right"> = { name: "visual-critique", outputs: ["looks-right"], prompt: "p", contentClass: "image" };
+    expect(await provider.decide(imageQ, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000)).toEqual({ status: "unavailable", reason_code: "binary-not-found" });
+  });
+
+  it("declares a question's extraProperties in --json-schema (ui-element-repair's chosenIndex)", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "repaired", chosenIndex: 1 } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const q: QuestionRef<"repaired" | "no-good-candidate"> = {
+      name: "ui-element-repair", outputs: ["repaired", "no-good-candidate"], prompt: "Pick.", contentClass: "code",
+      extraProperties: { chosenIndex: { type: "integer" } },
+    };
+    await provider.decide(q, {}, 10000);
+    const [args] = spawn.mock.calls[0] as [string[]];
+    expect(JSON.parse(args[args.indexOf("--json-schema") + 1])).toEqual({
+      type: "object",
+      properties: { decision: { type: "string", enum: ["repaired", "no-good-candidate"] }, chosenIndex: { type: "integer" } },
+      required: ["decision"],
+    });
+  });
+
+  it("image schema always carries reasons, using the question's own declaration when present", async () => {
+    const spawn = vi.fn().mockResolvedValue({ code: 0, timedOut: false, stdout: JSON.stringify({ structured_output: { decision: "looks-right" } }) });
+    const provider = makeClaudeCliProvider({ spawn, tmpDirFactory: () => "/tmp/x" });
+    const declared = { type: "array", items: { type: "string", maxLength: 200 } };
+    const imageQ: QuestionRef<"looks-right"> = { name: "visual-critique", outputs: ["looks-right"], prompt: "p", contentClass: "image", extraProperties: { reasons: declared } };
+    await provider.decide(imageQ, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000);
+    await provider.decide({ ...imageQ, extraProperties: undefined }, { afterScreenshot: "a.png", baselineScreenshot: null, evidenceDir: "/tmp/r" }, 20000);
+    const schemaOf = (call: number): { properties: Record<string, unknown> } => {
+      const [args] = spawn.mock.calls[call] as [string[]];
+      return JSON.parse(args[args.indexOf("--json-schema") + 1]) as { properties: Record<string, unknown> };
+    };
+    expect(schemaOf(0).properties.reasons).toEqual(declared);
+    expect(schemaOf(1).properties.reasons).toEqual({ type: "array", items: { type: "string" } });
+  });
+});

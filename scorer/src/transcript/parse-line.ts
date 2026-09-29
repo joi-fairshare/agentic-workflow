@@ -133,7 +133,7 @@ function parseUser(json: unknown): ParsedRecord[] {
     }
   }
   if (isSidechain === true || isMeta === true || texts.length === 0) return [];
-  const event = toEvent(classifyUserText(texts.join("\n")));
+  const event = eventFromUserText(texts.join("\n"));
   return event === null ? [] : [{ t: "event", uuid, sessionId, ts, kind: event.kind, detail: event.detail }];
 }
 
@@ -146,6 +146,12 @@ function blockText(content: unknown): string {
       return text.success ? text.data.text : "";
     })
     .join("\n");
+}
+
+// Shared by every provider's parser: a human-visible user text → the event it
+// counts as (or null for machine-injected text).
+export function eventFromUserText(text: string): { kind: EventKind; detail: string | null } | null {
+  return toEvent(classifyUserText(text));
 }
 
 function toEvent(k: UserTextKind): { kind: EventKind; detail: string | null } | null {

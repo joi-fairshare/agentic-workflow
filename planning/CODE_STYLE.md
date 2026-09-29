@@ -240,17 +240,13 @@ Each test file creates an in-memory SQLite database per test:
 
 ```ts
 import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import { createDbClient, type DbClient } from "../src/db/client.js";
-import { MIGRATIONS } from "../src/db/schema.js";
+import type { DbClient } from "../src/db/client.js";
+import { createTestBridgeDb } from "./helpers.js";
 
 let db: DbClient;
 
 beforeEach(() => {
-  const raw = new Database(":memory:");
-  raw.pragma("journal_mode = WAL");
-  raw.exec(MIGRATIONS);
-  db = createDbClient(raw);
+  ({ db } = createTestBridgeDb()); // in-memory, WAL + foreign_keys + busy_timeout, MIGRATIONS applied
 });
 ```
 

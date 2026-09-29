@@ -1,13 +1,10 @@
-# Shared Preamble — Reference Copy
-#
-# This file is NOT a skill. It documents the shared preamble block
-# that every skill includes inline. Edit here, then propagate to all
-# SKILL.md files. The preamble appears immediately after the YAML
-# frontmatter `---` closing line.
+# Shared Preamble
 
-<!-- === PREAMBLE START === -->
+Every skill starts by reading this file and following it. Run **Session Close** at the end of the skill.
 
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Run any as `/<name>`.
+> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Works in Claude Code, Codex, and Cursor. Run any as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex).
+>
+> **Provider tools:** skills name capabilities (**Ask the user**, **Spawn a subagent**, **Dispatch in parallel**, **Invoke skill**, `mcp: <server>/<tool>`). Map each to your host's tool via `$HOME/.agentic-workflow/toolkit/skills/_shared/capabilities.md`.
 >
 > | Skill | Purpose |
 > |-------|---------|
@@ -15,7 +12,7 @@
 > | `/postReview` | Publish review findings to GitHub |
 > | `/addressReview` | Implement review fixes in parallel |
 > | `/enhancePrompt` | Context-aware prompt rewriter |
-> | `/bootstrap` | Generate repo planning docs + CLAUDE.md |
+> | `/bootstrap` | Generate repo planning docs + AGENTS.md (+ per-provider rules) |
 > | `/rootCause` | 4-phase systematic debugging |
 > | `/bugHunt` | Fix-and-verify loop with regression tests |
 > | `/bugReport` | Structured bug report with health scores |
@@ -71,8 +68,8 @@ Prefer **Serena** for all code exploration — LSP-based symbol lookup is faster
 | Find a function, class, or symbol | `serena: find_symbol` |
 | What references symbol X? | `serena: find_referencing_symbols` |
 | Module/file structure overview | `serena: get_symbols_overview` |
-| Search for a string or pattern | `Grep` (fallback) |
-| Read a full file | `Read` (fallback) |
+| Search for a string or pattern | search files (fallback) |
+| Read a full file | read file (fallback) |
 
 ## Preamble — Bootstrap Check
 
@@ -89,32 +86,38 @@ fi
 echo "repo-slug: $REPO_SLUG"
 
 # Check bootstrap status
+TOOLKIT="$HOME/.agentic-workflow/toolkit"
+SHARED_DIR="$TOOLKIT/skills/_shared"
 SKILLS_OK=true
+[ -d "$TOOLKIT/skills" ] && [ -s "$HOME/.agentic-workflow/providers" ] || SKILLS_OK=false
 for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
-  [ -d "$HOME/.claude/skills/$s" ] || SKILLS_OK=false
+  while read -r _prov _dir; do
+    [ -d "$_dir/$s" ] || SKILLS_OK=false
+  done < "$HOME/.agentic-workflow/providers" 2>/dev/null
 done
 
 BRIDGE_OK=false
 lsof -i TCP:3100 -sTCP:LISTEN &>/dev/null && BRIDGE_OK=true
 
 RULES_OK=false
-[ -d ".claude/rules" ] && [ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true
+[ -f "AGENTS.md" ] && [ -n "$(ls -A .agents/rules/ 2>/dev/null)" ] && RULES_OK=true
+[ -n "$(ls -A .claude/rules/ 2>/dev/null)" ] && RULES_OK=true  # legacy layout
 
 echo "skills-symlinked: $SKILLS_OK"
 echo "bridge-running: $BRIDGE_OK"
 echo "rules-directory: $RULES_OK"
 ```
 
-Domain rules in `.claude/rules/` load automatically per glob — no action needed if `rules-directory: true`.
+Domain rules live in `.agents/rules/` (canonical) and are emitted per provider (`.claude/rules/`, `.cursor/rules/`, `AGENTS.md` rules index). Before editing a file, read any rule whose `globs` match it — Claude Code and Cursor load these automatically; in Codex, consult the rules index in `AGENTS.md`.
 
-If `SKILLS_OK=false` or `BRIDGE_OK=false`, ask the user via AskUserQuestion:
+If `SKILLS_OK=false` or `BRIDGE_OK=false`, **Ask the user:**
 > "Agentic Workflow is not fully set up. Run setup.sh now? (yes/no)"
 
-If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (resolve path from the review skill symlink target).
+If **yes**: run `bash <path-to-agentic-workflow>/setup.sh` (`$HOME/.agentic-workflow/toolkit/setup.sh`).
 If **no**: warn that some features may not work, then continue.
 
 If `RULES_OK=false` (and `SKILLS_OK` and `BRIDGE_OK` are both true), do not offer setup.sh. Instead, show:
-> "Domain rules not found — run `/bootstrap` to generate `.claude/rules/` for this repo."
+> "Domain rules not found — run `/bootstrap` to generate `AGENTS.md` and `.agents/rules/` for this repo."
 
 Create the output directory for this repo:
 ```bash
@@ -133,7 +136,7 @@ Load prior work state for this repo from prism-mcp before starting.
 
 **2. Load context from prism-mcp:**
 ```
-mcp__prism-mcp__session_load_context — project: REPO_SLUG, level: "standard",
+mcp: prism-mcp/session_load_context — project: REPO_SLUG, level: "standard",
   toolAction: "Loading session context", toolSummary: "<skill-name> context recovery"
 ```
 
@@ -154,7 +157,7 @@ Save a structured ledger entry and update the live handoff state for this repo.
 
 **1. Save ledger entry (immutable audit trail):**
 ```
-mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
+mcp: prism-mcp/session_save_ledger — project: REPO_SLUG,
   conversation_id: "<skill-name>-<ISO-timestamp, e.g. 2026-04-08T14:32:00Z>",
   summary: "<one paragraph describing what was accomplished this session>",
   todos: ["<any open items left incomplete>", ...],
@@ -164,7 +167,7 @@ mcp__prism-mcp__session_save_ledger — project: REPO_SLUG,
 
 **2. Update handoff state (mutable live state for next session):**
 ```
-mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
+mcp: prism-mcp/session_save_handoff — project: REPO_SLUG,
   expected_version: <value returned by session_load_context>,
   open_todos: ["<open items not yet completed>", ...],
   active_branch: "<current git branch from: git branch --show-current>",
@@ -174,5 +177,3 @@ mcp__prism-mcp__session_save_handoff — project: REPO_SLUG,
 
 If either call fails, surface the error:
 > "prism-mcp session save failed: {error}. Context may not persist to next session."
-
-<!-- === PREAMBLE END === -->

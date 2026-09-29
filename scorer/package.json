@@ -1,7 +1,7 @@
 {
   "name": "@agentic-workflow/scorer",
   "version": "0.1.0",
-  "description": "Daily cost and involvement report from Claude Code transcripts",
+  "description": "Daily cost and involvement report from Claude Code, Codex, and Cursor transcripts",
   "type": "module",
   "bin": {
     "scorer": "dist/cli.js"

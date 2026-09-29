@@ -1,0 +1,1 @@
+{"session_id":"cx-1","turn_id":"t-9","cwd":"/tmp","hook_event_name":"PreToolUse","tool_name":"Agent","tool_use_id":"call_6","tool_input":{"task_name":"fix_tests","agent_type":"worker","message":"Goal: fix tests. Acceptance: npm test passes."}}

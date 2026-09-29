@@ -12,6 +12,17 @@ STATE_DIR="${AW_STATE_DIR:-$HOME/.agentic-workflow}"
 JUDGE_BIN="${AW_JUDGE_BIN:-judge}"
 # shellcheck source=../config/lib/merge-hook.sh
 source "$ROOT/config/lib/merge-hook.sh"
+# shellcheck source=../config/hooks/adapters/install-lib.sh
+source "$ROOT/config/hooks/adapters/install-lib.sh"
+# Usage: scripts/install-wake-gating.sh [--provider claude|codex|cursor] [--uninstall]
+aw_parse_provider_args "$@" || exit 1
+set -- ${AW_ARGS[@]+"${AW_ARGS[@]}"}
+
+if [ "$AW_PROVIDER" != "claude" ]; then
+  aw_hooks_init "$AW_PROVIDER"
+  aw_unsupported wake-gating "no TeammateIdle event and no teammate SendMessage tool with a verified argument shape"
+  exit 0
+fi
 
 if [ "${1:-}" = "--uninstall" ]; then
   merge_hook "$SETTINGS_FILE" PreToolUse aw:send-gate null

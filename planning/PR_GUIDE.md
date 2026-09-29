@@ -58,7 +58,7 @@ Use this checklist when opening or reviewing pull requests. Every item applies u
 ## Testing
 
 - [ ] **Tests exist for new services** -- every new service function has at least one success-path and one error-path test.
-- [ ] **In-memory SQLite used** -- tests use `new Database(":memory:")` per `beforeEach`, never a file-based database.
+- [ ] **In-memory SQLite used** -- tests get a fresh in-memory database from `createTestBridgeDb()` (`mcp-bridge/tests/helpers.ts`) per `beforeEach`, never a file-based database.
 - [ ] **Migrations applied in test setup** -- `raw.exec(MIGRATIONS)` runs before creating the client.
 - [ ] **`randomUUID()` for isolation** -- each test uses unique conversation/entity IDs to prevent cross-test interference.
 - [ ] **Discriminated union narrowing in assertions** -- always check `result.ok` and early-return before accessing `.data` or `.error`:

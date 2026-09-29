@@ -6,8 +6,30 @@ HOOKS_DIR="${CLAUDE_HOOKS_DIR:-$HOME/.claude/hooks}"
 STATE_DIR="${AW_STATE_DIR:-$HOME/.agentic-workflow}"
 # shellcheck source=../config/lib/merge-hook.sh
 source "$ROOT/config/lib/merge-hook.sh"
+# shellcheck source=../config/hooks/adapters/install-lib.sh
+source "$ROOT/config/hooks/adapters/install-lib.sh"
+# Usage: scripts/install-context-guard.sh [--provider claude|codex|cursor] [--uninstall]
+aw_parse_provider_args "$@" || exit 1
+set -- ${AW_ARGS[@]+"${AW_ARGS[@]}"}
 
-if [ "${1:-}" = "--uninstall" ]; then
+if [ "$AW_PROVIDER" = "cursor" ]; then
+  aw_hooks_init cursor
+  aw_unsupported context-guard "Cursor transcripts carry no token usage and no hook reports context size per tool call"
+  exit 0
+fi
+
+# Codex: PostToolUse(.*) via adapters/codex.sh; context-guard.sh reads the
+# rollout's token_count lines. State/config dirs are shared with Claude.
+if [ "$AW_PROVIDER" = "codex" ]; then
+  aw_hooks_init codex
+  if [ "${1:-}" = "--uninstall" ]; then
+    aw_hook_unset PostToolUse aw:context-guard
+    echo "  context-guard: hook entry removed from $AW_HOOKS_CONFIG"
+    exit 0
+  fi
+fi
+
+if [ "$AW_PROVIDER" = "claude" ] && [ "${1:-}" = "--uninstall" ]; then
   merge_hook "$SETTINGS_FILE" PostToolUse aw:context-guard null
   echo "  context-guard: hook entry removed from $SETTINGS_FILE"
   if [ -d "$STATE_DIR/context-guard" ]; then
@@ -43,6 +65,13 @@ if [ ! -f "$STATE_DIR/context-guard/config.json" ]; then
   echo "  context-guard: default config installed at $STATE_DIR/context-guard/config.json"
 else
   echo "  context-guard: existing config left untouched"
+fi
+
+if [ "$AW_PROVIDER" = "codex" ]; then
+  aw_hooks_stage
+  aw_hook_set PostToolUse aw:context-guard context-guard.sh ".*"
+  echo "  context-guard: hook installed for codex (PostToolUse, every tool) in $AW_HOOKS_CONFIG"
+  exit 0
 fi
 
 mkdir -p "$HOOKS_DIR"

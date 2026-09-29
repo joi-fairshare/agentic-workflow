@@ -27,3 +27,37 @@ describe("DEFAULT_CHAIN — image class (review fix #1, BLOCKER)", () => {
     expect(candidates.map((p) => p.name)).toContain("claude-cli");
   });
 });
+
+describe("buildChain", () => {
+  it("is exactly DEFAULT_CHAIN when only claude-cli is installed and jev is on (existing behavior)", async () => {
+    const { buildChain } = await import("../src/chain.js");
+    expect(buildChain({ agentClis: ["claude-cli"], jev: true })).toEqual(DEFAULT_CHAIN);
+  });
+
+  it("puts jev first on text classes, then the agent CLIs in priority order, then rules; image skips jev", async () => {
+    const { buildChain } = await import("../src/chain.js");
+    const chain = buildChain({ agentClis: ["codex-cli", "claude-cli", "cursor-cli"], jev: true });
+    for (const cls of ["code", "diff", "brief", "transcript", "message-meta"] as const) {
+      expect(chain.classes[cls]).toEqual(["jev", "codex-cli", "claude-cli", "cursor-cli", "rules"]);
+    }
+    expect(chain.classes.image).toEqual(["codex-cli", "claude-cli", "cursor-cli", "rules"]);
+  });
+
+  it("drops jev when disabled, and degrades to rules-only with no agent CLIs", async () => {
+    const { buildChain } = await import("../src/chain.js");
+    expect(buildChain({ agentClis: ["cursor-cli"], jev: false }).classes.code).toEqual(["cursor-cli", "rules"]);
+    const bare = buildChain({ agentClis: [], jev: false });
+    expect(bare.classes["message-meta"]).toEqual(["rules"]);
+    expect(bare.classes.image).toEqual(["rules"]);
+  });
+
+  it("routes image to codex-cli and cursor-cli given the REAL providers (their classes include image)", async () => {
+    const { buildChain } = await import("../src/chain.js");
+    const { makeCodexCliProvider } = await import("../src/providers/codex-cli.js");
+    const { makeCursorCliProvider } = await import("../src/providers/cursor-cli.js");
+    const codex = makeCodexCliProvider({ spawn: vi.fn(), tmpDirFactory: () => "/tmp/x", writeFile: vi.fn() });
+    const cursor = makeCursorCliProvider({ spawn: vi.fn(), tmpDirFactory: () => "/tmp/x" });
+    const candidates = providersFor(buildChain({ agentClis: ["cursor-cli", "codex-cli"], jev: true }), "image", [codex, cursor]);
+    expect(candidates.map((p) => p.name)).toEqual(["cursor-cli", "codex-cli"]);
+  });
+});

@@ -17,7 +17,9 @@ import { judgeSection, type JudgeReportRow } from "./judge-section.js";
 import { computeMetrics } from "./metrics.js";
 import { refreshPrStates } from "./pr-state.js";
 import { renderReport } from "./render.js";
-import { discoverFiles } from "./transcript/discover.js";
+import type { ProviderName } from "./transcript/source.js";
+import { PROVIDERS } from "./transcript/source.js";
+import { SOURCES } from "./transcript/sources.js";
 
 export interface RunDeps {
   lookup: PrStateLookup;
@@ -69,13 +71,29 @@ function readJudgeRows(sinceIso: string, dbPathOverride?: string): JudgeReportRo
   }
 }
 
+export function transcriptRoot(options: CliOptions, provider: ProviderName): string {
+  if (provider === "codex") return options.codexSessionsDir;
+  if (provider === "cursor") return options.cursorProjectsDir;
+  return options.projectsDir;
+}
+
+// An explicit --provider list is used as given; otherwise every provider whose
+// transcript directory exists ("detected"). With none detected the report
+// covers all three — empty, but with the provider table still present.
+export function resolveProviders(options: CliOptions, exists: (p: string) => boolean = fs.existsSync): ProviderName[] {
+  if (options.providers !== null) return options.providers;
+  const detected = PROVIDERS.filter((p) => exists(transcriptRoot(options, p)));
+  return detected.length > 0 ? detected : [...PROVIDERS];
+}
+
 export async function runReport(options: CliOptions, deps: RunDeps): Promise<RunResult> {
   const scorerDir = path.join(options.stateDir, "scorer");
   const reportsDir = path.join(scorerDir, "reports");
   fs.mkdirSync(reportsDir, { recursive: true });
   const db = openDb(path.join(scorerDir, "scorer.sqlite"));
   try {
-    const files = discoverFiles(options.projectsDir);
+    const providers = resolveProviders(options);
+    const files = providers.flatMap((p) => SOURCES[p].discover(transcriptRoot(options, p)));
     const health = ingestAll(db, files);
     const looked = options.prLookup ? await refreshPrStates(db, deps.lookup, options.until) : 0;
     deps.log(`scorer: ${health.files} files, ${health.lines} new lines, ${looked} PR states looked up`);
@@ -83,7 +101,7 @@ export async function runReport(options: CliOptions, deps: RunDeps): Promise<Run
     const firesLog = readFiresLog(path.join(options.stateDir, "context-guard"));
     const uiEvidenceRuns = readUiEvidenceRuns(path.join(options.stateDir, "ui-evidence", "runs"));
     const outboxState = readOutboxState(path.join(options.stateDir, "judge", "outbox"));
-    const metrics = computeMetrics(db, options.since, options.until, firesLog, uiEvidenceRuns, outboxState);
+    const metrics = computeMetrics(db, options.since, options.until, firesLog, uiEvidenceRuns, outboxState, providers);
     const judgeRows = readJudgeRows(options.since.toISOString(), deps.judgeDbPath);
     const day = options.until.toISOString().slice(0, 10);
     const markdownPath = path.join(reportsDir, `${day}.md`);

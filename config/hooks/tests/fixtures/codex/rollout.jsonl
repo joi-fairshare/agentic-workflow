@@ -1,0 +1,2 @@
+{"timestamp":"2026-09-28T18:20:20.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"working"}]}}
+{"timestamp":"2026-09-28T18:20:21.115Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40254770,"cached_input_tokens":39320576,"output_tokens":238033,"total_tokens":40492803},"last_token_usage":{"input_tokens":250000,"cached_input_tokens":249000,"output_tokens":415,"total_tokens":250415},"model_context_window":258400}}}

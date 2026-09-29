@@ -1,0 +1,1 @@
+{"conversation_id":"cu-1","generation_id":"g-1","hook_event_name":"preToolUse","workspace_roots":["/tmp"],"tool_name":"Shell","tool_use_id":"tu-1","tool_input":{"command":"git status","working_directory":"/tmp"},"cwd":"/tmp","agent_message":""}

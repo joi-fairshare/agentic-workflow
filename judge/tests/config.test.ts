@@ -87,3 +87,38 @@ describe("loadConfig", () => {
     expect(loadConfig(file)).toEqual(DEFAULT_CONFIG);
   });
 });
+
+describe("loadConfig — providers block", () => {
+  function write(contents: unknown): string {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "judge-cfg-")), "config.json");
+    fs.writeFileSync(file, JSON.stringify(contents));
+    return file;
+  }
+
+  it("has no providers key by default (the chain is auto-detected)", () => {
+    expect(DEFAULT_CONFIG.providers).toBeUndefined();
+  });
+
+  it("loads agentClis order and jev toggle, with questions defaulted when absent", () => {
+    expect(loadConfig(write({ providers: { agentClis: ["cursor-cli", "claude-cli"], jev: false } }))).toEqual({
+      questions: DEFAULT_CONFIG.questions,
+      providers: { agentClis: ["cursor-cli", "claude-cli"], jev: false },
+    });
+  });
+
+  it("drops unknown provider names and wrong-typed fields instead of failing", () => {
+    expect(loadConfig(write({ providers: { agentClis: ["codex-cli", "gemini-cli", 3], jev: "no" } })).providers).toEqual({ agentClis: ["codex-cli"] });
+    expect(loadConfig(write({ providers: { agentClis: "codex-cli", jev: true } })).providers).toEqual({ jev: true });
+  });
+
+  it("omits providers entirely when the block is empty, invalid, or not an object", () => {
+    expect(loadConfig(write({ providers: {} })).providers).toBeUndefined();
+    expect(loadConfig(write({ providers: { agentClis: 1 } })).providers).toBeUndefined();
+    expect(loadConfig(write({ providers: ["codex-cli"] })).providers).toBeUndefined();
+    expect(loadConfig(write({ providers: null })).providers).toBeUndefined();
+  });
+
+  it("an empty agentClis list is kept (explicitly no agent CLIs)", () => {
+    expect(loadConfig(write({ providers: { agentClis: [] } })).providers).toEqual({ agentClis: [] });
+  });
+});

@@ -109,8 +109,18 @@ if [ -z "$LAST_ASSISTANT_LINE" ]; then
   # skipping the growth check.
   LAST_ASSISTANT_LINE="$(grep '"type":"assistant"' "$TRANSCRIPT" 2>/dev/null | tail -n 1)"
 fi
-[ -n "$LAST_ASSISTANT_LINE" ] || exit 0
-TOKENS="$(printf '%s' "$LAST_ASSISTANT_LINE" | jq -r '(.message.usage.input_tokens // 0) + (.message.usage.cache_read_input_tokens // 0) + (.message.usage.cache_creation_input_tokens // 0)' 2>/dev/null)"
+if [ -n "$LAST_ASSISTANT_LINE" ]; then
+  TOKENS="$(printf '%s' "$LAST_ASSISTANT_LINE" | jq -r '(.message.usage.input_tokens // 0) + (.message.usage.cache_read_input_tokens // 0) + (.message.usage.cache_creation_input_tokens // 0)' 2>/dev/null)"
+else
+  # Codex rollout transcripts (run via config/hooks/adapters/codex.sh) have
+  # no Claude "assistant" lines; their context size is the latest
+  # event_msg/token_count's last_token_usage.input_tokens (which already
+  # includes cached_input_tokens). Only reached when no Claude assistant
+  # line exists anywhere in the file, so Claude sessions never take it.
+  LAST_COUNT_LINE="$(tail -c 1048576 "$TRANSCRIPT" 2>/dev/null | grep '"type":"token_count"' | tail -n 1)"
+  [ -n "$LAST_COUNT_LINE" ] || exit 0
+  TOKENS="$(printf '%s' "$LAST_COUNT_LINE" | jq -r '.payload.info.last_token_usage.input_tokens // 0' 2>/dev/null)"
+fi
 case "$TOKENS" in ('' | *[!0-9]*) exit 0 ;; esac
 [ "$TOKENS" -ge "$THRESHOLD" ] || exit 0
 

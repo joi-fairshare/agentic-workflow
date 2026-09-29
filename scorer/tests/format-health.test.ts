@@ -28,6 +28,16 @@ describe("format health", () => {
     expect(verdict(h)).toEqual({ status: "ok", problems: [], notices: [] });
   });
 
+  it("counts a Codex token_count as a usage line and keeps per-provider line counts", () => {
+    const h = newHealth();
+    recordHealth(h, outcome("codex:token_count", { noUsage: true }), "main", "codex");
+    recordHealth(h, outcome("codex:response_item"), "main", "codex");
+    recordHealth(h, outcome("cursor:user"), "main", "cursor");
+    expect(h).toMatchObject({ lines: 3, assistantLines: 1, assistantWithoutUsage: 1, usageSourceLines: 2, byProvider: { codex: { files: 0, lines: 2 }, cursor: { files: 0, lines: 1 } } });
+    expect(h.byAgentType.main).toEqual({ assistantLines: 1, assistantWithoutUsage: 1 });
+    expect(verdict(h).notices).toContain("cursor: 1 lines read — its transcripts carry no token usage, so it counts toward involvement only, not cost");
+  });
+
   it("lists unknown line types as a notice", () => {
     const h = newHealth();
     recordHealth(h, outcome("assistant"));
