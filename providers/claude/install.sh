@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code adapter for the Vitalize Workflow Toolkit installer.
+# Claude Code adapter for Agentic Workflow installer.
 # Sourced by setup.sh (after providers/lib.sh). Defines claude_* functions only.
 #
 # End state (unchanged from the pre-multi-provider setup.sh):
@@ -74,7 +74,7 @@ claude_install_shell_integration() {
   local si_file="$CLAUDE_DIR/shell-integration.sh" si_tmp
   si_tmp="$(mktemp)"
   cat > "$si_tmp" << 'SHELL_EOF'
-# Claude Code shell integration — written by the Vitalize Workflow Toolkit setup.sh
+# Claude Code shell integration — written by Agentic Workflow setup.sh
 # Keeps ~/.claude/terminal_width updated so statusline.sh can read the actual
 # terminal width. Claude Code subprocesses cannot access /dev/tty or $COLUMNS,
 # so the interactive shell (which always has the correct value) writes it here.

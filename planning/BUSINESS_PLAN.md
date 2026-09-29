@@ -4,7 +4,7 @@ This is a developer productivity tool, not a revenue product. This plan frames v
 
 ## Value Proposition
 
-The Vitalize Workflow Toolkit provides a portable, self-contained toolkit that turns Claude Code, Codex, or Cursor into a multi-agent development platform. It solves three problems that developers face when adopting AI-assisted coding:
+Agentic Workflow provides a portable, self-contained toolkit that turns Claude Code, Codex, or Cursor into a multi-agent development platform. It solves three problems that developers face when adopting AI-assisted coding:
 
 1. **Workflow replication is manual.** Custom skills, prompts, and configurations live in per-provider dotfiles (`~/.claude/`, `~/.codex/`, `~/.cursor/`) and are lost when switching machines or tools. The toolkit archives these as one Git-versioned, provider-neutral skill library with a one-command setup script.
 

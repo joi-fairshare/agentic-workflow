@@ -1,6 +1,6 @@
-# AGENTS.md — Vitalize Workflow Toolkit
+# AGENTS.md — Agentic Workflow
 
-> Vitalize Workflow Toolkit — provider-agnostic agent workflow toolkit for Claude Code, Codex, and Cursor: 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill), config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
+> Agentic Workflow — provider-agnostic agent workflow toolkit for Claude Code, Codex, and Cursor: 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill), config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 
 Domain-specific rules live in `.agents/rules/` — one file per rule, the only copy. `.claude/rules` and `.cursor/rules/*.mdc` are symlinks to it (auto-loaded by Claude Code and Cursor), and `CLAUDE.md` is a symlink to this file. Codex reads the Rules Index at the bottom of this file. After adding or removing a rule, run `scripts/sync-rules.sh`.
 

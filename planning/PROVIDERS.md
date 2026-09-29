@@ -1,6 +1,6 @@
 # Providers
 
-The Vitalize Workflow Toolkit supports three agent hosts: **Claude Code**, **Codex**, and **Cursor**.
+Agentic Workflow supports three agent hosts: **Claude Code**, **Codex**, and **Cursor**.
 One canonical core (skills, hook logic, MCP servers, bridge, judge, scorer) plus a thin adapter per
 provider. Skill text names capabilities, not tools — see `skills/_shared/capabilities.md`.
 

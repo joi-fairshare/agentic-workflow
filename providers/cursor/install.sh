@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cursor adapter for the Vitalize Workflow Toolkit installer.
+# Cursor adapter for Agentic Workflow installer.
 # Sourced by setup.sh (after providers/lib.sh). Defines cursor_* functions only.
 #
 # Verified against cursor-agent 2026.09.02 (bundle source, 2026-09-28):

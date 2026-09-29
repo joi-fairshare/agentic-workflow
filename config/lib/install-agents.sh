@@ -77,7 +77,7 @@ render_agent_codex() {
   desc="$(_agent_field "$src" description)"
   model="$(_agent_field "$src" model)"
   effort="$(_codex_effort_for "$model")"
-  echo "# Managed by the Vitalize Workflow Toolkit — generated from config/agents/$(basename "$src")."
+  echo "# Managed by Agentic Workflow — generated from config/agents/$(basename "$src")."
   echo "# Hand edits are preserved (setup.sh stops upgrading this file once it changes)."
   echo "# Claude model pin \"${model:-none}\" is not portable: model is inherited from the"
   echo "# parent session and the pin is mapped to model_reasoning_effort instead."
@@ -105,7 +105,7 @@ render_agent_cursor() {
     echo "readonly: true"
   fi
   echo "---"
-  echo "<!-- Managed by the Vitalize Workflow Toolkit — generated from config/agents/$(basename "$src"). Claude model pin \"${model:-none}\" mapped to Cursor model \"$(_cursor_model_for "$model")\". -->"
+  echo "<!-- Managed by Agentic Workflow — generated from config/agents/$(basename "$src"). Claude model pin \"${model:-none}\" mapped to Cursor model \"$(_cursor_model_for "$model")\". -->"
   _agent_body "$src"
 }
 

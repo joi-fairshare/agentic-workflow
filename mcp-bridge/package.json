@@ -1,7 +1,7 @@
 {
   "name": "@agentic-workflow/mcp-bridge",
   "version": "1.0.0",
-  "description": "Vitalize Workflow Toolkit MCP bridge for multi-agent communication across Claude Code, Codex, and Cursor",
+  "description": "Agentic Workflow MCP bridge for multi-agent communication across Claude Code, Codex, and Cursor",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

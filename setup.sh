@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vitalize Workflow Toolkit — one-command setup for Claude Code, Codex, and Cursor.
+# Agentic Workflow — one-command setup for Claude Code, Codex, and Cursor.
 #
 # Usage:
 #   ./setup.sh [--providers claude,codex,cursor] [--dry-run]
@@ -32,7 +32,7 @@ if ! command -v jq &>/dev/null; then
   echo "╔══════════════════════════════════════════════════════════════╗"
   echo "║                  MISSING REQUIRED DEPENDENCY                ║"
   echo "║                                                              ║"
-  echo "║  jq is required by the Vitalize Workflow Toolkit installer  ║"
+  echo "║  jq is required by Agentic Workflow installer  ║"
   echo "║  (settings/MCP config merges) and by the statusline.        ║"
   echo "║                                                              ║"
   echo "║  Install jq, then re-run setup:                             ║"
@@ -187,7 +187,7 @@ export AW_PROVIDERS="$PROVIDERS"
 #   cursor → ~/.cursor/agents/*.md (translated frontmatter)
 # Ownership tracked in ~/.agentic-workflow/managed/agents[-<provider>].json.
 if [ "$MODE" = "agents" ]; then
-  echo "=== Vitalize Workflow Toolkit: installing lean agent types ($PROVIDERS) ==="
+  echo "=== Agentic Workflow: installing lean agent types ($PROVIDERS) ==="
   for _p in $PROVIDERS; do
     "${_p}_install_agents"
   done
@@ -225,7 +225,7 @@ MANAGED_SKILLS=(review postReview addressReview enhancePrompt rootCause bugHunt 
 # Removed from every provider skills dir on each run (idempotent).
 DEPRECATED_SKILLS=(bolder critique audit polish animate distill colorize typeset arrange quieter harden onboard delight clarify normalize extract adapt optimize overdrive teach-impeccable)
 
-echo "=== Vitalize Workflow Toolkit Setup ==="
+echo "=== Agentic Workflow Setup ==="
 echo "  providers: $PROVIDERS"
 aw_dry && echo "  mode:      DRY RUN — nothing will be written"
 echo ""
@@ -393,7 +393,7 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
     _added_local_bin=false
     for _rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
       if [ -f "$_rc" ] && ! grep -qF '.local/bin' "$_rc" 2>/dev/null; then
-        printf '\n# Added by Vitalize Workflow Toolkit setup.sh\n%s\n' "$LOCAL_BIN_LINE" >> "$_rc"
+        printf '\n# Added by Agentic Workflow setup.sh\n%s\n' "$LOCAL_BIN_LINE" >> "$_rc"
         _added_local_bin=true
       fi
     done

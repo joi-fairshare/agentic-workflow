@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-09-28 — Provider-agnostic toolkit
 
-The toolkit has been renamed **Vitalize Workflow Toolkit**. It now supports Claude Code, Codex, and Cursor equally, with one canonical core and a thin adapter per provider.
+The toolkit now supports Claude Code, Codex, and Cursor equally, with one canonical core and a thin adapter per provider.
 
 ### Added
 

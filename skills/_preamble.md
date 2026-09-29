@@ -2,7 +2,7 @@
 
 Every skill starts by reading this file and following it. Run **Session Close** at the end of the skill.
 
-> **Vitalize Workflow Toolkit** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Works in Claude Code, Codex, and Cursor. Run any as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex).
+> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Works in Claude Code, Codex, and Cursor. Run any as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex).
 >
 > **Provider tools:** skills name capabilities (**Ask the user**, **Spawn a subagent**, **Dispatch in parallel**, **Invoke skill**, `mcp: <server>/<tool>`). Map each to your host's tool via `$HOME/.agentic-workflow/toolkit/skills/_shared/capabilities.md`.
 >

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for the Vitalize Workflow Toolkit installer.
+# Shared helpers for Agentic Workflow installer.
 #
 # Sourced by setup.sh and by providers/<name>/install.sh. Provider-neutral:
 # everything here takes the target directory as an argument so the same logic
@@ -171,7 +171,7 @@ aw_cleanup_stale_skills() {
     link_target=$(readlink "$existing" 2>/dev/null || echo "")
     aw_is_ours "$link_target" || continue
     echo "  ⚠ STALE: $skill_name → $link_target"
-    echo "    This skill was installed by a previous version of the Vitalize Workflow Toolkit but is no longer in the current version."
+    echo "    This skill was installed by a previous version of Agentic Workflow but is no longer in the current version."
     echo "    Remove it? (y/n)"
     if aw_confirm; then
       aw_run rm "$existing"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Codex adapter for the Vitalize Workflow Toolkit installer.
+# Codex adapter for Agentic Workflow installer.
 # Sourced by setup.sh (after providers/lib.sh). Defines codex_* functions only.
 #
 # Verified against codex-cli 0.158.0 (2026-09-28):

@@ -1,4 +1,4 @@
-# Vitalize Workflow Toolkit
+# Agentic Workflow
 
 A portable, provider-agnostic workflow toolkit for AI coding agents. It works the same way in **Claude Code**, **Codex**, and **Cursor**: 44 native skills plus 3 fetched external design packs (impeccable, emil-design-eng, taste-skill), a repo bootstrapper, safety hooks, a bidirectional MCP bridge for multi-agent communication, a cheap-decision judge, a cost/involvement scorer, and token-efficiency tools (the rtk command rewriter and the headroom context compressor).
 
