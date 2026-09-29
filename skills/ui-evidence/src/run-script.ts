@@ -132,6 +132,7 @@ export async function runScript(script: UiScript, runDir: string, mainBaselineSc
     runId,
     ts: new Date().toISOString(),
     route: script.route,
+    appBuild: opts.appBuild ?? null,
     ...(script.planning?.pr !== undefined ? { pr: script.planning.pr } : {}),
     steps,
     visual: gate.visual,

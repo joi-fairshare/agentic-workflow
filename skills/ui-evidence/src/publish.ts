@@ -28,6 +28,8 @@ export interface RunSummary {
   ts?: string;
   pr?: string;
   route?: string;
+  /** The `--app-build` commit this run executed against; null when not given. */
+  appBuild?: string | null;
   /** Fraction of differing pixels vs the approved baseline; null = not compared. */
   diffScore?: number | null;
   /** Every model call made for this run, for the cost baseline. */

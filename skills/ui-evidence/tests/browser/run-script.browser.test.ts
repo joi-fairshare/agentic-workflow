@@ -54,6 +54,8 @@ describe("runScript", () => {
     expect(s.pr).toBe("42");
     expect(s.evidence?.traces).toHaveLength(1);
     expect(fs.existsSync(path.join(dir, "summary.json"))).toBe(true);
+    // bugfix-state ties a run to a commit through this field.
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")).appBuild).toBe("b1");
   }, 60_000);
 
   it("run 2 (identical baseline): visual is 'unchanged' with no further image-model call", async () => {
