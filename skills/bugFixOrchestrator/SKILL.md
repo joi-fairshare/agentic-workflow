@@ -2,7 +2,7 @@
 name: bugFixOrchestrator
 description: Drive a bug ticket (Linear ID/URL or pasted text) to a proven resolution — investigate with /rootCause, have implementer subagents fix it, and call it resolved only when the same check that failed before the fix passes after it AND judge resolution-check agrees the reported problem is solved.
 argument-hint: "<linear-issue-id-or-url | pasted ticket text>"
-allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(jq *), Bash(judge *), Bash(bash *), Bash(source *), Bash(with_stack_lock_and_heavy_job_lock *), Bash(SHARED_DIR=*), Bash(TK=*), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
+allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(jq *), Bash(judge *), Bash(bash *), Bash(source *), Bash(with_stack_lock_and_heavy_job_lock *), Bash(SHARED_DIR=*), Bash(TK=*), Bash(BFS_JS=*), Bash(REPO=*), Bash(STATE=*), Bash(echo *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
 ---
 
 <!-- preamble -->
@@ -19,7 +19,8 @@ decide. "Tests pass" is never enough — a ticket is resolved only when:
 Every phase change goes through the `bugfix-state` helper, which owns the state file and **refuses**
 (exit 3) any step the rules don't allow. On a refusal, report the reason to the user and follow it —
 never work around the helper, edit `state.json`, or write or edit evidence files (`summary.json`,
-test results) yourself. Evidence comes only from the `ui-evidence` CLI and `bugfix-state run-test`.
+test results, judge input) yourself. Evidence comes only from `bugfix-state run-ui` and `run-test`,
+and the judge input only from `bugfix-state judge-input` — the helper refuses anything else.
 
 Design: `$HOME/.agentic-workflow/toolkit/docs/superpowers/specs/2026-09-29-bug-fix-orchestrator-design.md`.
 
@@ -33,7 +34,6 @@ SHARED_DIR="$TK/skills/_shared"
 source "$SHARED_DIR/repo-slug.sh"
 source "$TK/skills/ui-evidence/scripts/lib/locks.sh"   # with_stack_lock_and_heavy_job_lock
 BFS_JS="$TK/skills/bugFixOrchestrator/dist/bin.js"
-UIE_JS="$TK/skills/ui-evidence/dist/bin.js"
 REPO="$(git rev-parse --show-toplevel)"
 STATE="$AW_DIR/bugfix/<ticket-slug>"   # <ticket-slug>: Linear id lowercased (eng-123) or a short kebab summary
 mkdir -p "$STATE"
@@ -84,9 +84,10 @@ The check is committed here; that commit is the **baseline**, and every candidat
    is no PR diff, so give it rootCause's repro steps and the route map instead. Every step's
    `expectedState` must come from the ticket's **expected** behaviour, not the current behaviour.
 3. Write the returned JSON to `$REPO/.ui-evidence/<ticket-slug>.json` and commit it.
-4. Run it on the unfixed code:
-   `with_stack_lock_and_heavy_job_lock 120 node "$UIE_JS" "$REPO/.ui-evidence/<ticket-slug>.json" "$STATE/runs/baseline" --app-build "$(git rev-parse HEAD)"`
-   Evidence = `$STATE/runs/baseline/summary.json`.
+4. Run it on the unfixed code through the helper, which runs ui-evidence itself (with
+   `--app-build` set to `HEAD`) and registers the summary:
+   `with_stack_lock_and_heavy_job_lock 120 node "$BFS_JS" run-ui --state "$STATE" --check .ui-evidence/<ticket-slug>.json --cwd "$REPO"`
+   Evidence = the printed `evidence` path.
 
 **Anything else:**
 
@@ -95,7 +96,7 @@ The check is committed here; that commit is the **baseline**, and every candidat
    for <expected behaviour>; `Acceptance criteria:` fails on the current code for the reported reason,
    committed, no product code changed; `Proof command:` the test command for that file.)
 2. Run it through the helper, which executes the command itself and registers the result:
-   `with_stack_lock_and_heavy_job_lock 120 node "$BFS_JS" run-test --state "$STATE" --check <test-file> --cwd "$REPO" -- <test command naming that file>`
+   `with_stack_lock_and_heavy_job_lock 120 node "$BFS_JS" run-test --state "$STATE" --check <test-file> --cwd "$REPO" -- <test command with the test file as its own argument>`
    Evidence = the printed `evidence` path. Use this **exact** command for every later run of the check.
 
 Then: `node "$BFS_JS" advance reproduce --state "$STATE" --evidence <evidence> --check <script-or-test-file> --cwd "$REPO"`
@@ -114,7 +115,7 @@ Choose the mode, then `node "$BFS_JS" start-attempt --state "$STATE" --mode <A|B
 
 | Mode | When | Dispatch |
 |------|------|----------|
-| **B** competing | A previous attempt failed **and** the handoff has ≥ 2 hypotheses not ruled out (the helper enforces both) | 2 implementers, one per open hypothesis, each in its own worktree — **Dispatch in parallel** |
+| **B** competing | A previous attempt failed **and** the handoff has ≥ 2 hypotheses not ruled out (the helper enforces both) | 2 implementers, each on a **different** open hypothesis, each in its own worktree — **Dispatch in parallel**. Re-dispatch the hypothesis whose fix just failed only if the failure reasons point at the implementation, not the hypothesis |
 | **C** split | The confirmed hypothesis's cause-site files span more than one area (e.g. an API route and a UI component) | One implementer per area, **in sequence** on one worktree, each given the previous one's diff |
 | **A** single | Otherwise | One implementer in one worktree |
 
@@ -132,15 +133,22 @@ Every implementer is a **Spawn a subagent** of type `lean-coder`. Its brief cont
 - `Goal:` make the frozen check pass by fixing <the confirmed cause / its area / its hypothesis>;
 - `Acceptance criteria:` the check passes, the check file is untouched, the fix is committed on the
   worktree's branch, the working tree is clean;
-- `Proof command:` the check command (UI: the `ui-evidence` run; test: the exact baseline command);
+- `Proof command:` the check command with the lock prefix, spelled out in full because the subagent's
+  shell has none of the Setup block: `source "$HOME/.agentic-workflow/toolkit/skills/ui-evidence/scripts/lib/locks.sh" && with_stack_lock_and_heavy_job_lock 120 <check command>`
+  (UI: the implementer runs ui-evidence against its worktree only to iterate; the recorded run is yours);
+- whether the worktree needs a one-time dependency install (say so explicitly; the agent otherwise
+  won't install);
 - the ticket brief (verbatim) and expected behaviour, and the handoff path;
 - on a retry: the previous candidate's diff and the exact failure reasons (failed steps/assertions,
   and the judge's `reasons`);
 - run heavy checks once per commit, under the lock, not per edit.
 
 When a candidate's implementer (in mode C, the **last** area's implementer) finishes:
-`node "$BFS_JS" record-candidate --state "$STATE" --branch <branch> --cwd <worktree>`
-— once per candidate. The helper reads the commit from `--cwd`; the tree must be clean.
+`node "$BFS_JS" record-candidate --state "$STATE" --branch <branch> --cwd <worktree> [--hypothesis <n>]`
+— once per candidate; `--hypothesis` is required in mode B. The helper reads the commit from
+`--cwd`, and refuses a clean tree that is not a real change on top of the baseline. If the fix touches
+the check, tests, fixtures, snapshots or test config, the helper refuses: **Ask the user** whether
+those changes are legitimate, and only if they approve, re-run with `--allow-test-changes`.
 
 ## Phase 5 — Evaluate
 
@@ -151,30 +159,25 @@ already are. The candidate's branch stays checked out in its worktree, so detach
 2. Re-run the **same** check:
    - UI: restart the app from `$REPO` with the project's run recipe (`/run` or its dev command), run
      `doctor.sh`, then
-     `with_stack_lock_and_heavy_job_lock 120 node "$UIE_JS" "$REPO/.ui-evidence/<ticket-slug>.json" "$STATE/runs/<candidate>" --app-build "$(git -C "$REPO" rev-parse HEAD)"`.
-     Rebuilding the served app from the detached checkout is what makes `--app-build` true — the
-     helper can check the commit label, not what the server is running.
+     `with_stack_lock_and_heavy_job_lock 120 node "$BFS_JS" run-ui --state "$STATE" --check .ui-evidence/<ticket-slug>.json --cwd "$REPO"`.
+     Rebuilding the served app from the detached checkout is what makes the recorded `appBuild` true —
+     the helper can check the commit label, not what the server is running.
    - Test: the exact baseline `run-test` command, with `--cwd "$REPO"`.
 3. `node "$BFS_JS" record-run <candidate> --state "$STATE" --evidence <evidence>`
    (refused for a broken run: repair the selector and re-run — it doesn't cost an attempt).
-4. If the run **passed**, ask the judge. Build the input with `jq` so the ticket text is copied
-   byte-for-byte:
+4. If the run **passed**, ask the judge. The helper builds the input from state (ticket text
+   verbatim, the handoff's root cause, the diff stat) and records its digest:
    ```bash
-   jq -n --slurpfile t "$STATE/ticket.json" \
-     --arg rc "<the handoff's Root Cause paragraph>" --arg kind "<ui-evidence|test>" \
-     --arg summary "<what the check asserts>" \
-     --arg diff "$(git -C "$REPO" diff --stat <baseline-commit> <candidate commit>)" \
-     '{brief: $t[0].brief, expected: $t[0].expected, actual: $t[0].actual, rootCause: $rc,
-       checkKind: $kind, checkSummary: $summary, beforePassed: false, afterPassed: true, diffStat: $diff}' \
-     > "$STATE/judge-<candidate>.json"
+   node "$BFS_JS" judge-input <candidate> --state "$STATE" --summary "<what the check asserts>"   # prints {input, digest}
    judge resolution-check < "$STATE/judge-<candidate>.json" > "$STATE/judge-<candidate>.out"; echo "exit $?"
    ```
    - Exit 0 → `node "$BFS_JS" record-judge <candidate> --state "$STATE" --decision-id "$(jq -r .id "$STATE/judge-<candidate>.out")"`
+     (refused if the decision is about any other input).
    - Exit 2 (escalated; the output has `reason_code` and no `id`) →
      `node "$BFS_JS" record-judge <candidate> --state "$STATE" --escalated "$(jq -r .reason_code "$STATE/judge-<candidate>.out")"`,
      then **Ask the user**: start another attempt (add any context they give to the implementer brief),
      or stop as unresolved. The helper never records "resolved" without a `resolved` judge decision.
-   - Exit 1 (invalid input) → fix the input file and re-run; never hand-edit the ticket text.
+   - Exit 1 → report the error; the input file is the helper's, never edit it.
 5. `git -C "$REPO" checkout bugfix/<ticket-slug>` before the next candidate or phase.
 
 Outcome:

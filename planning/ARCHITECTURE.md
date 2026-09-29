@@ -144,7 +144,7 @@ agentic-workflow/
 ├── .agents/rules/                       # Glob-scoped rules, the only copy (linked by scripts/sync-rules.sh)
 ├── providers/                           # Per-provider adapters
 │   └── <claude|codex|cursor>/           #   install.sh (skills, MCP, config) + install-hooks.sh
-├── skills/                              # Native skills (45), shared by all providers
+├── skills/                              # Native skills (47), shared by all providers
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
