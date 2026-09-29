@@ -32,6 +32,13 @@ function baseState(overrides: Partial<State> = {}): State {
     attempt: 0,
     attemptMode: null,
     handoff: path.join(scratch, "handoff.md"),
+    investigation: {
+      rootCause: "updateProfile() omits phone.",
+      hypotheses: [
+        { n: 1, text: "PATCH body omits phone", files: ["src/profile/api.ts"], result: "confirmed" },
+        { n: 2, text: "Form state drops phone on blur", files: ["src/profile/Form.tsx", "src/profile/state.ts"], result: "untested" },
+      ],
+    },
     check: { kind: "test", path: "check.sh", sha256: checkSha, command: ["sh", "check.sh"] },
     baseline: { evidence: "b.json", commit: head },
     candidates: [],
@@ -107,6 +114,8 @@ describe("advance investigate", () => {
     refused(investigate("fixed.md"), 'expected "diagnosed"');
     fs.writeFileSync(path.join(scratch, "unconfirmed.md"), HANDOFF.replace("| High | confirmed |", "| High | ruled-out |"));
     refused(investigate("unconfirmed.md"), "no hypothesis is confirmed");
+    fs.writeFileSync(path.join(scratch, "no-rc.md"), HANDOFF.replace(/## Root Cause[\s\S]*$/, ""));
+    refused(investigate("no-rc.md"), "no ## Root Cause text");
   });
 });
 
@@ -177,11 +186,11 @@ describe("start-attempt", () => {
     refused(run("start-attempt", "--mode", "A"), "already resolves the ticket");
   });
 
-  it("refuses mode B when the handoff can no longer be read", () => {
-    saveState(dir, baseState({ phase: "evaluate", attempt: 1, handoff: path.join(scratch, "gone.md"), candidates: [candidate({ run: { evidence: "e", passed: false, commit: head, recordedAt: "t" } })] }));
-    refused(run("start-attempt", "--mode", "B"), "cannot read handoff");
-    saveState(dir, baseState({ phase: "evaluate", attempt: 1, handoff: null, candidates: [candidate({ run: { evidence: "e", passed: false, commit: head, recordedAt: "t" } })] }));
-    refused(run("start-attempt", "--mode", "B"), "cannot read handoff");
+  it("decides mode B from the snapshot taken at investigate, not the (mutable) handoff file", () => {
+    const failed = [candidate({ run: { evidence: "e", passed: false, commit: head, recordedAt: "t" } })];
+    fs.writeFileSync(path.join(scratch, "handoff.md"), "rewritten after investigate");
+    saveState(dir, baseState({ phase: "evaluate", attempt: 1, candidates: failed }));
+    expect(run("start-attempt", "--mode", "B").exitCode).toBe(0);
   });
 });
 
@@ -305,6 +314,10 @@ describe("run-test", () => {
     expect(run("run-test", "--check", "check.sh", "--cwd", repo)).toMatchObject({ exitCode: 1 });
     refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "true"), "must pass the check file (check.sh) as an argument");
     refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "-c", "exit 0 # check.sh"), "as an argument");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "-c", "exit 0", "check.sh"), "inline code (`sh -c`)");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "bash", "-lc", "true", "check.sh"), "inline code (`bash -lc`)");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "/usr/bin/grep", "-q", "x", "check.sh"), "not `grep`");
+    refused(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "python3.12", "-c", "0", "check.sh"), "inline code");
     expect(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "./check.sh").exitCode).toBe(0);
     refused(run("run-test", "--check", "missing.sh", "--cwd", repo, "--", "sh", "missing.sh"), "check file not found");
     fs.writeFileSync(path.join(repo, "check.sh"), "dirty\n");

@@ -33,7 +33,7 @@ function toReproduced(): void {
 
 /** Builds the judge input for a candidate and registers a judge decision about exactly it; returns the decision id. */
 function judge(c: string, decision: string): string {
-  const out = JSON.parse(run("judge-input", c, "--summary", "check.sh passes once fixed.txt exists").stdout) as { digest: string };
+  const out = JSON.parse(run("judge-input", c).stdout) as { digest: string };
   const id = `d-${c}-${decision}`;
   judgeRows[id] = judgeRow(decision, out.digest);
   return id;
@@ -186,8 +186,9 @@ describe("bugfix-state journey", { timeout: 30_000 }, () => {
     run("record-candidate", "--branch", "a1", "--cwd", repo);
     expect(JSON.parse(run("record-run", "c1", "--evidence", runTest().evidence).stdout)).toMatchObject({ passed: false });
     expect(run("start-attempt", "--mode", "B").stderr).toContain("the handoff has 1");
-    fs.writeFileSync(path.join(scratch, "handoff.md"), "garbage");
-    expect(run("start-attempt", "--mode", "B").stderr).toContain("the handoff has 0");
+    // The decision uses the snapshot from advance investigate, so rewriting the file changes nothing.
+    fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF);
+    expect(run("start-attempt", "--mode", "B").stderr).toContain("the handoff has 1");
   });
 
   it("records an escalated judge as needs-human, and a new attempt clears it", () => {

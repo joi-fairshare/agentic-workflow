@@ -55,6 +55,14 @@ export const StateSchema = z.object({
   attempt: z.number().int(),
   attemptMode: z.enum(MODES).nullable(),
   handoff: z.string().nullable(),
+  // Snapshot of the handoff taken at advance investigate: later steps use this,
+  // never the (mutable) file.
+  investigation: z
+    .object({
+      rootCause: z.string(),
+      hypotheses: z.array(z.object({ n: z.number().int(), text: z.string(), files: z.array(z.string()), result: z.enum(["confirmed", "ruled-out", "untested"]) })),
+    })
+    .nullable(),
   check: z
     .object({
       kind: z.enum(["ui-evidence", "test"]),

@@ -56,6 +56,8 @@ describe("run-ui", { timeout: 30_000 }, () => {
     const after = out<{ evidence: string; exitCode: number }>(run("run-ui", "--check", "script.json", "--cwd", repo));
     expect(after.exitCode).toBe(0);
     expect(out(run("record-run", "c1", "--evidence", after.evidence))).toMatchObject({ passed: true });
+    const input = out<{ input: string }>(run("judge-input", "c1"));
+    expect(JSON.parse(fs.readFileSync(input.input, "utf8"))).toMatchObject({ checkKind: "ui-evidence", checkSummary: "the ui-evidence script script.json" });
   });
 
   it("refuses a dirty tree or a missing check, and reports a run that wrote no summary", () => {
@@ -123,12 +125,39 @@ describe("record-candidate gates", { timeout: 30_000 }, () => {
     expect(readState().candidates[0].hypothesis).toBe(2);
   });
 
-  it("refuses a ruled-out hypothesis", () => {
-    fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF.replace("| Medium | untested |", "| Medium | ruled-out |"));
+  it("refuses a hypothesis that was ruled out at investigate time, whatever the file says later", () => {
+    state = path.join(tmpDir(), "bugfix", "ruled");
+    investigated(HANDOFF.replace("| Medium | untested |", "| Medium | ruled-out |"));
+    const baseline = out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh"));
+    out(run("advance", "reproduce", "--evidence", baseline.evidence, "--check", "check.sh", "--cwd", repo));
+    out(run("start-attempt", "--mode", "A"));
+    fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF);
     commitFile(repo, "fixed.txt", "ok\n");
     expect(run("record-candidate", "--branch", "main", "--cwd", repo, "--hypothesis", "2").stderr).toContain("hypothesis 2 was ruled out");
-    fs.writeFileSync(path.join(scratch, "handoff.md"), "garbage");
-    expect(run("record-candidate", "--branch", "main", "--cwd", repo, "--hypothesis", "1").stderr).toContain("has no hypothesis 1");
+    expect(run("record-candidate", "--branch", "main", "--cwd", repo, "--hypothesis", "")).toMatchObject({ exitCode: 1 });
+    out(run("record-candidate", "--branch", "main", "--cwd", repo, "--hypothesis", "1"));
+  });
+
+  it("sees renamed and specially-named protected files, case-insensitively, and package manifests", () => {
+    // A fresh bugfix whose baseline already contains tests/helper.ts.
+    state = path.join(tmpDir(), "bugfix", "renames");
+    fs.mkdirSync(path.join(repo, "tests"));
+    commitFile(repo, "tests/helper.ts", "x");
+    investigated();
+    const baseline = out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh"));
+    out(run("advance", "reproduce", "--evidence", baseline.evidence, "--check", "check.sh", "--cwd", repo));
+    out(run("start-attempt", "--mode", "A"));
+    commitFile(repo, "fixed.txt", "ok\n");
+    git(repo, "mv", "tests/helper.ts", "src-helper.ts");
+    git(repo, "commit", "-qm", "move the helper out of tests/");
+    expect(run("record-candidate", "--branch", "main", "--cwd", repo).stderr).toContain("tests/helper.ts");
+    git(repo, "reset", "-q", "--hard", "HEAD~1");
+    fs.mkdirSync(path.join(repo, "Fixtures"));
+    commitFile(repo, "Fixtures/é.json", "{}");
+    commitFile(repo, "package.json", "{}");
+    const res = run("record-candidate", "--branch", "main", "--cwd", repo);
+    expect(res.stderr).toContain("Fixtures/é.json");
+    expect(res.stderr).toContain("package.json");
   });
 });
 
@@ -146,13 +175,13 @@ describe("judge-input", { timeout: 30_000 }, () => {
 
   it("builds the judge input from state in schema order and records the digest judge will store", () => {
     const { base, commit } = evaluated();
-    expect(run("judge-input", "c1", "--summary", "s").stderr).toContain("phase is fix");
+    expect(run("judge-input", "c1").stderr).toContain("phase is fix");
     out(run("record-run", "c1", "--evidence", out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh")).evidence));
-    const res = out<{ input: string; digest: string }>(run("judge-input", "c1", "--summary", "check.sh passes"));
+    const res = out<{ input: string; digest: string }>(run("judge-input", "c1"));
     const text = fs.readFileSync(res.input, "utf8");
     const input = JSON.parse(text) as Record<string, unknown>;
     expect(Object.keys(input)).toEqual(["brief", "expected", "actual", "rootCause", "checkKind", "checkSummary", "beforePassed", "afterPassed", "diffStat"]);
-    expect(input).toMatchObject({ brief: TICKET.brief, rootCause: "updateProfile() omits phone.", checkKind: "test", beforePassed: false, afterPassed: true });
+    expect(input).toMatchObject({ brief: TICKET.brief, rootCause: "updateProfile() omits phone.", checkKind: "test", checkSummary: "the regression test check.sh, run as `sh check.sh`", beforePassed: false, afterPassed: true });
     expect(input.diffStat).toBe(git(repo, "diff", "--stat", base, commit));
     expect(res.digest).toBe(createHash("sha256").update(text).digest("hex").slice(0, 16));
     expect(readState().candidates[0].judgeInputDigest).toBe(res.digest);
@@ -160,14 +189,15 @@ describe("judge-input", { timeout: 30_000 }, () => {
 
   const passingRun = () => out<{ evidence: string }>(run("run-test", "--check", "check.sh", "--cwd", repo, "--", "sh", "check.sh")).evidence;
 
-  it("rejects an unknown candidate and missing arguments, and tolerates a handoff with no Root Cause section", () => {
-    evaluated(HANDOFF.replace(/## Root Cause[\s\S]*$/, ""));
+  it("rejects an unknown candidate or missing id, builds the input once, and uses the root cause snapshotted at investigate", () => {
+    evaluated();
     out(run("record-run", "c1", "--evidence", passingRun()));
-    expect(run("judge-input", "c9", "--summary", "s")).toMatchObject({ exitCode: 1 });
+    fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF.replace("updateProfile() omits phone.", "It was fine all along."));
+    expect(run("judge-input", "c9")).toMatchObject({ exitCode: 1 });
     expect(run("judge-input")).toMatchObject({ exitCode: 1 });
-    expect(run("judge-input", "c1").stderr).toContain("missing --summary");
-    const res = out<{ input: string }>(run("judge-input", "c1", "--summary", "s"));
-    expect(JSON.parse(fs.readFileSync(res.input, "utf8"))).toMatchObject({ rootCause: "" });
+    const res = out<{ input: string }>(run("judge-input", "c1"));
+    expect(JSON.parse(fs.readFileSync(res.input, "utf8"))).toMatchObject({ rootCause: "updateProfile() omits phone.", checkSummary: "the regression test check.sh, run as `sh check.sh`" });
+    expect(run("judge-input", "c1").stderr).toContain("was already built");
   });
 
   it("refuses a candidate whose run failed", () => {
@@ -178,6 +208,6 @@ describe("judge-input", { timeout: 30_000 }, () => {
     commitFile(repo, "wrong.txt", "x\n");
     out(run("record-candidate", "--branch", "main", "--cwd", repo));
     expect(out(run("record-run", "c1", "--evidence", passingRun()))).toMatchObject({ passed: false });
-    expect(run("judge-input", "c1", "--summary", "s").stderr).toContain("no passing run");
+    expect(run("judge-input", "c1").stderr).toContain("no passing run");
   });
 });

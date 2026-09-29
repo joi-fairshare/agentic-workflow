@@ -46,6 +46,7 @@ describe("parseHandoff", () => {
         { n: 1, text: "PATCH body omits phone", files: ["src/a.ts", "src/b.ts"], likelihood: "High", result: "confirmed" },
         { n: 2, text: "Form state drops phone on blur", files: ["src/profile/Form.tsx", "src/profile/state.ts"], likelihood: "Medium", result: "untested" },
       ],
+      rootCause: "updateProfile() omits phone.",
     });
   });
 
@@ -65,7 +66,7 @@ describe("parseHandoff", () => {
   });
 
   it("returns no hypotheses for an empty table", () => {
-    expect(parseHandoff("status: diagnosed\n## Hypotheses\n\n| # | H | F | L | R |\n|---|---|---|---|---|\n\n## Root Cause\nx")).toEqual({ status: "diagnosed", hypotheses: [] });
+    expect(parseHandoff("status: diagnosed\n## Hypotheses\n\n| # | H | F | L | R |\n|---|---|---|---|---|\n\n## Root Cause\nx")).toEqual({ status: "diagnosed", hypotheses: [], rootCause: "x" });
   });
 });
 

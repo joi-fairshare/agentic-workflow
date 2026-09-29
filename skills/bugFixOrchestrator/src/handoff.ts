@@ -12,6 +12,8 @@ export interface Hypothesis {
 export interface Handoff {
   status: string;
   hypotheses: Hypothesis[];
+  /** The `## Root Cause` section's text; empty when absent. */
+  rootCause: string;
 }
 
 function cells(row: string): string[] {
@@ -49,5 +51,6 @@ export function parseHandoff(md: string): Handoff | { error: string } {
     if (c.length !== 5 || !Number.isInteger(n) || !RESULTS.includes(result)) return { error: `malformed hypotheses row: ${row.trim()}` };
     hypotheses.push({ n, text: c[1], files: parseFiles(c[2]), likelihood: c[3], result });
   }
-  return { status, hypotheses };
+  const rc = /^## Root Cause[ \t]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(md);
+  return { status, hypotheses, rootCause: rc === null ? "" : rc[1].trim() };
 }

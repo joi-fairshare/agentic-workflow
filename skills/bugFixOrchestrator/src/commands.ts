@@ -67,6 +67,20 @@ function committedCheck(deps: Deps, cwd: string, checkPath: string): { rel: stri
   return { rel, abs };
 }
 
+const INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "node", "deno", "bun", "python", "python3", "ruby", "perl", "php"]);
+const NON_RUNNERS = new Set(["grep", "egrep", "fgrep", "rg", "cat", "test", "[", "true", "false", "echo", "printf", "ls", "stat", "find", "diff", "cmp", "head", "tail", "wc"]);
+
+/** A command that could "pass" without running the check: inline code or a non-runner. */
+function inlineCodeWrapper(argv: readonly string[]): string | null {
+  const bin = path.basename(argv[0]);
+  if (NON_RUNNERS.has(bin)) return `\`${bin}\``;
+  if (INTERPRETERS.has(bin) || /^python\d/.test(bin)) {
+    const inline = argv.slice(1).find((a) => /^-[a-zA-Z]*[ce]$/.test(a) || a === "--eval" || a === "--command");
+    if (inline !== undefined) return `inline code (\`${bin} ${inline}\`)`;
+  }
+  return null;
+}
+
 const sameArgv = (a: readonly string[] | null, b: readonly string[] | null): boolean =>
   a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -79,7 +93,20 @@ function registerRun(dir: string, evidence: string, deps: Deps): void {
 // Files a fix must not touch without the user's approval: the check itself,
 // tests, fixtures, mocks, snapshots, test config, and the check's own
 // directory (unless that is the repo root).
-const PROTECTED = /(^|\/)(tests?|__tests__|spec|specs|fixtures?|mocks?|__mocks__|__snapshots__|\.ui-evidence)(\/|$)|\.(test|spec)\.[^/]+$|\.snap$|(^|\/)(vitest|jest|playwright|karma|cypress)\.config\.[^/]+$/;
+const PROTECTED = new RegExp(
+  [
+    // test-only directories
+    String.raw`(^|/)(tests?|__tests__|specs?|fixtures?|mocks?|__mocks__|__snapshots__|e2e|cypress|playwright|test-?utils|testing|testdata|\.ui-evidence)(/|$)`,
+    // test-file naming across ecosystems
+    String.raw`\.(test|spec)\.[^/]+$`, String.raw`(^|/)test_[^/]+\.py$`, String.raw`_test\.(go|py|rb)$`, String.raw`tests?\.(swift|kt|java|cs)$`, String.raw`\.snap$`,
+    // runner config and setup
+    String.raw`(^|/)(vitest|vite|jest|playwright|karma|cypress|babel)\.(config|setup|workspace)\.[^/]+$`, String.raw`(^|/)(jest|vitest)\.setup[^/]*$`,
+    String.raw`(^|/)setupTests\.[^/]+$`, String.raw`(^|/)conftest\.py$`, String.raw`(^|/)\.mocharc[^/]*$`, String.raw`(^|/)(pytest\.ini|tox\.ini|pyproject\.toml|setup\.cfg)$`,
+    // package manifests carry test scripts and runner config
+    String.raw`(^|/)package\.json$`,
+  ].join("|"),
+  "i",
+);
 function protectedFiles(files: readonly string[], checkPath: string): string[] {
   const checkDir = path.dirname(checkPath);
   return files.filter((f) => f === checkPath || PROTECTED.test(f) || (checkDir !== "." && f.startsWith(`${checkDir}/`)));
@@ -120,6 +147,7 @@ export function init(dir: string, ticketFile: string, deps: Deps): Result {
     attempt: 0,
     attemptMode: null,
     handoff: null,
+    investigation: null,
     check: null,
     baseline: null,
     candidates: [],
@@ -145,8 +173,10 @@ export function advanceInvestigate(dir: string, handoffPath: string, deps: Deps)
     if ("error" in handoff) return refuse(handoff.error);
     if (handoff.status !== "diagnosed") return refuse(`handoff status is "${handoff.status}", expected "diagnosed" (run /rootCause --investigate-only)`);
     if (!handoff.hypotheses.some((h) => h.result === "confirmed")) return refuse("no hypothesis is confirmed — ask the user before fixing an unconfirmed cause");
+    if (handoff.rootCause === "") return refuse("the handoff has no ## Root Cause text");
     const abs = path.resolve(handoffPath);
-    transition(dir, { ...state, handoff: abs }, deps, "advance investigate", "investigate", abs);
+    const investigation = { rootCause: handoff.rootCause, hypotheses: handoff.hypotheses.map(({ n, text, files, result }) => ({ n, text, files, result })) };
+    transition(dir, { ...state, handoff: abs, investigation }, deps, "advance investigate", "investigate", abs);
     return ok({ phase: "investigate", hypotheses: handoff.hypotheses.length });
   });
 }
@@ -179,17 +209,6 @@ export function advanceReproduce(dir: string, evidencePath: string, checkPath: s
   });
 }
 
-function openHypotheses(handoffPath: string): number | Result {
-  let md: string;
-  try {
-    md = fs.readFileSync(handoffPath, "utf8");
-  } catch {
-    return refuse(`cannot read handoff ${handoffPath}`);
-  }
-  const handoff = parseHandoff(md);
-  return "error" in handoff ? 0 : handoff.hypotheses.filter((h) => h.result !== "ruled-out").length;
-}
-
 export function startAttempt(dir: string, mode: string, deps: Deps): Result {
   if (mode !== "A" && mode !== "B" && mode !== "C") return bad(`--mode must be A, B or C (got "${mode}")`);
   return withState(dir, (state) => {
@@ -203,8 +222,7 @@ export function startAttempt(dir: string, mode: string, deps: Deps): Result {
     if (state.attempt >= MAX_ATTEMPTS) return refuse(`attempt cap (${MAX_ATTEMPTS}) reached; run advance report --unresolved`);
     if (mode === "B") {
       if (state.attempt === 0) return refuse("mode B (competing implementers) is the escalation after a failed attempt");
-      const open = openHypotheses(state.handoff ?? "");
-      if (typeof open !== "number") return open;
+      const open = (state.investigation as NonNullable<State["investigation"]>).hypotheses.filter((h) => h.result !== "ruled-out").length;
       if (open < 2) return refuse(`mode B needs at least 2 hypotheses not ruled out; the handoff has ${open}`);
     }
     const attempt = state.attempt + 1;
@@ -214,8 +232,8 @@ export function startAttempt(dir: string, mode: string, deps: Deps): Result {
 }
 
 export function recordCandidate(dir: string, branch: string, cwd: string, hypothesis: string | undefined, allowTestChanges: boolean, deps: Deps): Result {
+  if (hypothesis !== undefined && !/^\d+$/.test(hypothesis)) return bad(`--hypothesis must be a number (got "${hypothesis}")`);
   const hypothesisN = hypothesis === undefined ? null : Number(hypothesis);
-  if (hypothesisN !== null && !Number.isInteger(hypothesisN)) return bad(`--hypothesis must be a number (got "${hypothesis}")`);
   return withState(dir, (state) => {
     // evaluate too: in mode B the first candidate may be evaluated before the second is recorded.
     const wrongPhase = requirePhase(state, ["fix", "evaluate"]);
@@ -244,12 +262,12 @@ export function recordCandidate(dir: string, branch: string, cwd: string, hypoth
       if (taken) return refuse(`hypothesis ${hypothesisN} is already pursued by ${taken.id} in this attempt`);
     }
     if (hypothesisN !== null) {
-      const handoff = parseHandoff(fs.readFileSync(state.handoff as string, "utf8"));
-      const h = "error" in handoff ? undefined : handoff.hypotheses.find((x) => x.n === hypothesisN);
+      const h = (state.investigation as NonNullable<State["investigation"]>).hypotheses.find((x) => x.n === hypothesisN);
       if (h === undefined) return refuse(`the handoff has no hypothesis ${hypothesisN}`);
       if (h.result === "ruled-out") return refuse(`hypothesis ${hypothesisN} was ruled out`);
     }
-    const changedFiles = deps.git(cwd, ["diff", "--name-only", base, commit]).split("\n").filter((f) => f !== "");
+    // -z: raw (unquoted) paths; --no-renames: a moved test reports its old path too.
+    const changedFiles = deps.git(cwd, ["diff", "--name-only", "--no-renames", "-z", base, commit]).split("\0").filter((f) => f !== "");
     const touched = protectedFiles(changedFiles, (state.check as NonNullable<State["check"]>).path);
     // Weakening what the check exercises (fixtures, helpers, config) is as
     // bad as editing the check itself.
@@ -364,6 +382,8 @@ export function runTest(dir: string, checkPath: string, cwd: string, argv: strin
       return a === check.rel || (fs.existsSync(p) && fs.realpathSync(p) === check.abs);
     };
     if (!argv.some(namesCheck)) return refuse(`the command must pass the check file (${check.rel}) as an argument`);
+    const wrapper = inlineCodeWrapper(argv);
+    if (wrapper !== null) return refuse(`the command must execute the check, not ${wrapper}`);
     const checkSha256 = deps.sha256(check.abs);
     const commit = deps.git(cwd, ["rev-parse", "HEAD"]);
     fs.mkdirSync(runsDir(dir), { recursive: true });
@@ -396,32 +416,34 @@ export function runUi(dir: string, checkPath: string, cwd: string, deps: Deps): 
   });
 }
 
-function rootCauseOf(handoffPath: string): string {
-  const md = fs.readFileSync(handoffPath, "utf8");
-  const m = /^## Root Cause\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(md);
-  return m === null ? "" : m[1].trim();
-}
-
 /**
  * Builds the judge resolution-check input from state (ticket text, root
  * cause, run outcome, diff) and records the digest judge will store for it,
  * so record-judge can bind the decision to exactly this input.
  */
-export function judgeInput(dir: string, candidateId: string, checkSummary: string, deps: Deps): Result {
+export function judgeInput(dir: string, candidateId: string, deps: Deps): Result {
   return withState(dir, (state) => {
     const wrongPhase = requirePhase(state, ["evaluate"]);
     if (wrongPhase) return wrongPhase;
     const candidate = state.candidates.find((c) => c.id === candidateId);
     if (candidate === undefined) return bad(`unknown candidate: ${candidateId}`);
     if (candidate.run?.passed !== true) return refuse(`${candidateId} has no passing run; judge only runs after the check passes`);
+    // One input per candidate: re-building it would let an unfavourable
+    // verdict be discarded and the judge asked again.
+    if (candidate.judgeInputDigest !== null) return refuse(`the judge input for ${candidateId} was already built; run judge on ${path.join(dir, `judge-${candidateId}.json`)} and record that decision`);
     const base = (state.baseline as { commit: string }).commit;
+    const check = state.check as NonNullable<State["check"]>;
+    // Derived from state, not agent-written, so it can't steer the verdict.
+    const checkSummary = check.kind === "test"
+      ? `the regression test ${check.path}, run as \`${(check.command as string[]).join(" ")}\``
+      : `the ui-evidence script ${check.path}`;
     // Key order must match ResolutionCheckInputSchema: judge digests the parsed input.
     const input = {
       brief: state.ticket.brief,
       expected: state.ticket.expected,
       actual: state.ticket.actual,
-      rootCause: rootCauseOf(state.handoff as string),
-      checkKind: (state.check as NonNullable<State["check"]>).kind,
+      rootCause: (state.investigation as NonNullable<State["investigation"]>).rootCause,
+      checkKind: check.kind,
       checkSummary,
       beforePassed: false,
       afterPassed: true,

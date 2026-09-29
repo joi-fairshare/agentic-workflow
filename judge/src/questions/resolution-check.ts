@@ -36,7 +36,7 @@ const neutralized = (text: string): string => text.replace(/<(\/?)(brief)/gi, "<
 
 // The other free-text fields sit on labeled lines; collapsing their newlines
 // stops one from starting a fake "trusted" line of its own.
-const oneLine = (text: string): string => capped(text, FIELD_CAP).replace(/\s*\n\s*/g, " ");
+const oneLine = (text: string): string => capped(text, FIELD_CAP).replace(/\s*[\r\n\u2028\u2029]\s*/g, " ");
 
 // Second opinion for /bugFixOrchestrator: the hard check (same ui-evidence
 // script or regression test, failing before and passing after) is the gate;

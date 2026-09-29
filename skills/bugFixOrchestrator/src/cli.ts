@@ -15,7 +15,7 @@ const USAGE = `usage: bugfix-state <command> --state <dir> [options]
   start-attempt --mode <A|B|C>
   record-candidate --branch <branch> [--cwd <dir>] [--hypothesis <n>] [--allow-test-changes]
   record-run <candidate> --evidence <run>
-  judge-input <candidate> --summary <what the check asserts>
+  judge-input <candidate>
   record-judge <candidate> (--decision-id <id> | --escalated <reason_code>)
   advance report (--candidate <id> | --unresolved)
   run-test --check <file> [--cwd <dir>] -- <command...>
@@ -110,7 +110,7 @@ function dispatch(argv: string[], deps: Deps): Result {
       return recordJudge(dir, sub, flag("decision-id"), flag("escalated"), deps);
     case "judge-input":
       if (sub === undefined) return { exitCode: 1, stdout: "", stderr: USAGE };
-      return missing("summary") ?? judgeInput(dir, sub, flag("summary") as string, deps);
+      return judgeInput(dir, sub, deps);
     case "run-ui":
       return missing("check") ?? runUi(dir, flag("check") as string, cwd, deps);
     case "run-test":
