@@ -4,6 +4,8 @@ A portable, provider-agnostic workflow toolkit for AI coding agents. It works th
 
 There is one canonical core: skills, hook logic, MCP servers, bridge, judge, and scorer. Each provider gets a thin adapter on top. Skills describe *capabilities* ("ask the user", "spawn a subagent", "call an MCP tool"), and each provider maps those to its own tools. See [Providers](#providers) and [`planning/PROVIDERS.md`](planning/PROVIDERS.md).
 
+> **New here?** Start with the onboarding guide: [`ONBOARDING.md`](ONBOARDING.md), or the visual walkthrough in [`docs/onboarding.html`](docs/onboarding.html) (open it in a browser).
+
 > **Invoking skills:** the examples below use `/<name>` (Claude Code, Cursor). In Codex, use `$<name>`. For example, `$review` instead of `/review`.
 
 ## Workflow: Product Vision → Ship

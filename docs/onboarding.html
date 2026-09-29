@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Workflow — Visual Onboarding</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --panel: #ffffff;
+    --ink: #1c1b19;
+    --ink-2: #57544d;
+    --ink-3: #8a867c;
+    --line: #e4e0d6;
+    --accent: #2f5bea;
+    --accent-soft: #e8edfd;
+    --ok: #1f8a4c;
+    --ok-soft: #e3f3e9;
+    --warn: #b35c00;
+    --warn-soft: #fbeedd;
+    --code-bg: #16181d;
+    --code-ink: #e6e3da;
+    --radius: 12px;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121316; --panel: #1a1c20; --ink: #ecebe6; --ink-2: #b3b0a7; --ink-3: #7d7a72;
+      --line: #2a2d33; --accent: #7c9cff; --accent-soft: #1f2640; --ok: #5bd18f; --ok-soft: #16301f;
+      --warn: #f0a24a; --warn-soft: #33250f; --code-bg: #0c0d10;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  :not(pre) > code { background: var(--accent-soft); padding: .1em .35em; border-radius: 5px; }
+
+  /* Top bar */
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px; padding: 12px 28px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .brand { font-weight: 700; letter-spacing: -.01em; }
+  .brand span { color: var(--ink-3); font-weight: 500; }
+  .progress { flex: 1; height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; max-width: 320px; margin-left: auto; }
+  .progress > div { height: 100%; width: 0; background: var(--ok); transition: width .3s ease; }
+  .progress-label { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; padding: 3px; background: var(--panel); }
+  .seg button { border: 0; background: none; font: 600 13px var(--sans); color: var(--ink-2); padding: 5px 12px; border-radius: 99px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+  nav.toc { position: sticky; top: 76px; align-self: start; padding: 32px 0; font-size: 14px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+  nav.toc li { counter-increment: toc; }
+  nav.toc a { display: flex; gap: 10px; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none; }
+  nav.toc a::before { content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: 12px; color: var(--ink-3); padding-top: 2px; }
+  nav.toc a.active { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+  main { padding: 32px 0 120px; min-width: 0; }
+  section { padding: 56px 0 8px; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; padding-top: 24px; }
+  .eyebrow { font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px; }
+  h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.05; letter-spacing: -.03em; margin: 0 0 18px; }
+  h2 { font-size: 30px; letter-spacing: -.02em; line-height: 1.15; margin: 0 0 10px; }
+  h3 { font-size: 17px; margin: 0 0 6px; }
+  .lede { font-size: 19px; color: var(--ink-2); max-width: 680px; margin: 0 0 28px; }
+  .sub { color: var(--ink-2); max-width: 680px; margin: 0 0 28px; }
+  .muted { color: var(--ink-3); font-size: 14px; }
+
+  /* Hero */
+  .hero-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+  .hero-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+  .hero-card b { display: block; font-size: 28px; letter-spacing: -.02em; }
+  .hero-card span { color: var(--ink-2); font-size: 14px; }
+  .providers { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .card .icon { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 12px; }
+  .card p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+
+  /* Code */
+  .term { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 14px 16px; margin: 10px 0; font: 13.5px/1.7 var(--mono); overflow-x: auto; white-space: pre; }
+  .term .c { color: #7f8793; }
+  .term .pr { color: #7ee2a8; user-select: none; }
+  .copy { position: absolute; top: 8px; right: 8px; border: 1px solid #333842; background: #22252c; color: #c9c6bd; font: 12px var(--sans); padding: 3px 9px; border-radius: 6px; cursor: pointer; opacity: .8; }
+  .copy:hover { opacity: 1; }
+  .copy.done { color: #7ee2a8; }
+
+  /* Stepper */
+  .stepper { counter-reset: step; display: grid; gap: 14px; }
+  .step { display: grid; grid-template-columns: 44px 1fr; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .step::before { counter-increment: step; content: counter(step); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--ink); color: var(--bg); }
+  .step p { margin: 0 0 6px; color: var(--ink-2); }
+  .step ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); }
+
+  /* Provider tabs */
+  .tabs { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .tabs [role="tablist"] { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs [role="tab"] { flex: 1; border: 0; background: none; padding: 12px; font: 600 14px var(--sans); color: var(--ink-2); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tabs [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .tabs [role="tabpanel"] { padding: 18px 20px; }
+  .tabs [role="tabpanel"] p { margin: 0 0 8px; color: var(--ink-2); }
+
+  /* Checklist */
+  .checklist { display: grid; gap: 10px; }
+  .check { display: grid; grid-template-columns: 28px 1fr; gap: 14px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; cursor: pointer; transition: border-color .2s, background .2s; }
+  .check input { appearance: none; width: 24px; height: 24px; border: 2px solid var(--line); border-radius: 7px; margin: 0; cursor: pointer; display: grid; place-items: center; transition: all .15s; }
+  .check input:checked { background: var(--ok); border-color: var(--ok); }
+  .check input:checked::after { content: ""; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg) translate(-1px, -1px); }
+  .check.done { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .check .t { font-weight: 600; }
+  .check .e { color: var(--ink-2); font-size: 14.5px; }
+  .check .e code { background: transparent; padding: 0; }
+
+  /* Accordion */
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+  summary { cursor: pointer; padding: 14px 18px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font-family: var(--mono); color: var(--ink-3); font-size: 18px; line-height: 1; }
+  details[open] summary::after { content: "–"; }
+  details .body { padding: 0 18px 16px; color: var(--ink-2); }
+  .badge { display: inline-block; font: 600 11px var(--mono); padding: 2px 7px; border-radius: 5px; background: var(--warn-soft); color: var(--warn); margin-right: 8px; vertical-align: 1px; }
+
+  /* Pipeline */
+  .pipeline { position: relative; display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; margin: 8px 0 18px; }
+  .stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; background: none; border: 0; padding: 8px 4px; cursor: pointer; font: inherit; color: inherit; }
+  .stage::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 2px; background: var(--line); z-index: 0; }
+  .stage:first-child::before { display: none; }
+  .stage.passed::before, .stage.active::before { background: var(--accent); }
+  .node { position: relative; z-index: 1; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); border: 2px solid var(--line); transition: all .2s; }
+  .node svg { width: 20px; height: 20px; }
+  .stage:hover .node { border-color: var(--accent); }
+  .stage.passed .node { border-color: var(--accent); color: var(--accent); }
+  .stage.active .node { background: var(--accent); border-color: var(--accent); color: #fff; transform: scale(1.08); box-shadow: 0 0 0 6px var(--accent-soft); }
+  .stage .lbl { font-size: 13px; font-weight: 600; text-align: center; color: var(--ink-2); }
+  .stage.active .lbl { color: var(--ink); }
+  .stage .opt { font: 500 10.5px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+  .stage-detail { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; min-height: 280px; }
+  .stage-detail h3 { font-size: 22px; letter-spacing: -.01em; }
+  .stage-detail .you { margin-top: 14px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; font-size: 14.5px; }
+  .stage-detail .you b { display: block; font-size: 12px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-bottom: 2px; }
+  .stage-detail .out { font: 13px/1.7 var(--mono); color: var(--ink-2); background: var(--bg); border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; white-space: pre; overflow-x: auto; }
+  .stage-nav { display: flex; justify-content: space-between; margin-top: 14px; }
+  .btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 600 14px var(--sans); padding: 8px 16px; border-radius: 99px; cursor: pointer; }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .fade { animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* Skill finder */
+  .finder { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .finder-top { display: flex; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .finder-top input { flex: 1; min-width: 200px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 8px; padding: 10px 12px; font: 15px var(--sans); }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button { border: 1px solid var(--line); background: none; color: var(--ink-2); border-radius: 99px; padding: 6px 12px; font: 600 13px var(--sans); cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .skill-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .skill-row:last-child { border-bottom: 0; }
+  .skill-row .want { font-weight: 600; }
+  .skill-row .why { color: var(--ink-3); font-size: 13.5px; }
+  .skill-row code { background: var(--code-bg); color: var(--code-ink); padding: 5px 10px; border-radius: 7px; white-space: nowrap; font-size: 13px; }
+  .empty { padding: 28px; text-align: center; color: var(--ink-3); }
+
+  /* Review loop diagram */
+  .loop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+  .loop { flex-wrap: nowrap; }
+  .loop .box { flex: 1 1 0; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  @media (max-width: 900px) { .loop { flex-wrap: wrap; } .loop .box { flex-basis: 160px; } }
+  .loop .box code { background: none; padding: 0; font-weight: 700; }
+  .loop .box div { font-size: 13px; color: var(--ink-2); }
+  .loop .arrow { color: var(--ink-3); font-family: var(--mono); }
+
+  /* File tree */
+  .tree { font: 13.5px/1.9 var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; overflow-x: auto; white-space: pre; }
+  .tree .d { color: var(--accent); font-weight: 600; }
+  .tree .n { color: var(--ink-3); font-family: var(--sans); font-size: 13px; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+  .callout { display: flex; gap: 12px; background: var(--warn-soft); color: var(--ink); border-radius: 10px; padding: 12px 16px; font-size: 14.5px; margin: 14px 0; }
+  .callout b { color: var(--warn); }
+
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 14px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { display: none; }
+    .hero-grid, .two, .stage-detail { grid-template-columns: 1fr; }
+    .pipeline { grid-template-columns: repeat(7, minmax(64px, 1fr)); overflow-x: auto; }
+    .progress, .progress-label { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">Agentic Workflow <span>/ onboarding</span></div>
+  <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
+  <div class="progress-label" id="progressLabel">Setup 0 / 5</div>
+  <div class="seg" role="group" aria-label="Your agent CLI">
+    <button type="button" data-provider="claude" aria-pressed="true">Claude Code</button>
+    <button type="button" data-provider="cursor" aria-pressed="false">Cursor</button>
+    <button type="button" data-provider="codex" aria-pressed="false">Codex</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="Sections">
+    <ol>
+      <li><a href="#welcome">Welcome</a></li>
+      <li><a href="#what">What you get</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#verify">Check your setup</a></li>
+      <li><a href="#bootstrap">Bootstrap a repo</a></li>
+      <li><a href="#pipeline">Idea → shipped PR</a></li>
+      <li><a href="#review">The review loop</a></li>
+      <li><a href="#finder">Skill finder</a></li>
+      <li><a href="#where">Where things live</a></li>
+      <li><a href="#extras">Extras & updates</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <!-- 01 -->
+    <section id="welcome">
+      <p class="eyebrow">Onboarding guide</p>
+      <h1>From a fresh clone to your first shipped PR.</h1>
+      <p class="lede">Agentic Workflow gives your AI coding agent a shared set of skills, safety rails, and tools. It works the same way in Claude Code, Codex, and Cursor. Install it once and it's available in every repo.</p>
+      <p class="muted">Pick your agent CLI in the top-right corner. Every command on this page updates to use your CLI's skill syntax (<code data-cmd-prefix>/</code>).</p>
+      <div class="hero-grid">
+        <div class="hero-card"><b>44</b><span>skills for planning, design, build, review, debugging, and shipping</span></div>
+        <div class="hero-card"><b>1 command</b><span>to install: <code>./setup.sh</code>. Safe to re-run any time.</span></div>
+        <div class="hero-card"><b>0</b><span>per-repo installs. Run <code data-cmd>bootstrap</code> once per repo for shared context.</span></div>
+      </div>
+      <div class="providers">
+        <span class="chip"><i style="background:#d97757"></i>Claude Code</span>
+        <span class="chip"><i style="background:#10a37f"></i>Codex</span>
+        <span class="chip"><i style="background:#6b7280"></i>Cursor</span>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="what">
+      <p class="eyebrow">01 · The toolkit</p>
+      <h2>What you get</h2>
+      <p class="sub">Everything is installed globally, so it's in every agent session on your machine.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></div>
+          <h3>Skills</h3>
+          <p>Packaged workflows you trigger by name: <code data-cmd>officeHours</code>, <code data-cmd>review</code>, <code data-cmd>rootCause</code>, <code data-cmd>shipRelease</code>, and more.</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+          <h3>Safety hooks</h3>
+          <p>Block <code>rm -rf</code>, <code>git reset --hard</code>, force-pushes, pushes to <code>main</code>, and commands that contain secrets, before they run.</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 11l6-4M9 13l6 4"/></svg></div>
+          <h3>MCP servers</h3>
+          <p><b>serena</b> symbol search · <b>agentic-bridge</b> agent-to-agent messaging · <b>prism-mcp</b> memory · <b>headroom</b> compression · <b>xcodebuildmcp</b> iOS</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
+          <h3>Token savers + scorer</h3>
+          <p><b>rtk</b> rewrites noisy shell commands. <b>headroom</b> compresses big reads. <b>scorer</b> reports what your sessions cost.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section id="install">
+      <p class="eyebrow">02 · About 15 minutes</p>
+      <h2>Install</h2>
+      <p class="sub">Three steps. <code>setup.sh</code> finds the agent CLIs on your PATH and installs for each one.</p>
+      <div class="stepper">
+        <div class="step">
+          <div>
+            <h3>Install the prerequisites</h3>
+            <p>You need at least one agent CLI (<code>claude</code>, <code>codex</code>, or <code>cursor-agent</code>), plus:</p>
+            <div class="term"><button class="copy">Copy</button><span class="pr">$ </span>brew install jq gh node python
+<span class="pr">$ </span>gh auth login</div>
+            <p class="muted">Also install <b>Docker Desktop</b> and <b>keep it running</b>. Serena runs in Docker. Setup installs <code>rtk</code> and <code>headroom</code> for you.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h3>Clone and preview</h3>
+            <p><code>--dry-run</code> prints every change without writing anything.</p>
+            <div class="term"><button class="copy">Copy</button><span class="pr">$ </span>git clone https://github.com/vitalizecare/agentic-workflow.git ~/repos/agentic-workflow
+<span class="pr">$ </span>cd ~/repos/agentic-workflow
+<span class="pr">$ </span>./setup.sh --dry-run</div>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h3>Run setup</h3>
+            <div class="term"><button class="copy">Copy</button><span class="pr">$ </span>./setup.sh <span class="c"># or: ./setup.sh --providers claude,codex,cursor</span></div>
+            <p>Then do the last step for your CLI:</p>
+            <div class="tabs" data-tabs>
+              <div role="tablist">
+                <button role="tab" data-tab="claude" aria-selected="true">Claude Code</button>
+                <button role="tab" data-tab="codex" aria-selected="false">Codex</button>
+                <button role="tab" data-tab="cursor" aria-selected="false">Cursor</button>
+              </div>
+              <div role="tabpanel" data-panel="claude"><p><b>Nothing else to do.</b> Setup also installs the statusline and shell integration. Open a <b>new terminal</b> so they load.</p></div>
+              <div role="tabpanel" data-panel="codex" hidden><p><b>Trust the hooks.</b> Codex only runs hooks you've approved:</p>
+                <div class="term"><span class="pr">$ </span>codex
+<span class="pr">› </span>/hooks   <span class="c"># trust every aw:* entry</span></div>
+                <p class="muted">Repeat this after any reinstall that changes a hook.</p></div>
+              <div role="tabpanel" data-panel="cursor" hidden><p><b>Enable MCP servers</b> if Cursor asks for approval on first use:</p>
+                <div class="term"><button class="copy">Copy</button><span class="pr">$ </span>cursor-agent mcp enable serena <span class="c"># repeat per server</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section id="verify">
+      <p class="eyebrow">03 · Check your setup</p>
+      <h2>Check it worked</h2>
+      <p class="sub">Open a <b>new</b> agent session in any git repo and tick each item off. Your progress is saved in this browser and shown in the top bar.</p>
+      <div class="checklist" id="checklist">
+        <label class="check"><input type="checkbox" data-key="gitctx"><div><div class="t">Git context appears when the session starts</div><div class="e">You see an <code>=== Git Context ===</code> block with your branch and recent commits.</div></div></label>
+        <label class="check"><input type="checkbox" data-key="skills"><div><div class="t">Skills show up in autocomplete</div><div class="e">Type <code data-cmd-prefix>/</code> and look for <code data-cmd>officeHours</code>, <code data-cmd>review</code>, <code data-cmd>rootCause</code>.</div></div></label>
+        <label class="check"><input type="checkbox" data-key="hooks"><div><div class="t">Safety hooks block destructive commands</div><div class="e">Ask the agent to run <code>rm -rf /tmp/x</code>. It should be blocked with <code>BLOCKED: rm -rf is destructive…</code></div></div></label>
+        <label class="check"><input type="checkbox" data-key="prism"><div><div class="t">Memory server is reachable</div><div class="e">Run <code data-cmd>prismStatus</code>. It reports the dashboard and MCP connection status.</div></div></label>
+        <label class="check"><input type="checkbox" data-key="toolkit"><div><div class="t">The toolkit link exists</div><div class="e"><code>ls ~/.agentic-workflow/</code> shows <code>toolkit</code> and <code>providers</code>.</div></div></label>
+      </div>
+
+      <h3 style="margin-top:36px">Something wrong?</h3>
+      <p class="muted" style="margin-top:0">Click a symptom to see the fix.</p>
+      <details><summary><span><span class="badge">MCP</span><code>serena</code> fails to connect</span></summary><div class="body">Docker isn't running. Start Docker Desktop, then restart the agent session.</div></details>
+      <details><summary><span><span class="badge">WARN</span>“prism-mcp dashboard unreachable at :7180”</span></summary><div class="body">The Mind Palace dashboard isn't up. This only affects memory features, so everything else still works. Run <code data-cmd>prismStatus</code> for details.</div></details>
+      <details><summary><span><span class="badge">SKILLS</span>Skills missing in Codex or Cursor</span></summary><div class="body">Re-run <code>./setup.sh --providers &lt;name&gt;</code>, then check that <code>~/.agentic-workflow/providers</code> lists your provider.</div></details>
+      <details><summary><span><span class="badge">HOOKS</span>Hooks do nothing in Codex</span></summary><div class="body">You haven't trusted them yet. Open <code>codex</code>, run <code>/hooks</code>, and trust every <code>aw:*</code> entry.</div></details>
+      <details><summary><span><span class="badge">SKILLS</span>A skill says “toolkit not installed”</span></summary><div class="body"><code>~/.agentic-workflow/toolkit</code> is missing or broken. Re-run <code>./setup.sh</code> from your clone.</div></details>
+      <details><summary><span><span class="badge">WARN</span><code>judge</code> warning at session start</span></summary><div class="body">Run <code>judge health</code>. Judge needs at least one of <code>claude</code>, <code>codex</code>, or <code>cursor-agent</code> on your PATH.</div></details>
+      <details><summary><span><span class="badge">MCP</span><code>github</code> MCP auth errors</span></summary><div class="body">Re-authenticate with <code>gh auth login</code>. Skills fall back to the <code>gh</code> CLI when the MCP server is unavailable.</div></details>
+    </section>
+
+    <!-- 05 -->
+    <section id="bootstrap">
+      <p class="eyebrow">04 · Once per repo</p>
+      <h2>Bootstrap a repo</h2>
+      <p class="sub">In the repo you want to work in, run one skill. It checks what documentation exists and writes the rest, adapted to your stack. Commit the output so every future session starts with the same context.</p>
+      <div class="two">
+        <div>
+          <div class="term"><span class="pr">› </span><span data-cmd>bootstrap</span>
+<span class="c"># --force                     regenerate docs that already exist</span>
+<span class="c"># --product-docs &lt;url|path&gt;   pull in Confluence, SharePoint, or drive docs</span></div>
+        </div>
+        <div class="tree">
+<span class="d">your-repo/</span>
+├── AGENTS.md        <span class="n">what every agent reads first</span>
+├── CLAUDE.md →      <span class="n">symlink to AGENTS.md</span>
+├── <span class="d">.agents/rules/</span>   <span class="n">rules scoped by glob</span>
+├── <span class="d">.claude/rules</span> →  <span class="n">linked for Claude</span>
+├── <span class="d">.cursor/rules/</span> → <span class="n">linked for Cursor</span>
+├── <span class="d">planning/</span>        <span class="n">architecture, ERD, style…</span>
+└── <span class="d">.serena/</span>         <span class="n">turns on symbol navigation</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="pipeline">
+      <p class="eyebrow">05 · The main workflow</p>
+      <h2>From idea to shipped PR</h2>
+      <p class="sub">Click a stage, or use the arrow keys. Every stage is useful on its own, and the optional ones can be skipped.</p>
+      <div class="pipeline" id="stages" role="tablist" aria-label="Workflow stages"></div>
+      <div class="stage-detail" id="stageDetail" aria-live="polite"></div>
+      <div class="stage-nav">
+        <button class="btn" id="prevStage">← Previous</button>
+        <button class="btn primary" id="nextStage">Next stage →</button>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="review">
+      <p class="eyebrow">06 · Where most of your time goes</p>
+      <h2>The review loop</h2>
+      <p class="sub">Reviews stay on your machine until you decide to post them. Re-run the loop until there are no findings left.</p>
+      <div class="loop">
+        <div class="box"><code data-cmd>review 123</code><div>Parallel reviewers, one per domain</div></div>
+        <span class="arrow">→</span>
+        <div class="box" style="border-style:dashed"><code>reviews/123.json</code><div>Local state. Read it first.</div></div>
+        <span class="arrow">→</span>
+        <div class="box"><code data-cmd>postReview 123</code><div>Batched PR comments on GitHub</div></div>
+        <span class="arrow">→</span>
+        <div class="box"><code data-cmd>addressReview 123</code><div>Parallel fixes, and picks up human comments</div></div>
+        <span class="arrow">↺</span>
+      </div>
+      <div class="callout"><b>Tip</b><span>Before shipping, run <code data-cmd>cso --diff 123</code> for an OWASP Top 10 + STRIDE security pass on the diff.</span></div>
+    </section>
+
+    <!-- 08 -->
+    <section id="finder">
+      <p class="eyebrow">07 · Quick reference</p>
+      <h2>Which skill do I reach for?</h2>
+      <p class="sub">Search by what you're trying to do.</p>
+      <div class="finder">
+        <div class="finder-top">
+          <input id="finderInput" type="search" placeholder="e.g. debug, security, spec, deploy…" aria-label="Search skills">
+          <div class="filters" id="filters">
+            <button data-f="all" aria-pressed="true">All</button>
+            <button data-f="plan" aria-pressed="false">Plan</button>
+            <button data-f="design" aria-pressed="false">Design</button>
+            <button data-f="build" aria-pressed="false">Build</button>
+            <button data-f="review" aria-pressed="false">Review</button>
+            <button data-f="debug" aria-pressed="false">Debug</button>
+            <button data-f="ship" aria-pressed="false">Ship</button>
+          </div>
+        </div>
+        <div id="finderList"></div>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section id="where">
+      <p class="eyebrow">08 · Files</p>
+      <h2>Where things live</h2>
+      <p class="sub">Skill output lives outside your repo, so it never clutters <code>git status</code>. Treat plan files as short-lived: once the plan is in GitHub issues, the issues are the source of truth.</p>
+      <div class="tree">
+<span class="d">~/.agentic-workflow/</span>
+├── toolkit →                  <span class="n">symlink to your clone; skills read shared files through it</span>
+├── providers                  <span class="n">one line per installed provider</span>
+├── <span class="d">scorer/reports/</span>            <span class="n">cost and involvement reports</span>
+└── <span class="d">&lt;repo-slug&gt;/</span>
+    ├── <span class="d">plans/&lt;feature&gt;/</span>       <span class="n">plan.md · product.md · engineering.md · design-brief.md · TASKS.md</span>
+    ├── <span class="d">reviews/</span>&lt;pr&gt;.json      <span class="n">review state, the source of truth for postReview and addressReview</span>
+    └── …                      <span class="n">evidence packs, design baselines, grouped by domain</span>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="extras">
+      <p class="eyebrow">09 · When you're comfortable</p>
+      <h2>Extras & staying up to date</h2>
+      <div class="cards" style="margin-bottom:24px">
+        <div class="card"><h3>See what sessions cost</h3><p>Reports land in <code>~/.agentic-workflow/scorer/reports/</code>.</p><div class="term"><span class="pr">$ </span>scorer --since 7d</div></div>
+        <div class="card"><h3>Coordinate agents</h3><p>With <b>agentic-bridge</b>, one session can assign a task to another, even across providers. Messages queue while the recipient is offline.</p></div>
+        <div class="card"><h3>Trim skills per repo</h3><p>Claude Code only. Profiles: <code>web-app</code>, <code>ios</code>, <code>personal</code>.</p><div class="term"><span class="pr">$ </span>./setup.sh --profile web-app \
+    --target ~/repos/app</div></div>
+        <div class="card"><h3>Tune the judge</h3><p><code data-cmd>judge</code> lets you inspect, tune, and undo the decisions it made for hooks: <code>why</code>, <code>undo</code>, <code>health</code>.</p></div>
+      </div>
+      <h3>Update</h3>
+      <div class="term"><button class="copy">Copy</button><span class="pr">$ </span>cd ~/repos/agentic-workflow && git pull && ./setup.sh</div>
+      <p class="muted">Skills are symlinks, so skill text updates as soon as you pull. Re-run setup to pick up new hooks, MCP servers, and builds. In Codex, re-trust any hooks that changed with <code>/hooks</code>.</p>
+
+      <footer>
+        More detail: <code>README.md</code> · <code>planning/PROVIDERS.md</code> · <code>skills/_shared/capabilities.md</code> · each skill's full instructions are in <code>skills/&lt;name&gt;/SKILL.md</code>. A plain-text version of this guide is in <code>ONBOARDING.md</code>.
+      </footer>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  // ---------- Provider prefix toggle ----------
+  const PREFIX = { claude: "/", cursor: "/", codex: "$" };
+  let provider = localStorage.getItem("aw-provider") || "claude";
+
+  function applyProvider() {
+    const p = PREFIX[provider];
+    document.querySelectorAll("[data-cmd]").forEach(el => {
+      if (!el.dataset.raw) el.dataset.raw = el.textContent;
+      el.textContent = p + el.dataset.raw;
+    });
+    document.querySelectorAll("[data-cmd-prefix]").forEach(el => { el.textContent = p; });
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.provider === provider)));
+    selectTab(provider);
+    localStorage.setItem("aw-provider", provider);
+  }
+  document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+    provider = b.dataset.provider; applyProvider(); renderStage(); renderFinder();
+  }));
+  const cmd = s => PREFIX[provider] + s;
+
+  // ---------- Tabs ----------
+  function selectTab(name) {
+    document.querySelectorAll("[data-tabs]").forEach(t => {
+      t.querySelectorAll("[role=tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+      t.querySelectorAll("[role=tabpanel]").forEach(p => { p.hidden = p.dataset.panel !== name; });
+    });
+  }
+  document.querySelectorAll("[role=tab]").forEach(b => b.addEventListener("click", () => selectTab(b.dataset.tab)));
+
+  // ---------- Copy buttons ----------
+  document.querySelectorAll(".copy").forEach(btn => btn.addEventListener("click", () => {
+    const term = btn.parentElement.cloneNode(true);
+    term.querySelectorAll(".copy, .pr, .c").forEach(n => n.remove());
+    const text = term.textContent.split("\n").map(l => l.trimEnd()).filter(Boolean).join("\n");
+    navigator.clipboard?.writeText(text).then(() => {
+      btn.textContent = "Copied"; btn.classList.add("done");
+      setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("done"); }, 1400);
+    });
+  }));
+
+  // ---------- Checklist ----------
+  const saved = JSON.parse(localStorage.getItem("aw-checks") || "{}");
+  const boxes = [...document.querySelectorAll("#checklist input")];
+  function updateProgress() {
+    const done = boxes.filter(b => b.checked).length;
+    document.getElementById("progressBar").style.width = (done / boxes.length * 100) + "%";
+    document.getElementById("progressLabel").textContent = done === boxes.length ? "Setup verified ✓" : `Setup ${done} / ${boxes.length}`;
+  }
+  boxes.forEach(b => {
+    b.checked = !!saved[b.dataset.key];
+    b.closest(".check").classList.toggle("done", b.checked);
+    b.addEventListener("change", () => {
+      saved[b.dataset.key] = b.checked;
+      localStorage.setItem("aw-checks", JSON.stringify(saved));
+      b.closest(".check").classList.toggle("done", b.checked);
+      updateProgress();
+    });
+  });
+  updateProgress();
+
+  // ---------- Pipeline ----------
+  const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const STAGES = [
+    { name: "Clarify", optional: true, icon: icon('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01"/>'),
+      title: "Clarify a fuzzy idea",
+      body: "The agent interviews you first: it asks questions, challenges assumptions, and points out contradictions. Then it runs the skill you named with a sharper prompt. If the idea is already clear, <code>enhancePrompt</code> does a lighter version: it reads the repo docs and rewrites your request with that context.",
+      you: "You answer in your own words. You don't need to write polished prose.",
+      cmds: () => [`${cmd("withInterview")} officeHours "add CSV export to reports"`, `${cmd("enhancePrompt")} <request>`] },
+    { name: "Spec", icon: icon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
+      title: "Write the spec with officeHours",
+      body: "A working session in the style of YC office hours. The agent proposes requirements (in EARS format) and drafts the technical design. You leave with decisions made, and a separate doc for each owner.",
+      you: "Push back, redirect priorities, and flag constraints the agent doesn't know about.",
+      cmds: () => [`${cmd("officeHours")} add CSV export to the reports page`],
+      out: "~/.agentic-workflow/<repo>/plans/<feature>/\n├── plan.md          canonical handoff\n├── product.md       requirements, acceptance\n├── engineering.md   approach, decisions\n├── design-brief.md  UX goals\n└── TASKS.md         atomic tasks" },
+    { name: "Pressure-test", optional: true, icon: icon('<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>'),
+      title: "Pressure-test the plan",
+      body: "Runs the product, architecture, design, devex, and security reviews in parallel, then consolidates the findings, including places where the reviews disagree. You can also run any one of them on its own.",
+      you: "Decide which findings change the plan before anyone writes code.",
+      cmds: () => [`${cmd("autoplan")}`, `${cmd("productReview")} --mode mvp`, `${cmd("archReview")}`, `${cmd("cso")} --plan`] },
+    { name: "Design", optional: true, icon: icon('<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 1 0 0 20c1 0 1.5-.8 1.5-1.5 0-.4-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a6 6 0 0 0 6-6c0-4.9-4.5-8.9-10-8.9z"/>'),
+      title: "Design system and mockups (UI work only)",
+      body: "Extract tokens from reference sites, define the design language, mock up each screen, then implement and verify against a screenshot baseline. Each of these checks whether the repo is web or iOS and routes to the right sub-skill.",
+      you: "Review at natural checkpoints (\"make the table the focus, not the sidebar\") and decide when the mockup is ready to lock.",
+      cmds: () => [`${cmd("design-language")} https://example.com`, `${cmd("design-shotgun")} reports  # optional: 4–6 variants`, `${cmd("design-mockup")} reports-page`, `${cmd("design-implement")} reports-page`, `${cmd("design-verify")} reports-page`] },
+    { name: "Build", icon: icon('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'),
+      title: "Build it and prove it works",
+      body: "<code>specToProvenPR</code> splits the spec into stages. For each stage it plans, implements, proves the result in the running app, and loops on review until there are no findings. Only then does it open a PR. If you'd rather build it yourself, run <code>verify-app auto</code> to check your change in the real app and get an evidence pack.",
+      you: "Approve each stage's plan. Run it with no argument to pick up where it stopped.",
+      cmds: () => [`${cmd("specToProvenPR")} ~/.agentic-workflow/<repo>/plans/<feature>/plan.md`, `${cmd("verify-app")} auto`] },
+    { name: "Review", icon: icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
+      title: "Multi-agent review loop",
+      body: "Reviewers for each domain run in parallel and write findings to a local state file. Nothing goes to GitHub until you run postReview. addressReview fixes findings in parallel and picks up new comments from human reviewers.",
+      you: "Decide what to fix before merge and what to track as a follow-up.",
+      cmds: () => [`${cmd("review")} 123`, `${cmd("postReview")} 123`, `${cmd("addressReview")} 123`, `${cmd("cso")} --diff 123`] },
+    { name: "Ship", icon: icon('<path d="M5 12l5 5L20 7"/>'),
+      title: "Ship, deploy, and watch",
+      body: "Syncs the branch, runs tests, checks coverage, pushes, and opens the PR. Then it chains into deploy, canary monitoring, and a docs refresh. The deploy step reads <code>.agentic-workflow/deploy.json</code> in your repo. If canary finds the deploy unhealthy, it hands the incident to rootCause.",
+      you: "Approve the PR. Add --no-deploy to stop once the PR is open.",
+      cmds: () => [`${cmd("shipRelease")}`, `${cmd("landAndDeploy")} --setup   # once per repo`, `${cmd("weeklyRetro")} --weeks 1`],
+      out: "shipRelease → landAndDeploy → canary → syncDocs" },
+  ];
+  let current = 0;
+  const pipeEl = document.getElementById("stages");
+  pipeEl.innerHTML = STAGES.map((s, i) =>
+    `<button class="stage" role="tab" data-i="${i}"><span class="node">${s.icon}</span><span class="lbl">${s.name}</span>${s.optional ? '<span class="opt">optional</span>' : ""}</button>`).join("");
+  pipeEl.querySelectorAll(".stage").forEach(b => b.addEventListener("click", () => { current = +b.dataset.i; renderStage(); }));
+
+  function renderStage() {
+    const s = STAGES[current];
+    pipeEl.querySelectorAll(".stage").forEach((b, i) => {
+      b.classList.toggle("active", i === current);
+      b.classList.toggle("passed", i < current);
+      b.setAttribute("aria-selected", String(i === current));
+    });
+    const cmds = s.cmds().map(c => {
+      const [main, comment] = c.split("  # ");
+      return `<span class="pr">› </span>${escapeHtml(main)}${comment ? ` <span class="c"># ${escapeHtml(comment)}</span>` : ""}`;
+    }).join("\n");
+    const d = document.getElementById("stageDetail");
+    d.innerHTML = `
+      <div class="fade">
+        <p class="eyebrow">Stage ${current + 1} of ${STAGES.length}${s.optional ? " · optional" : ""}</p>
+        <h3>${s.title}</h3>
+        <p style="color:var(--ink-2);margin:0">${s.body}</p>
+        <div class="you"><b>Your role</b>${s.you}</div>
+      </div>
+      <div class="fade">
+        <p class="eyebrow" style="color:var(--ink-3)">Run</p>
+        <div class="term">${cmds}</div>
+        ${s.out ? `<p class="eyebrow" style="color:var(--ink-3);margin-top:14px">Produces</p><div class="out">${escapeHtml(s.out)}</div>` : ""}
+      </div>`;
+    document.getElementById("prevStage").disabled = current === 0;
+    const next = document.getElementById("nextStage");
+    next.disabled = current === STAGES.length - 1;
+    next.textContent = current === STAGES.length - 1 ? "You're shipped ✓" : `Next: ${STAGES[current + 1].name} →`;
+  }
+  document.getElementById("prevStage").addEventListener("click", () => { if (current > 0) { current--; renderStage(); } });
+  document.getElementById("nextStage").addEventListener("click", () => { if (current < STAGES.length - 1) { current++; renderStage(); } });
+  pipeEl.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" && current < STAGES.length - 1) { current++; renderStage(); pipeEl.children[current].focus(); }
+    if (e.key === "ArrowLeft" && current > 0) { current--; renderStage(); pipeEl.children[current].focus(); }
+  });
+
+  // ---------- Skill finder ----------
+  const SKILLS = [
+    ["plan", "Turn a vague idea into a spec", "withInterview officeHours …", "interview first, then officeHours"],
+    ["plan", "Write a spec with requirements and tasks", "officeHours <feature>", "product, engineering, and design docs plus TASKS.md"],
+    ["plan", "Sanity-check a plan before building", "autoplan", "product, arch, design, devex, and security in parallel"],
+    ["plan", "Challenge scope as a founder would", "productReview --mode mvp", "modes: mvp, growth, scale, pivot"],
+    ["plan", "Engineering review of a plan", "archReview", "diagrams and edge-case analysis"],
+    ["plan", "Add repo context to my prompt", "enhancePrompt <request>", "reads project docs, then rewrites your request"],
+    ["design", "Extract design tokens from a site or app", "design-analyze <url|path>", "writes design-tokens.json"],
+    ["design", "Define brand and aesthetic direction", "design-language <urls>", "tokens + .impeccable.md"],
+    ["design", "Explore several visual directions", "design-shotgun <feature>", "4–6 variants on a contact sheet"],
+    ["design", "Mock up a screen", "design-mockup <screen>", "HTML or SwiftUI mockup plus a screenshot baseline"],
+    ["design", "Turn an approved mockup into code", "design-implement <screen>", "then verifies against the mockup"],
+    ["design", "Check the UI still matches the design", "design-verify <screen>", "screenshot diff against the baseline"],
+    ["build", "Take an approved spec all the way to PRs", "specToProvenPR <plan.md>", "staged, proven in the app, review-clean"],
+    ["build", "Confirm my change works in the real app", "verify-app auto", "Playwright or iOS simulator, plus an evidence pack"],
+    ["build", "Set up a new repo for agents", "bootstrap", "AGENTS.md, rules, planning docs, Serena"],
+    ["review", "Review a PR", "review <pr>", "writes local findings; nothing posted yet"],
+    ["review", "Post review findings to GitHub", "postReview <pr>", "batched comments, one review per agent"],
+    ["review", "Fix review comments", "addressReview <pr>", "parallel fixes; re-run until clean"],
+    ["review", "Security-check a PR diff", "cso --diff <pr>", "OWASP Top 10 + STRIDE"],
+    ["debug", "Debug a specific error", "rootCause \"<error>\"", "investigate → hypothesize → fix, scoped to one module"],
+    ["debug", "Find and fix bugs, with regression tests", "bugHunt --tier standard <area>", "tiers: quick, standard, exhaustive"],
+    ["debug", "Get a bug report without code changes", "bugReport <area>", "for triage and prioritization"],
+    ["ship", "Ship and deploy", "shipRelease", "→ landAndDeploy → canary → syncDocs"],
+    ["ship", "Watch production after a deploy", "canary", "error rate, latency, logs"],
+    ["ship", "Refresh docs after shipping", "syncDocs", "README, CHANGELOG, ARCHITECTURE, AGENTS.md"],
+    ["ship", "Run a weekly retro", "weeklyRetro --weeks 1", "shipping streaks, test health"],
+  ];
+  let filter = "all";
+  const input = document.getElementById("finderInput");
+  function renderFinder() {
+    const q = input.value.trim().toLowerCase();
+    const rows = SKILLS.filter(([cat, want, c, why]) =>
+      (filter === "all" || cat === filter) && (!q || (want + " " + c + " " + why).toLowerCase().includes(q)));
+    document.getElementById("finderList").innerHTML = rows.length
+      ? rows.map(([, want, c, why]) => `<div class="skill-row"><div><div class="want">${escapeHtml(want)}</div><div class="why">${escapeHtml(why)}</div></div><code>${escapeHtml(cmd(c))}</code></div>`).join("")
+      : `<div class="empty">No match. Try "debug", "deploy", or "design".</div>`;
+  }
+  input.addEventListener("input", renderFinder);
+  document.querySelectorAll("#filters button").forEach(b => b.addEventListener("click", () => {
+    filter = b.dataset.f;
+    document.querySelectorAll("#filters button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    renderFinder();
+  }));
+
+  // ---------- TOC highlight ----------
+  const links = [...document.querySelectorAll("nav.toc a")];
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) links.forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + e.target.id));
+    });
+  }, { rootMargin: "-40% 0px -55% 0px" });
+  document.querySelectorAll("main section").forEach(s => io.observe(s));
+
+  function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+  document.querySelectorAll(".tree").forEach(el => { el.innerHTML = el.innerHTML.trim(); });
+  applyProvider();
+  renderStage();
+  renderFinder();
+})();
+</script>
+</body>
+</html>
