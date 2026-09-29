@@ -94,8 +94,9 @@ implementer subagents to fix, and decides "resolved" only when:
 ### 3. REPRODUCE
 - **UI bug** (rootCause produced navigate/click/fill repro steps against the web app): dispatch the
   `qa-runner` agent to write a `ui-evidence` script from the repro steps, with each `expectedState`
-  taken from the ticket's **expected** behaviour. Run it on the unfixed code, always passing
-  `--app-build $(git rev-parse HEAD)`.
+  taken from the ticket's **expected** behaviour. Commit it, then run it on the unfixed code with
+  `bugfix-state run-ui`, which invokes the ui-evidence CLI itself (`--app-build` = `HEAD`) and
+  registers the summary.
 - **Otherwise:** dispatch one implementer to write **only** a regression test (no fix) and commit
   it. The orchestrator then runs it through the helper:
   `bugfix-state run-test --check <test-file> -- <command>`. The helper refuses a command that
@@ -139,13 +140,13 @@ Mode selection, in order:
 For each candidate:
 1. Detach the main checkout at the candidate's commit (dependencies and the running app live there;
    for UI, restart the app from it so `--app-build` is true), and re-run the **same** check
-   (`ui-evidence … --app-build <head>`, or the baseline's exact `bugfix-state run-test` command).
+   (`bugfix-state run-ui`, or the baseline's exact `bugfix-state run-test` command).
 2. `bugfix-state record-run <candidate> --evidence <path>`. The helper requires the check's sha256
    (on disk and as executed) to match the baseline, the test argv to match, the run's commit to be
    the candidate's head, and the candidate tree to be clean. A broken ui-evidence run is refused
    rather than counted as a failed attempt.
-3. If the run passed: `bugfix-state judge-input <candidate> --summary …` builds the judge input
-   from state, then `judge resolution-check` on that file, then
+3. If the run passed: `bugfix-state judge-input <candidate>` builds the judge input once, from
+   state, then `judge resolution-check` on that file, then
    `bugfix-state record-judge <candidate> --decision-id <id>` (the helper fetches the decision
    through `judge why` and requires its `input_digest` to match), or `--escalated <reason_code>` when
    the judge escalated (exit 2, no decision id).
@@ -182,15 +183,20 @@ diff and records why. The losing worktree is removed and its branch kept until t
   "phase": "intake|investigate|reproduce|fix|evaluate|report",
   "status": "active|resolved|unresolved|needs-human",
   "attempt": 0,
+  "attemptMode": "A|B|C|null",
   "handoff": "<path>",
-  "check": { "kind": "ui-evidence|test", "path": "<script.json|test file>", "sha256": "..." },
+  "investigation": { "rootCause": "...", "hypotheses": [ { "n": 1, "text": "...", "files": ["..."], "result": "confirmed|ruled-out|untested" } ] },
+  "check": { "kind": "ui-evidence|test", "path": "<repo-relative>", "sha256": "...", "command": ["<argv>"] },
   "baseline": { "evidence": "<path>", "commit": "<sha>" },
   "candidates": [
     { "id": "c1", "attempt": 1, "mode": "A|B|C", "branch": "...", "cwd": "<worktree or repo>",
-      "commit": "<sha>", "run": { "evidence": "...", "passed": true },
-      "judge": { "decisionId": "...", "decision": "resolved|partial|unresolved|escalated" } }
+      "commit": "<sha>", "hypothesis": null, "changedFiles": ["..."], "judgeInputDigest": "<16 hex>",
+      "run": { "evidence": "...", "passed": true, "commit": "<sha>", "recordedAt": "<iso>" },
+      "judge": { "decisionId": "...", "decision": "resolved|partial|unresolved|escalated", "reasonCode": "..." } }
   ],
-  "history": [ { "at": "<iso>", "from": "fix", "to": "evaluate", "evidence": "..." } ]
+  "runs": [ { "evidence": "<path>", "sha256": "..." } ],
+  "resolvedBy": null,
+  "history": [ { "at": "<iso>", "command": "record-run c1", "from": "fix", "to": "evaluate", "evidence": "..." } ]
 }
 ```
 
@@ -201,14 +207,14 @@ Exit codes: `0` allowed, `3` refused (reason on stderr), `1` bad usage or invali
 | Command | Enforces |
 |---------|----------|
 | `init --ticket <json>` | Ticket has a non-empty `brief` and `expected`; no unfinished (`active` / `needs-human`) state for the slug |
-| `advance investigate --evidence <handoff>` | Phase `intake`; handoff parses, has status `diagnosed`, and has a `confirmed` hypothesis |
-| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | The command passes the check file as its own argument (not inside a shell string); `--cwd` has no uncommitted or untracked changes; the check is committed and unmodified inside the repo. Runs the command itself (30-min timeout), writes `runs/<ts>-test-result.json` (argv, observed exit code, `HEAD`, check sha256, log) and registers its hash in `state.runs` |
+| `advance investigate --evidence <handoff>` | Phase `intake`; handoff parses, has status `diagnosed`, a `confirmed` hypothesis, and Root Cause text. Snapshots the hypotheses and root cause into `investigation`; later steps never re-read the file |
+| `run-test --check <file> [--cwd <dir>] -- <cmd…>` | The command passes the check file as its own argument and is not an inline-code wrapper (`sh -c`, `node -e`, …) or a non-runner (`grep`, `cat`, `test`, …); `--cwd` has no uncommitted or untracked changes; the check is committed and unmodified inside the repo. Runs the command itself (30-min timeout), writes `runs/<ts>-test-result.json` (argv, observed exit code, `HEAD`, check sha256, log) and registers its hash in `state.runs` |
 | `run-ui --check <script.json> [--cwd <dir>]` | Same tree and check rules as `run-test`; runs the ui-evidence CLI itself (`--app-build` = `HEAD`) and registers the resulting `summary.json` |
 | `advance reproduce --evidence <run> --check <file> [--cwd <dir>]` | Phase `investigate`; evidence registered and unmodified; run **failed** (not passed, not broken-only); run commit equals `HEAD` of `--cwd`; check committed, unmodified, inside the repo; the run's recorded check hash equals the file's. Records check path, sha256, test argv, baseline commit |
 | `start-attempt --mode <A\|B\|C>` | Phase `reproduce` or `evaluate`; no eligible candidate; every candidate of the current attempt evaluated; `attempt` < 3; B only after a failed attempt and with ≥ 2 hypotheses not ruled out (an unreadable handoff is refused). Increments `attempt`, clears `needs-human` |
-| `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix` or `evaluate` (mode B may evaluate one candidate before recording the second); one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has no uncommitted or untracked changes, `HEAD` builds on the baseline, changes its tree, and differs from every other candidate; the diff doesn't touch the check, tests, fixtures, mocks, snapshots, test config, or the check's directory unless `--allow-test-changes` (only after the user approves); mode B candidates name a distinct, not-ruled-out `--hypothesis`. The commit and changed files are read from `--cwd` |
+| `record-candidate --branch <b> [--cwd <dir>]` | Phase `fix` or `evaluate` (mode B may evaluate one candidate before recording the second); one candidate per A/C attempt, two per B attempt; `--cwd` is on `<b>`, has no uncommitted or untracked changes, `HEAD` builds on the baseline, changes its tree, and differs from every other candidate; the diff (`git diff --no-renames -z`, so renames show both paths) doesn't touch the check, test/fixture/mock/e2e directories, test-named files, snapshots, runner config or setup files, `package.json`, or the check's directory (case-insensitive) unless `--allow-test-changes` (only after the user approves); mode B candidates name a distinct, not-ruled-out `--hypothesis`. The commit and changed files are read from `--cwd` |
 | `record-run <candidate> --evidence <run>` | Phase `fix` or `evaluate`; no run recorded yet; evidence registered; same check kind; not broken; same test argv as the baseline; run commit equals the candidate's commit, which is still its `HEAD`; candidate tree clean; check file and executed check hash unchanged |
-| `judge-input <candidate> --summary <text>` | Phase `evaluate`; the candidate has a passing run. Writes `judge-<candidate>.json` from state (ticket text verbatim, the handoff's Root Cause, check kind, diff stat) in `ResolutionCheckInputSchema` key order, and records the 16-hex sha256 digest judge stores for it |
+| `judge-input <candidate>` | Phase `evaluate`; the candidate has a passing run; only once per candidate. Writes `judge-<candidate>.json` from state (ticket text verbatim, the snapshotted root cause, a description of the frozen check, diff stat) in `ResolutionCheckInputSchema` key order, and records the 16-hex sha256 digest judge stores for it |
 | `record-judge <candidate> (--decision-id <id> \| --escalated <reason_code>)` | Phase `evaluate`; the candidate has a passing run and no judge decision; the decision is not used by another candidate, exists (`judge why`, zod-validated), is for `resolution-check`, is not undone, postdates the run (an unparseable time is refused), was made on exactly the `judge-input` input (`input_digest`), and has an outcome. `--escalated` sets `status: needs-human` |
 | `advance report (--candidate <id> \| --unresolved)` | Not already reported; `--candidate` needs a passing run and a `resolved` judge decision |
 | `status` / `resume` | — (print the state / the current phase and the next action) |
