@@ -2,7 +2,7 @@
 name: bugFixOrchestrator
 description: Drive a bug ticket (Linear ID/URL or pasted text) to a proven resolution — investigate with /rootCause, have implementer subagents fix it, and call it resolved only when the same check that failed before the fix passes after it AND judge resolution-check agrees the reported problem is solved.
 argument-hint: "<linear-issue-id-or-url | pasted ticket text>"
-allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(judge *), Bash(bash *), Bash(SHARED_DIR=*), Bash(source *), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
+allowed-tools: Bash(git *), Bash(node *), Bash(npm *), Bash(npx *), Bash(jq *), Bash(judge *), Bash(bash *), Bash(source *), Bash(with_stack_lock_and_heavy_job_lock *), Bash(SHARED_DIR=*), Bash(TK=*), Bash(mkdir *), Bash(cat *), Agent, Read, Write, Glob, Grep, Skill, AskUserQuestion, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__save_comment
 ---
 
 <!-- preamble -->
@@ -18,26 +18,38 @@ decide. "Tests pass" is never enough — a ticket is resolved only when:
 
 Every phase change goes through the `bugfix-state` helper, which owns the state file and **refuses**
 (exit 3) any step the rules don't allow. On a refusal, report the reason to the user and follow it —
-never work around the helper, edit `state.json`, or hand-write evidence.
+never work around the helper, edit `state.json`, or write or edit evidence files (`summary.json`,
+test results) yourself. Evidence comes only from the `ui-evidence` CLI and `bugfix-state run-test`.
 
-Design: `docs/superpowers/specs/2026-09-29-bug-fix-orchestrator-design.md`.
+Design: `$HOME/.agentic-workflow/toolkit/docs/superpowers/specs/2026-09-29-bug-fix-orchestrator-design.md`.
 
 ## Setup
 
 Re-run this block at the top of every shell call (shell state does not persist):
 
 ```bash
-SHARED_DIR="$HOME/.agentic-workflow/toolkit/skills/_shared"
+TK="$HOME/.agentic-workflow/toolkit"
+SHARED_DIR="$TK/skills/_shared"
 source "$SHARED_DIR/repo-slug.sh"
-BFS="node $HOME/.agentic-workflow/toolkit/skills/bugFixOrchestrator/dist/bin.js"
+source "$TK/skills/ui-evidence/scripts/lib/locks.sh"   # with_stack_lock_and_heavy_job_lock
+BFS_JS="$TK/skills/bugFixOrchestrator/dist/bin.js"
+UIE_JS="$TK/skills/ui-evidence/dist/bin.js"
+REPO="$(git rev-parse --show-toplevel)"
 STATE="$AW_DIR/bugfix/<ticket-slug>"   # <ticket-slug>: Linear id lowercased (eng-123) or a short kebab summary
+mkdir -p "$STATE"
 ```
 
-If `dist/bin.js` is missing, run `npm ci && npm run build` in
-`$HOME/.agentic-workflow/toolkit/skills/bugFixOrchestrator` (or re-run `setup.sh`).
+Call the helper as `node "$BFS_JS" <command> --state "$STATE" …`. If `dist/bin.js` is missing, run
+`npm ci && npm run build` in `$TK/skills/bugFixOrchestrator` (or re-run `setup.sh`).
 
-**Resume first:** if `$STATE/state.json` exists, run `$BFS resume --state "$STATE"` and continue from
-the `next` action it prints. Its answer overrides your memory of where you were.
+**Resume first:** if `$STATE/state.json` exists, run `node "$BFS_JS" resume --state "$STATE"` and
+continue from the `next` action it prints. Its answer overrides your memory of where you were.
+
+**One heavy job at a time:** every test run, `ui-evidence` run, or dependency install goes through
+`with_stack_lock_and_heavy_job_lock 120 <command…>` — never two at once.
+
+**Dispatch briefs:** the brief-scope gate reads each subagent prompt. Every dispatch below must
+contain explicit `Goal:`, `Acceptance criteria:` and `Proof command:` lines.
 
 ## Phase 1 — Intake
 
@@ -50,118 +62,140 @@ the `next` action it prints. Its answer overrides your memory of where you were.
    ```
    If the ticket has no clear expected behaviour, **Ask the user** once for it — that sentence is the
    acceptance target for everything after it.
-3. `$BFS init --state "$STATE" --ticket "$STATE/ticket.json"`
+3. `node "$BFS_JS" init --state "$STATE" --ticket "$STATE/ticket.json"`
 
 ## Phase 2 — Investigate
 
 1. **Invoke skill `rootCause`** with args `--investigate-only --depth 1 "<symptom from the brief>"`.
-2. `$BFS advance investigate --state "$STATE" --evidence <handoff.md path from rootCause's JSON tail dir>`
+2. Take `handoff_path` from rootCause's final JSON block, then
+   `node "$BFS_JS" advance investigate --state "$STATE" --evidence <handoff_path>`.
+3. Refused with "no hypothesis is confirmed" (rootCause returned `unfixed`) → **Ask the user**:
+   re-investigate with more context, or stop. Never fix an unconfirmed cause.
 
 ## Phase 3 — Reproduce (the check must FAIL first)
 
-Create the working branch first — **never commit to the base branch**:
-`git checkout -b bugfix/<ticket-slug>`. The check is committed here; that commit is the **baseline**.
+Create the working branch — **never commit to the base branch**: `git checkout -b bugfix/<ticket-slug>`.
+The check is committed here; that commit is the **baseline**, and every candidate starts from it.
 
-Pick the check:
+**UI bug** (rootCause's repro steps are navigate/click/fill against the web app):
 
-- **UI bug** (rootCause's repro steps are navigate/click/fill against the web app): run
-  `bash "$HOME/.agentic-workflow/toolkit/skills/ui-evidence/scripts/doctor.sh"` — stop and tell the
-  user if the local stack is unhealthy. **Spawn a subagent** of type `qa-runner` to write a
-  `ui-evidence` script from the repro steps, with every step's `expectedState` taken from the
-  ticket's **expected** behaviour (not the current behaviour). Commit the script on `bugfix/<ticket-slug>`,
-  then run it per `skills/ui-evidence/SKILL.md` step 3, always with `--app-build $(git rev-parse HEAD)`.
-  Evidence = `<run-dir>/summary.json`.
-- **Anything else:** **Spawn a subagent** (type `lean-coder`, `skillInternal: true` on the dispatch)
-  to write **only** a regression test for the expected behaviour — no fix — and commit it on
-  `bugfix/<ticket-slug>`. Then run it
-  through the helper, which records the result itself:
-  `$BFS run-test --state "$STATE" --check <test-file> --cwd <repo> -- <test command for that file>`.
-  Evidence = the printed `evidence` path.
+1. `bash "$TK/skills/ui-evidence/scripts/doctor.sh"` — stop and tell the user if the stack is unhealthy.
+2. **Spawn a subagent** of type `qa-runner`. It is read-only and returns a script plan as JSON; there
+   is no PR diff, so give it rootCause's repro steps and the route map instead. Every step's
+   `expectedState` must come from the ticket's **expected** behaviour, not the current behaviour.
+3. Write the returned JSON to `$REPO/.ui-evidence/<ticket-slug>.json` and commit it.
+4. Run it on the unfixed code:
+   `with_stack_lock_and_heavy_job_lock 120 node "$UIE_JS" "$REPO/.ui-evidence/<ticket-slug>.json" "$STATE/runs/baseline" --app-build "$(git rev-parse HEAD)"`
+   Evidence = `$STATE/runs/baseline/summary.json`.
 
-Then: `$BFS advance reproduce --state "$STATE" --evidence <evidence> --check <script-or-test-file> --cwd <repo>`
+**Anything else:**
+
+1. **Spawn a subagent** of type `lean-coder` to write **only** a regression test for the expected
+   behaviour — no fix — and commit it on `bugfix/<ticket-slug>`. (`Goal:` a failing regression test
+   for <expected behaviour>; `Acceptance criteria:` fails on the current code for the reported reason,
+   committed, no product code changed; `Proof command:` the test command for that file.)
+2. Run it through the helper, which executes the command itself and registers the result:
+   `with_stack_lock_and_heavy_job_lock 120 node "$BFS_JS" run-test --state "$STATE" --check <test-file> --cwd "$REPO" -- <test command naming that file>`
+   Evidence = the printed `evidence` path. Use this **exact** command for every later run of the check.
+
+Then: `node "$BFS_JS" advance reproduce --state "$STATE" --evidence <evidence> --check <script-or-test-file> --cwd "$REPO"`
 
 - Refused because the check **passed** → the bug is not reproduced. **Ask the user**: refine the
   check, or stop. A check that already passes can never prove a fix.
 - Refused because steps are **broken** (selector problem, no failed step) → have `qa-runner` repair
-  the script once and re-run; if still broken, **Ask the user**.
+  the script once, commit, and re-run; if still broken, **Ask the user**.
 
-From here on the check file is **frozen**: the helper hashes it and refuses any later run where it
-changed. Implementers must never edit it.
+From here on the check is **frozen**: the helper refuses any later run whose check file, executed
+script, or test command differs from the baseline. Implementers must never edit it.
 
 ## Phase 4 — Fix
 
-Choose the mode, then `$BFS start-attempt --state "$STATE" --mode <A|B|C>`:
+Choose the mode, then `node "$BFS_JS" start-attempt --state "$STATE" --mode <A|B|C>`:
 
 | Mode | When | Dispatch |
 |------|------|----------|
-| **B** competing | A previous attempt failed **and** the handoff has ≥ 2 hypotheses not ruled out (the helper enforces both) | 2 implementers, one per hypothesis, each in its own worktree — **Dispatch in parallel** |
-| **C** split | The confirmed hypothesis's cause-site files span more than one area (e.g. an API route and a UI component) | One implementer per area, **in sequence**, each given the previous one's diff, all on one branch |
-| **A** single | Otherwise | One implementer |
+| **B** competing | A previous attempt failed **and** the handoff has ≥ 2 hypotheses not ruled out (the helper enforces both) | 2 implementers, one per open hypothesis, each in its own worktree — **Dispatch in parallel** |
+| **C** split | The confirmed hypothesis's cause-site files span more than one area (e.g. an API route and a UI component) | One implementer per area, **in sequence** on one worktree, each given the previous one's diff |
+| **A** single | Otherwise | One implementer in one worktree |
 
-Every candidate starts from the **baseline commit**, never from a failed attempt:
-`git worktree add -b bugfix/<ticket-slug>-a<attempt>[-c<n>] <worktree-path> <baseline-commit>`
-(`$BFS status --state "$STATE"` shows `baseline.commit`). One worktree per candidate; A and C use one.
+Create each worktree from the **baseline commit** (`node "$BFS_JS" status --state "$STATE"` shows
+`baseline.commit`), never from a failed attempt:
 
-Every implementer is a **Spawn a subagent** of type `lean-coder` with `skillInternal: true` on the
-dispatch (the brief-scope gate treats it as this skill's own approved step). The brief contains:
+- A and C: `git worktree add -b bugfix/<ticket-slug>-a<attempt> <path> <baseline-commit>`
+- B: `git worktree add -b bugfix/<ticket-slug>-a<attempt>-h<hypothesis#> <path> <baseline-commit>`
 
-- the ticket brief (verbatim) and expected behaviour;
-- the handoff path, and its assigned area (C) or hypothesis (B);
-- the failing check and how to run it; the rule that the check file must not be modified;
+A fresh worktree has no installed dependencies. If the implementer needs them to run the check,
+install once per worktree under `with_stack_lock_and_heavy_job_lock`.
+
+Every implementer is a **Spawn a subagent** of type `lean-coder`. Its brief contains:
+
+- `Goal:` make the frozen check pass by fixing <the confirmed cause / its area / its hypothesis>;
+- `Acceptance criteria:` the check passes, the check file is untouched, the fix is committed on the
+  worktree's branch, the working tree is clean;
+- `Proof command:` the check command (UI: the `ui-evidence` run; test: the exact baseline command);
+- the ticket brief (verbatim) and expected behaviour, and the handoff path;
 - on a retry: the previous candidate's diff and the exact failure reasons (failed steps/assertions,
   and the judge's `reasons`);
-- run heavy checks once per commit, not per edit; commit the fix before finishing.
+- run heavy checks once per commit, under the lock, not per edit.
 
-**One heavy job at a time:** in mode B the implementers write code in parallel, but every test run or
-`ui-evidence` run goes through `with_stack_lock_and_heavy_job_lock` — never two at once.
-
-After each candidate's implementer finishes:
-`$BFS record-candidate --state "$STATE" --branch <branch> --cwd <worktree-or-repo>`
-(the helper reads the commit from `--cwd`; the tree must be clean).
+When a candidate's implementer (in mode C, the **last** area's implementer) finishes:
+`node "$BFS_JS" record-candidate --state "$STATE" --branch <branch> --cwd <worktree>`
+— once per candidate. The helper reads the commit from `--cwd`; the tree must be clean.
 
 ## Phase 5 — Evaluate
 
-For each candidate (serially):
+Evaluate candidates **one at a time in the main checkout**, where dependencies and the running app
+already are. The candidate's branch stays checked out in its worktree, so detach at its commit:
 
-1. Re-run the **same** check in the candidate's worktree: `ui-evidence … --app-build $(git -C <cwd> rev-parse HEAD)`,
-   or `$BFS run-test --state "$STATE" --check <test-file> --cwd <cwd> -- <command>`.
-2. `$BFS record-run <candidate> --state "$STATE" --evidence <evidence>`
-3. If the run **passed**, ask the judge. Write the input and run it:
+1. `git -C "$REPO" checkout --detach <candidate commit>`
+2. Re-run the **same** check:
+   - UI: restart the app from `$REPO` with the project's run recipe (`/run` or its dev command), run
+     `doctor.sh`, then
+     `with_stack_lock_and_heavy_job_lock 120 node "$UIE_JS" "$REPO/.ui-evidence/<ticket-slug>.json" "$STATE/runs/<candidate>" --app-build "$(git -C "$REPO" rev-parse HEAD)"`.
+     Rebuilding the served app from the detached checkout is what makes `--app-build` true — the
+     helper can check the commit label, not what the server is running.
+   - Test: the exact baseline `run-test` command, with `--cwd "$REPO"`.
+3. `node "$BFS_JS" record-run <candidate> --state "$STATE" --evidence <evidence>`
+   (refused for a broken run: repair the selector and re-run — it doesn't cost an attempt).
+4. If the run **passed**, ask the judge. Build the input with `jq` so the ticket text is copied
+   byte-for-byte:
    ```bash
-   cat > "$STATE/judge-<candidate>.json" <<'JSON'
-   { "brief": "<ticket.brief, verbatim>", "expected": "...", "actual": "...",
-     "rootCause": "<the handoff's Root Cause paragraph>",
-     "checkKind": "ui-evidence|test", "checkSummary": "<what the check asserts>",
-     "beforePassed": false, "afterPassed": true,
-     "diffStat": "<git -C <cwd> diff --stat <baseline-commit>..HEAD>" }
-   JSON
-   judge resolution-check < "$STATE/judge-<candidate>.json"
+   jq -n --slurpfile t "$STATE/ticket.json" \
+     --arg rc "<the handoff's Root Cause paragraph>" --arg kind "<ui-evidence|test>" \
+     --arg summary "<what the check asserts>" \
+     --arg diff "$(git -C "$REPO" diff --stat <baseline-commit> <candidate commit>)" \
+     '{brief: $t[0].brief, expected: $t[0].expected, actual: $t[0].actual, rootCause: $rc,
+       checkKind: $kind, checkSummary: $summary, beforePassed: false, afterPassed: true, diffStat: $diff}' \
+     > "$STATE/judge-<candidate>.json"
+   judge resolution-check < "$STATE/judge-<candidate>.json" > "$STATE/judge-<candidate>.out"; echo "exit $?"
    ```
-   - Exit 0 → `$BFS record-judge <candidate> --state "$STATE" --decision-id <id from the output>`
-   - Exit 2 (escalated) → `$BFS record-judge <candidate> --state "$STATE" --escalated <reason_code>`,
-     then **Ask the user**: start another attempt (add any context they give to the implementer
-     brief), or stop as unresolved. The helper never records "resolved" without a `resolved` judge
-     decision.
+   - Exit 0 → `node "$BFS_JS" record-judge <candidate> --state "$STATE" --decision-id "$(jq -r .id "$STATE/judge-<candidate>.out")"`
+   - Exit 2 (escalated; the output has `reason_code` and no `id`) →
+     `node "$BFS_JS" record-judge <candidate> --state "$STATE" --escalated "$(jq -r .reason_code "$STATE/judge-<candidate>.out")"`,
+     then **Ask the user**: start another attempt (add any context they give to the implementer brief),
+     or stop as unresolved. The helper never records "resolved" without a `resolved` judge decision.
+   - Exit 1 (invalid input) → fix the input file and re-run; never hand-edit the ticket text.
+5. `git -C "$REPO" checkout bugfix/<ticket-slug>` before the next candidate or phase.
 
 Outcome:
 
 - A candidate with a passing run **and** a `resolved` decision → Phase 6. With two eligible B
-  candidates, pick the smaller diff and say why. Remove the losing worktree (`git worktree remove`);
-  keep its branch until the ticket closes.
+  candidates, pick the smaller diff and say why.
 - `partial` / `unresolved` / a failing run → back to Phase 4 with the failure reasons.
 - Attempt cap reached (the helper refuses a 4th) → Phase 6 as unresolved.
-- Remove every worktree that is not the winning candidate's once it is evaluated.
+- Remove every worktree except the winning candidate's once it is evaluated (`git worktree remove`);
+  keep the branches until the ticket closes.
 
 ## Phase 6 — Report
 
-1. `$BFS advance report --state "$STATE" --candidate <id>` (resolved) or `--unresolved`.
+1. `node "$BFS_JS" advance report --state "$STATE" --candidate <id>` (resolved) or `--unresolved`.
 2. Write `$STATE/resolution.md`: ticket (id, title, link), root cause, the fix branch and commits,
    before/after evidence paths, the judge decision id and reasons, attempts and modes used. For an
    unresolved outcome, list every candidate with why it failed.
 3. **Ask the user** before posting anything: offer to post `resolution.md` to the Linear issue with
    `mcp: linear/save_comment`. Screenshots and traces follow `ui-evidence`'s publish rules (approved
    uploader and `seeded` DB provenance only; otherwise local paths).
-4. Do not open a PR. Leave the branch ready and suggest `/shipRelease`.
+4. Do not open a PR. Leave the winning branch ready and suggest `/shipRelease`.
 
 Report to the user:
 

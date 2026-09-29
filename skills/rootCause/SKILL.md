@@ -17,7 +17,7 @@ allowed-tools: Bash(git *), Bash(npm *), Bash(npx *), Bash(pytest *), Bash(cargo
 Extract the starting point for the investigation from the argument:
 
 - **`--depth N`** — dispatch-chain depth guard (default 0). If N ≥ 2, this run must NOT dispatch any sub-skill (Sub-skill Dispatch is disabled) — report findings only. When dispatching, always pass `--depth N+1`.
-- **`--investigate-only`** — diagnose without fixing (used by `/bugFixOrchestrator`, whose implementers write the fix). Run Phases 0–3.5, skip Phase 4, write the Phase 5 report + handoff with status `diagnosed`, and never dispatch a sub-skill. The working tree must end exactly as it started.
+- **`--investigate-only`** — diagnose without fixing (used by `/bugFixOrchestrator`, whose implementers write the fix). Run Phases 0–3.5, skip Phase 4, write the Phase 5 report + handoff — status `diagnosed` when a hypothesis is confirmed, `unfixed` when all were ruled out — and never dispatch a sub-skill. The working tree must end exactly as it started.
 - **Error message or issue description** — the normal entry.
 - **Production-incident entry** — if the argument is a JSON object of the shape `{merge_sha, release_id, symptom, logs_excerpt}` (as passed by `/canary` on an UNHEALTHY verdict), treat this as a production incident:
   - `logs_excerpt` is the primary evidence; `symptom` is the failure description.
@@ -54,7 +54,7 @@ Generate 2-3 hypotheses ranked by likelihood. Document each as: **Hypothesis** (
 - **Ruled out** → record the result in the hypotheses table, promote hypothesis #2, and run its check.
 - Never implement a fix whose hypothesis has not been confirmed by its own check. "Confirms if / Rules out if" is an executable contract, not documentation.
 
-**With `--investigate-only`:** run the confirm check for each hypothesis in order until one is confirmed or all are ruled out, recording every result. Revert any temporary instrumentation (log lines, narrowed test edits) — `git status --porcelain` must show nothing you added. Then skip Phase 4 and go to Phase 5 with status `diagnosed`.
+**With `--investigate-only`:** run the confirm check for each hypothesis in order until one is confirmed or all are ruled out, recording every result. Revert any temporary instrumentation (log lines, narrowed test edits) — `git status --porcelain` must show nothing you added. Then skip Phase 4 and go to Phase 5 with status `diagnosed` if a hypothesis was confirmed, or `unfixed` if every one was ruled out (the caller must not fix an unconfirmed cause). In the report, write `n/a — investigate-only` under **Fix Applied** and **Verification**.
 
 ## Phase 4: Implement
 
@@ -138,6 +138,7 @@ repro: {failing command, or the verify-app journey steps}
 | # | Hypothesis | Cause-site files | Likelihood | Result |
 |---|-----------|------------------|------------|--------|
 | 1 | {description} | `{file}`, `{file}` | High | {confirmed/ruled-out/untested} |
+| 2 | {description} | `{file}` | Medium | {confirmed/ruled-out/untested} |
 
 ## Ruled Out
 - {hypothesis} — {evidence that ruled it out}
@@ -161,7 +162,7 @@ Handoff: ~/.agentic-workflow/<repo-slug>/investigations/{slug}/handoff.md
 **End the response with exactly one fenced JSON block** (machine-readable tail — `/review` and other callers parse this):
 
 ```json
-{ "status": "fixed | unfixed | scope-breach | diagnosed", "report_path": "<absolute report path>", "boundary": "<boundary path>" }
+{ "status": "fixed | unfixed | scope-breach | diagnosed", "report_path": "<absolute report path>", "handoff_path": "<absolute handoff.md path>", "boundary": "<boundary path>" }
 ```
 
 ### Sub-skill Dispatch

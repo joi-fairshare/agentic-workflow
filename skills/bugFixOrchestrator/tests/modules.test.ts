@@ -59,8 +59,9 @@ describe("parseHandoff", () => {
     const skill = fs.readFileSync(path.join(__dirname, "..", "..", "rootCause", "SKILL.md"), "utf8");
     expect(skill).toContain("--investigate-only");
     const template = skill.slice(skill.indexOf("# Handoff: {slug}"), skill.indexOf("## Ruled Out"));
-    const filled = template.replace(/^status: .*$/m, "status: diagnosed").replace("{confirmed/ruled-out/untested}", "confirmed");
-    expect(parseHandoff(filled)).toMatchObject({ status: "diagnosed", hypotheses: [{ n: 1, files: ["{file}", "{file}"], result: "confirmed" }] });
+    const filled = template.replace(/^status: .*$/m, "status: diagnosed").replaceAll("{confirmed/ruled-out/untested}", "confirmed");
+    expect(parseHandoff(filled)).toMatchObject({ status: "diagnosed", hypotheses: [{ n: 1, files: ["{file}", "{file}"], result: "confirmed" }, { n: 2, files: ["{file}"], result: "confirmed" }] });
+    expect(skill).toContain('"handoff_path"');
   });
 
   it("returns no hypotheses for an empty table", () => {
