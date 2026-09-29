@@ -2,7 +2,7 @@
 
 Every skill starts by reading this file and following it. Run **Session Close** at the end of the skill.
 
-> **Agentic Workflow** — 44 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Works in Claude Code, Codex, and Cursor. Run any as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex).
+> **Agentic Workflow** — 45 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill family). Works in Claude Code, Codex, and Cursor. Run any as `/<name>` (Claude Code, Cursor) or `$<name>` (Codex).
 >
 > **Provider tools:** skills name capabilities (**Ask the user**, **Spawn a subagent**, **Dispatch in parallel**, **Invoke skill**, `mcp: <server>/<tool>`). Map each to your host's tool via `$HOME/.agentic-workflow/toolkit/skills/_shared/capabilities.md`.
 >
@@ -16,6 +16,7 @@ Every skill starts by reading this file and following it. Run **Session Close** 
 > | `/rootCause` | 4-phase systematic debugging |
 > | `/bugHunt` | Fix-and-verify loop with regression tests |
 > | `/bugReport` | Structured bug report with health scores |
+> | `/testAudit` | Gate new tests; audit and prune low-value tests |
 > | `/shipRelease` | Sync, test, push, open PR |
 > | `/syncDocs` | Post-ship doc updater |
 > | `/weeklyRetro` | Weekly retrospective with shipping streaks |
@@ -90,7 +91,7 @@ TOOLKIT="$HOME/.agentic-workflow/toolkit"
 SHARED_DIR="$TOOLKIT/skills/_shared"
 SKILLS_OK=true
 [ -d "$TOOLKIT/skills" ] && [ -s "$HOME/.agentic-workflow/providers" ] || SKILLS_OK=false
-for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR; do
+for s in review postReview addressReview enhancePrompt bootstrap rootCause bugHunt bugReport shipRelease syncDocs weeklyRetro officeHours productReview archReview withInterview design-analyze design-analyze-web design-analyze-ios design-language design-evolve design-evolve-web design-evolve-ios design-mockup design-mockup-web design-mockup-ios design-implement design-implement-web design-implement-ios design-refine design-verify design-verify-web design-verify-ios verify-app verify-web verify-ios autoplan planDesignReview planDevexReview cso design-shotgun landAndDeploy canary prismStatus specToProvenPR testAudit; do
   while read -r _prov _dir; do
     [ -d "$_dir/$s" ] || SKILLS_OK=false
   done < "$HOME/.agentic-workflow/providers" 2>/dev/null
