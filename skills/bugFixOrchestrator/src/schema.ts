@@ -27,7 +27,7 @@ const JudgeSchema = z.object({
   reasonCode: z.string(),
 });
 
-const RunSchema = z.object({ evidence: z.string(), passed: z.boolean(), commit: z.string() });
+const RunSchema = z.object({ evidence: z.string(), passed: z.boolean(), commit: z.string(), recordedAt: z.string() });
 
 const CandidateSchema = z.object({
   id: z.string(),
@@ -49,9 +49,19 @@ export const StateSchema = z.object({
   attempt: z.number().int(),
   attemptMode: z.enum(MODES).nullable(),
   handoff: z.string().nullable(),
-  check: z.object({ kind: z.enum(["ui-evidence", "test"]), path: z.string(), sha256: z.string() }).nullable(),
+  check: z
+    .object({
+      kind: z.enum(["ui-evidence", "test"]),
+      path: z.string(),
+      sha256: z.string(),
+      // The exact argv of the baseline run-test; every later test run must match it.
+      command: z.array(z.string()).nullable(),
+    })
+    .nullable(),
   baseline: z.object({ evidence: z.string(), commit: z.string() }).nullable(),
   candidates: z.array(CandidateSchema),
+  // Every result run-test wrote (path + sha256): test evidence only counts when registered here.
+  runs: z.array(z.object({ evidence: z.string(), sha256: z.string() })),
   resolvedBy: z.string().nullable(),
   history: z.array(
     z.object({ at: z.string(), command: z.string(), from: z.enum(PHASES).nullable(), to: z.enum(PHASES), evidence: z.string().nullable() }),
@@ -74,4 +84,5 @@ export type TestResult = z.infer<typeof TestResultSchema>;
 export const UiSummarySchema = z.object({
   steps: z.array(z.object({ status: z.enum(["passed", "failed", "broken"]) })),
   appBuild: z.string().nullable().optional(),
+  scriptSha256: z.string().nullable().optional(),
 });

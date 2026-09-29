@@ -13,10 +13,8 @@ let state: string;
 let scratch: string;
 let deps: Deps;
 
-const judgeRows = {
-  "d-resolved": { question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: null },
-  "d-partial": { question: "resolution-check", decision: "partial", reason_code: "model", undone_at: null },
-};
+const row = (decision: string) => ({ question: "resolution-check", decision, reason_code: "model", undone_at: null, ts: "2099-01-01T00:00:00Z" });
+const judgeRows = { "d-resolved": row("resolved"), "d-partial-1": row("partial"), "d-partial-2": row("partial"), "d-partial-3": row("partial") };
 
 const run = (...argv: string[]) => main(["--state", state, ...argv], deps);
 const readState = (): State => StateSchema.parse(JSON.parse(fs.readFileSync(path.join(state, "state.json"), "utf8")));
@@ -76,8 +74,9 @@ describe("bugfix-state journey", () => {
     fs.writeFileSync(path.join(scratch, "handoff.md"), HANDOFF);
     run("advance", "investigate", "--evidence", path.join(scratch, "handoff.md"));
     commitFile(repo, "fixed.txt", "already\n");
+    const evidence = runTest().evidence;
     const before = stateBytes();
-    const res = run("advance", "reproduce", "--evidence", runTest().evidence, "--check", "check.sh", "--cwd", repo);
+    const res = run("advance", "reproduce", "--evidence", evidence, "--check", "check.sh", "--cwd", repo);
     expect(res).toMatchObject({ exitCode: 3 });
     expect(res.stderr).toContain("not reproduced");
     expect(stateBytes()).toBe(before);
@@ -99,8 +98,9 @@ describe("bugfix-state journey", () => {
     git(repo, "checkout", "-q", "-B", "cheat", "main");
     commitFile(repo, "check.sh", "true\n", "weaken the check");
     run("record-candidate", "--branch", "cheat", "--cwd", repo);
+    const evidence = runTest().evidence;
     const before = stateBytes();
-    const res = run("record-run", "c1", "--evidence", runTest().evidence);
+    const res = run("record-run", "c1", "--evidence", evidence);
     expect(res).toMatchObject({ exitCode: 3 });
     expect(res.stderr).toContain("changed since the baseline");
     expect(stateBytes()).toBe(before);
@@ -127,7 +127,7 @@ describe("bugfix-state journey", () => {
     for (let i = 1; i <= 3; i++) {
       const c = fixCandidate(`try-${i}`);
       run("record-run", c, "--evidence", runTest().evidence);
-      expect(run("record-judge", c, "--decision-id", "d-partial").exitCode).toBe(0);
+      expect(run("record-judge", c, "--decision-id", `d-partial-${i}`).exitCode).toBe(0);
       expect(run("advance", "report", "--candidate", c)).toMatchObject({ exitCode: 3 });
     }
     expect(JSON.parse(run("resume").stdout).next).toBe("advance report --unresolved");

@@ -52,6 +52,16 @@ export function parseArgs(argv: string[]): Parsed | { error: string } {
 }
 
 export function main(argv: string[], deps: Deps): Result {
+  // Any unexpected failure (not a git repo, unreadable file) is bad usage
+  // with a one-line message, never a stack trace.
+  try {
+    return dispatch(argv, deps);
+  } catch (e) {
+    return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message.split("\n")[0] : String(e) };
+  }
+}
+
+function dispatch(argv: string[], deps: Deps): Result {
   const parsed = parseArgs(argv);
   if ("error" in parsed) return { exitCode: 1, stdout: "", stderr: `${parsed.error}\n${USAGE}` };
   const [cmd, sub] = parsed.positional;

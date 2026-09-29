@@ -14,7 +14,7 @@ describe("readRunEvidence", () => {
   const ui = (steps: string[], appBuild?: string | null) => writeJson(dir, `ui-${steps.join("-")}-${String(appBuild)}.json`, { steps: steps.map((status) => ({ status })), ...(appBuild === undefined ? {} : { appBuild }) });
 
   it("classifies ui-evidence runs: any failed step is failed, broken-only is broken, else passed", () => {
-    expect(readRunEvidence(ui(["passed", "failed", "broken"], "abc"))).toEqual({ kind: "ui-evidence", outcome: "failed", commit: "abc", checkSha256: null });
+    expect(readRunEvidence(ui(["passed", "failed", "broken"], "abc"))).toEqual({ kind: "ui-evidence", outcome: "failed", commit: "abc", checkSha256: null, command: null });
     expect(readRunEvidence(ui(["passed", "broken"], "abc"))).toMatchObject({ outcome: "broken" });
     expect(readRunEvidence(ui(["passed"], "abc"))).toMatchObject({ outcome: "passed" });
   });
@@ -26,7 +26,7 @@ describe("readRunEvidence", () => {
 
   it("reads run-test results by exit code", () => {
     const base = { kind: "test", command: ["sh", "check.sh"], commit: "c", checkSha256: "h", log: "l" };
-    expect(readRunEvidence(writeJson(dir, "t0.json", { ...base, exitCode: 0 }))).toEqual({ kind: "test", outcome: "passed", commit: "c", checkSha256: "h" });
+    expect(readRunEvidence(writeJson(dir, "t0.json", { ...base, exitCode: 0 }))).toEqual({ kind: "test", outcome: "passed", commit: "c", checkSha256: "h", command: ["sh", "check.sh"] });
     expect(readRunEvidence(writeJson(dir, "t1.json", { ...base, exitCode: 1 }))).toMatchObject({ outcome: "failed" });
   });
 
@@ -100,10 +100,11 @@ describe("realDeps", () => {
   it("looks up judge decisions through the judge binary, null on a non-zero exit or bad JSON", () => {
     const bin = tmpDir();
     const judge = path.join(bin, "judge");
-    fs.writeFileSync(judge, '#!/bin/sh\ncase "$2" in\n  ok) echo \'{"question":"resolution-check","decision":"resolved","reason_code":"model","undone_at":null}\';;\n  bad) echo "not json";;\n  *) exit 1;;\nesac\n');
+    fs.writeFileSync(judge, '#!/bin/sh\ncase "$2" in\n  ok) echo \'{"question":"resolution-check","decision":"resolved","reason_code":"model","undone_at":null,"ts":"2026-09-29T00:00:00Z"}\';;\n  shape) echo \'{"question":"resolution-check"}\';;\n  bad) echo "not json";;\n  *) exit 1;;\nesac\n');
     fs.chmodSync(judge, 0o755);
     const deps = realDeps(judge);
-    expect(deps.judgeWhy("ok")).toEqual({ question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: null });
+    expect(deps.judgeWhy("ok")).toEqual({ question: "resolution-check", decision: "resolved", reason_code: "model", undone_at: null, ts: "2026-09-29T00:00:00Z" });
+    expect(deps.judgeWhy("shape")).toBeNull();
     expect(deps.judgeWhy("bad")).toBeNull();
     expect(deps.judgeWhy("missing")).toBeNull();
   });
