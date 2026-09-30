@@ -4,7 +4,7 @@
 
 Agentic Workflow (repo: `agentic-workflow`) is a portable, provider-agnostic workflow toolkit for AI coding agents. It supports **Claude Code**, **Codex**, and **Cursor** as equal hosts. The canonical core has these parts:
 
-- 45 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
+- 47 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
 - a documentation bootstrapper skill
 - canonical safety hooks
 - a TypeScript MCP bridge server for inter-agent coordination
