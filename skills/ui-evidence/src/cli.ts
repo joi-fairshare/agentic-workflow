@@ -2,6 +2,7 @@
 //                       [--fixtures id] [--cache manifest.json]
 // Exit 0 = every step passed; 1 = bad usage/script; 2 = at least one step
 // failed or broken (the summary is still written and printed).
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 
 import type { RunOptions } from "./run-script.js";
@@ -36,8 +37,10 @@ export async function main(argv: string[], deps: CliDeps): Promise<number> {
   }
 
   let raw: unknown;
+  let text: string;
   try {
-    raw = JSON.parse(deps.readFile(scriptFile));
+    text = deps.readFile(scriptFile);
+    raw = JSON.parse(text);
   } catch (e) {
     return fail(deps, `cannot read script ${scriptFile}: ${(e as Error).message}`);
   }
@@ -45,7 +48,9 @@ export async function main(argv: string[], deps: CliDeps): Promise<number> {
   if ("error" in script) return fail(deps, `invalid script: ${script.error}`);
 
   const { baseline, ...runOpts } = opts;
-  const summary = await deps.run(script, runDir, baseline, runOpts);
+  // The script's hash lets bugfix-state prove a run executed the frozen check.
+  const scriptSha256 = createHash("sha256").update(text).digest("hex");
+  const summary = await deps.run(script, runDir, baseline, { ...runOpts, scriptSha256 });
   deps.out(JSON.stringify(summary));
   return summary.steps.every((s) => s.status === "passed") ? 0 : 2;
 }

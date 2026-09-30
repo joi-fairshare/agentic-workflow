@@ -4,7 +4,7 @@
 
 Agentic Workflow (repo: `agentic-workflow`) is a portable, provider-agnostic workflow toolkit for AI coding agents. It supports **Claude Code**, **Codex**, and **Cursor** as equal hosts. The canonical core has these parts:
 
-- 47 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
+- 48 native skills spanning the full development lifecycle (planning, design, review, debugging, QA, shipping, retrospectives)
 - a documentation bootstrapper skill
 - canonical safety hooks
 - a TypeScript MCP bridge server for inter-agent coordination
@@ -144,7 +144,7 @@ agentic-workflow/
 ├── .agents/rules/                       # Glob-scoped rules, the only copy (linked by scripts/sync-rules.sh)
 ├── providers/                           # Per-provider adapters
 │   └── <claude|codex|cursor>/           #   install.sh (skills, MCP, config) + install-hooks.sh
-├── skills/                              # Native skills (45), shared by all providers
+├── skills/                              # Native skills (47), shared by all providers
 │   ├── review/                          # /review — multi-agent PR review orchestrator
 │   │   ├── SKILL.md                     #   skill manifest + 7-step orchestration flow
 │   │   ├── triage-prompt.md             #   subagent prompt: classify files → reviewer agents
@@ -319,13 +319,21 @@ A three-phase PR review workflow with a shared state file (`~/.agentic-workflow/
 
 **Phase 3 — `/addressReview`:** Reads the state file, fetches any new human comments from GitHub since `reviewed_at`, runs an address-triage subagent to group all unresolved issues by implementation concern, then spawns parallel implementer subagents. Implementers fix code, commit, push, and reply to every comment. The state file is updated with `addressed: true` and commit SHAs. Can be re-run iteratively.
 
-### Investigation & QA (skills/rootCause/, bugHunt/, bugReport/)
+### Investigation & QA (skills/rootCause/, bugHunt/, bugReport/, bugFixOrchestrator/)
 
-**`/rootCause`** — 4-phase systematic debugging: investigate (reproduce), analyze (read source, map call chain), hypothesize (rank 2-3 causes), implement (fix and verify). Auto-freezes scope to the module boundary after analysis to prevent scope creep. Writes investigation report to `investigations/`.
+**`/rootCause`** — 4-phase systematic debugging: investigate (reproduce), analyze (read source, map call chain), hypothesize (rank 2-3 causes), implement (fix and verify). Auto-freezes scope to the module boundary after analysis to prevent scope creep. Writes investigation report to `investigations/`. With `--investigate-only` it stops after confirming a hypothesis (status `diagnosed`) and never edits code.
 
 **`/bugHunt`** — Fix-and-verify loop with 3 tiers (quick: lint+typecheck, standard: unit+integration, exhaustive: full suite). Makes atomic commits for fixes and regression tests. Retries up to 3 times on verification failure. Writes QA report to `qa/`.
 
 **`/bugReport`** — Read-only health audit. Runs linters, typecheckers, and test suites, classifying findings as bug/tech-debt/test-gap/false-positive. Computes health scores (test 40%, type 30%, lint 30%). Never modifies source code. Writes audit report to `qa/`.
+
+**`/bugFixOrchestrator`** — Drives a bug ticket (Linear or pasted text) to a proven resolution without editing code itself: `/rootCause --investigate-only` → a check (`ui-evidence` script, or a regression test) that must fail on the unfixed code → implementer subagents (one, one per area, or two competing in worktrees after a failed attempt; 3 attempts max) → the same, hash-frozen check must pass **and** `judge resolution-check` must return `resolved` for the ticket brief. Every phase change goes through the `bugfix-state` CLI (`skills/bugFixOrchestrator/src/`), the only writer of `bugfix/<ticket-slug>/state.json`, which refuses steps the rules don't allow (exit 3). Design: `docs/superpowers/specs/2026-09-29-bug-fix-orchestrator-design.md`.
+
+```
+ticket ─► rootCause --investigate-only ─► check FAILS (baseline) ─► implementer(s) ─► same check PASSES ─► judge resolution-check ─► resolution.md
+                                              ▲                                              │ partial / unresolved / failed (attempt < 3)
+                                              └───────────────── bugfix-state gates every arrow ◄┘
+```
 
 ### Release & Retro (skills/shipRelease/, syncDocs/, weeklyRetro/)
 

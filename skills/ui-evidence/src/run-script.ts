@@ -28,6 +28,8 @@ export interface RunOptions {
   fixtures?: string;
   /** Verdict-cache manifest to read/write; defaults to <runDir>/verdict-cache.json. */
   cacheManifest?: string;
+  /** sha256 of the script file this run executed; recorded in summary.json. */
+  scriptSha256?: string;
   /** Host override for the local fixture browser tests only. */
   host?: string;
 }
@@ -132,6 +134,8 @@ export async function runScript(script: UiScript, runDir: string, mainBaselineSc
     runId,
     ts: new Date().toISOString(),
     route: script.route,
+    appBuild: opts.appBuild ?? null,
+    scriptSha256: opts.scriptSha256 ?? null,
     ...(script.planning?.pr !== undefined ? { pr: script.planning.pr } : {}),
     steps,
     visual: gate.visual,

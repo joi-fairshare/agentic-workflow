@@ -1,6 +1,6 @@
 # Agentic Workflow
 
-A portable, provider-agnostic workflow toolkit for AI coding agents. It works the same way in **Claude Code**, **Codex**, and **Cursor**: 47 native skills plus 3 fetched external design packs (impeccable, emil-design-eng, taste-skill), a repo bootstrapper, safety hooks, a bidirectional MCP bridge for multi-agent communication, a cheap-decision judge, a cost/involvement scorer, and token-efficiency tools (the rtk command rewriter and the headroom context compressor).
+A portable, provider-agnostic workflow toolkit for AI coding agents. It works the same way in **Claude Code**, **Codex**, and **Cursor**: 48 native skills plus 3 fetched external design packs (impeccable, emil-design-eng, taste-skill), a repo bootstrapper, safety hooks, a bidirectional MCP bridge for multi-agent communication, a cheap-decision judge, a cost/involvement scorer, and token-efficiency tools (the rtk command rewriter and the headroom context compressor).
 
 There is one canonical core: skills, hook logic, MCP servers, bridge, judge, and scorer. Each provider gets a thin adapter on top. Skills describe *capabilities* ("ask the user", "spawn a subagent", "call an MCP tool"), and each provider maps those to its own tools. See [Providers](#providers) and [`planning/PROVIDERS.md`](planning/PROVIDERS.md).
 
@@ -180,16 +180,16 @@ cd mcp-bridge && npm start    # Fastify on http://127.0.0.1:3100
 
 ### 1. Skills
 
-47 native skills, installed as symlinks into each provider's skills directory. Every skill uses the same text for every provider: steps name a capability, and the running agent uses its host's tool for it (see `skills/_shared/capabilities.md`).
+48 native skills, installed as symlinks into each provider's skills directory. Every skill uses the same text for every provider: steps name a capability, and the running agent uses its host's tool for it (see `skills/_shared/capabilities.md`).
 
 | Stage | Skills |
 |-------|--------|
 | Ideation & planning | `withInterview`, `enhancePrompt`, `officeHours`, `autoplan`, `productReview`, `archReview`, `planDesignReview`, `planDevexReview` |
 | Design | `design-analyze`, `design-language`, `design-evolve`, `design-shotgun`, `design-mockup`, `design-implement`, `design-refine`, `design-verify` (dispatchers auto-detect web/iOS and route to their `-web` / `-ios` sub-skills) |
-| Build & verify | `specToProvenPR`, `verify-app` (→ `verify-web`, `verify-ios`) |
+| Build & verify | `specToProvenPR`, `verify-app` (→ `verify-web`, `verify-ios`), `ui-evidence` |
 | Review | `review`, `postReview`, `addressReview`, `cso` |
-| Debug & QA | `rootCause`, `bugHunt`, `bugReport`, `testAudit` |
-| Ship & operate | `shipRelease`, `landAndDeploy`, `canary`, `syncDocs`, `weeklyRetro`, `prismStatus` |
+| Debug & QA | `rootCause`, `bugHunt`, `bugReport`, `bugFixOrchestrator`, `testAudit` |
+| Ship & operate | `shipRelease`, `landAndDeploy`, `canary`, `syncDocs`, `weeklyRetro`, `prismStatus`, `judge` |
 | Repo setup | `bootstrap` |
 
 Skills write their artifacts to `~/.agentic-workflow/<repo-slug>/<domain>/`, and downstream skills discover them from there.
@@ -296,7 +296,7 @@ Tests cover unit tests (controllers, services, DB client, schemas, utilities) an
 agentic-workflow/
 ├── AGENTS.md                # Canonical repo instructions (CLAUDE.md is a symlink to it)
 ├── .agents/rules/           # Glob-scoped rules, the only copy (.claude/rules, .cursor/rules/*.mdc are symlinks)
-├── skills/                  # 47 native skills (+ _shared/ fragments, incl. capabilities.md)
+├── skills/                  # 48 native skills (+ _shared/ fragments, incl. capabilities.md)
 ├── bootstrap/               # /bootstrap — repo documentation generator
 ├── providers/<name>/        # Per-provider installers: install.sh, install-hooks.sh (claude, codex, cursor)
 ├── config/                  # Settings, MCP config, statusline, hooks (+ hooks/adapters/ for codex, cursor)

@@ -153,6 +153,47 @@ test_agents_render_per_provider() {
   echo "PASS: test_agents_render_per_provider"
 }
 
+test_builds_skill_packages_and_warns_on_failure() {
+  setup_env
+  local bin="$SANDBOX/bin" root="$SANDBOX/toolkit" out
+  mkdir -p "$bin" "$root/skills/good" "$root/skills/bad" "$root/skills/nopkg"
+  echo '{}' > "$root/skills/good/package.json"
+  echo '{}' > "$root/skills/bad/package.json"
+  cat > "$bin/npm" <<'NPM'
+#!/usr/bin/env bash
+echo "$(basename "$PWD") $*" >> "$NPM_LOG"
+[ "$(basename "$PWD")" != "bad" ] || [ "$1" != "run" ]
+NPM
+  chmod +x "$bin/npm"
+  export NPM_LOG="$SANDBOX/npm.log"
+  AW_SKILL_PACKAGES=(good bad nopkg)
+  out="$(PATH="$bin:$PATH" aw_build_skill_packages "$root")"
+  echo "$out" | grep -q "good: built" || fail "good package not built"
+  echo "$out" | grep -q "WARN: bad build failed" || fail "failed build should warn, not abort"
+  echo "$out" | grep -q "nopkg: no package.json, skipping" || fail "package-less skill should be skipped"
+  grep -q "^good ci --ignore-scripts --no-audit --no-fund$" "$NPM_LOG" || fail "npm ci not run for good"
+  grep -q "^good run build$" "$NPM_LOG" || fail "npm run build not run for good"
+  : > "$NPM_LOG"
+  out="$(AW_DRY_RUN=1 PATH="$bin:$PATH" aw_build_skill_packages "$root")"
+  [ ! -s "$NPM_LOG" ] || fail "dry-run must not run npm"
+  echo "$out" | grep -q "\[dry-run\] would run: npm ci && npm run build (in $root/skills/good)" || fail "dry-run should print the build"
+  teardown_env
+  echo "PASS: test_builds_skill_packages_and_warns_on_failure"
+}
+
+test_real_skill_packages_are_the_ones_with_package_json() {
+  local name
+  for name in ui-evidence bugFixOrchestrator; do
+    [ -f "$ROOT/skills/$name/package.json" ] || fail "$name should ship a package.json"
+  done
+  grep -q "AW_SKILL_PACKAGES=(ui-evidence bugFixOrchestrator)" "$ROOT/providers/lib.sh" || fail "lib.sh default list changed"
+  for name in "$ROOT"/skills/*/package.json; do
+    name="$(basename "$(dirname "$name")")"
+    case " ui-evidence bugFixOrchestrator " in *" $name "*) ;; *) fail "skills/$name has a package.json but is not in AW_SKILL_PACKAGES";; esac
+  done
+  echo "PASS: test_real_skill_packages_are_the_ones_with_package_json"
+}
+
 test_links_managed_and_bootstrap_then_is_idempotent
 test_refreshes_legacy_link_and_removes_deprecated
 test_foreign_collision_is_kept_when_stdin_closed
@@ -162,3 +203,5 @@ test_toolkit_link_and_registry_merge
 test_cursor_mcp_merge_preserves_and_is_idempotent
 test_dry_run_writes_nothing
 test_agents_render_per_provider
+test_builds_skill_packages_and_warns_on_failure
+test_real_skill_packages_are_the_ones_with_package_json

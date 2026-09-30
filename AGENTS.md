@@ -1,6 +1,6 @@
 # AGENTS.md — Agentic Workflow
 
-> Agentic Workflow — provider-agnostic agent workflow toolkit for Claude Code, Codex, and Cursor: 47 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill), config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
+> Agentic Workflow — provider-agnostic agent workflow toolkit for Claude Code, Codex, and Cursor: 48 native skills + 3 fetched external packs (impeccable, emil-design-eng, taste-skill), config archive, repo bootstrapper, MCP bridge for multi-agent communication, and token-efficiency tools (rtk + headroom).
 
 Domain-specific rules live in `.agents/rules/` — one file per rule, the only copy. `.claude/rules` and `.cursor/rules/*.mdc` are symlinks to it (auto-loaded by Claude Code and Cursor), and `CLAUDE.md` is a symlink to this file. Codex reads the Rules Index at the bottom of this file. After adding or removing a rule, run `scripts/sync-rules.sh`.
 
@@ -34,7 +34,7 @@ Domain-specific rules live in `.agents/rules/` — one file per rule, the only c
 
 ```
 agentic-workflow/
-├── skills/        # 46 provider-neutral skills (linked into each provider's skills dir)
+├── skills/        # 47 provider-neutral skills (linked into each provider's skills dir)
 ├── bootstrap/     # /bootstrap skill — repo documentation generator
 ├── config/        # Settings, MCP config, statusline, safety hooks (+ hooks/adapters/ per provider)
 ├── providers/     # Per-provider installers (claude, codex, cursor)
@@ -54,6 +54,8 @@ agentic-workflow/
 cd mcp-bridge && npm test               # Vitest, in-memory SQLite
 cd scorer && npm test                   # Vitest
 cd judge && npm test                    # Vitest
+(cd skills/ui-evidence && npm test)     # Vitest (skill package; includes a real-browser test)
+(cd skills/bugFixOrchestrator && npm test)  # Vitest (bugfix-state CLI)
 scorer --since 7d [--provider claude|codex|cursor|all]  # Report to ~/.agentic-workflow/scorer/reports/
 scorer probe                            # Summarize the hook-input probe
 
@@ -90,8 +92,8 @@ After installing for Codex, open `codex` and run `/hooks` to trust the `aw:*` ho
 ## Merge Gate
 
 Before merging any PR:
-1. `npm run typecheck` passes with zero errors in `mcp-bridge`, `scorer`, and `judge`
-2. `npm test` passes in `mcp-bridge`, `scorer`, and `judge`, and every bash test listed above passes
+1. `npm run typecheck` passes with zero errors in `mcp-bridge`, `scorer`, `judge`, `skills/ui-evidence`, and `skills/bugFixOrchestrator`
+2. `npm test` passes in `mcp-bridge`, `scorer`, `judge`, `skills/ui-evidence`, and `skills/bugFixOrchestrator`, and every bash test listed above passes
 3. `scripts/sync-rules.sh --check` passes (rule links and Rules Index match `.agents/rules/`)
 4. `./setup.sh --providers claude,codex,cursor --dry-run` runs cleanly
 5. No `/* v8 ignore */` annotations in source files (prohibited — write the test instead)
