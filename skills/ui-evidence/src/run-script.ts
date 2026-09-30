@@ -10,6 +10,7 @@ import { chromium, type Page } from "playwright";
 import { runJudge } from "./judge-exec.js";
 import type { UiScript } from "./script-schema.js";
 import { lintPage, type PageSnapshot } from "./lint-page.js";
+import { desktopChromeUserAgent } from "./user-agent.js";
 import { comparePngs, cropPng, sha256File } from "./pixel-diff.js";
 import type { RunStep, RunSummary } from "./publish.js";
 import { executeStep, type RepairFn } from "./step-exec.js";
@@ -66,6 +67,7 @@ export async function runScript(script: UiScript, runDir: string, mainBaselineSc
   for (const viewport of script.viewports) {
     const context = await browser.newContext({
       viewport: viewport === "phone" ? { width: 375, height: 812 } : { width: 1280, height: 800 },
+      userAgent: desktopChromeUserAgent(browserVersion),
       recordVideo: { dir: runDir },
     });
     await context.tracing.start({ screenshots: true, snapshots: true });

@@ -35,3 +35,6 @@ environment variables, or in an uncommitted `.ui-evidence.local.env`
   seed marker row in `public.profile`. Default: a generic example.com pattern.
   Unconfigured, both defaults only match fictional example.com addresses, so
   provenance fails closed ("unknown") against any real database.
+- `UI_EVIDENCE_USER_AGENT` — the browser's user agent. Default: desktop Chrome at the
+  bundled Chromium's version, because headless Chromium's own UA says "HeadlessChrome"
+  and apps that gate on browser support (Vitalize's unsupported-browser page) block it.
